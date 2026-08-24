@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>root</title>
+    <!-- Resolves the stored theme before the stylesheet lands, so opening the
+         app never flashes the wrong ground. Kept inline and dependency-free
+         for the same reason. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("root-theme") || "dark";
+          var resolved =
+            stored === "system"
+              ? window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark"
+              : stored;
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.style.background =
+            resolved === "light" ? "#f7f3ec" : "#0a0e14";
+        } catch (e) {
+          document.documentElement.style.background = "#0a0e14";
+        }
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

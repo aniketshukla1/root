@@ -1,0 +1,30 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="plate" x1="100" y1="100" x2="924" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#061008"/>
+      <stop offset="0.46" stop-color="#010402"/>
+      <stop offset="1" stop-color="#000000"/>
+    </linearGradient>
+    <radialGradient id="signal" cx="0.5" cy="0.5" r="0.62">
+      <stop offset="0" stop-color="#5cff8d" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#5cff8d" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="plate-clip">
+      <rect x="100" y="100" width="824" height="824" rx="185"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#plate-clip)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#plate)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#signal)"/>
+  </g>
+  <rect x="101" y="101" width="822" height="822" rx="184" fill="none"
+        stroke="#5cff8d" stroke-opacity="0.18" stroke-width="2"/>
+
+  <!-- A static native icon cannot blink, so it captures the cursor in its
+       visible frame. Motion lives in the in-app wordmark and boot sequence. -->
+  <text x="170" y="585" fill="#5cff8d"
+        font-family="Menlo, Monaco, Consolas, monospace"
+        font-size="214" font-weight="700" letter-spacing="-18">root</text>
+  <rect x="706" y="415" width="94" height="184" rx="3" fill="#5cff8d"/>
+</svg>

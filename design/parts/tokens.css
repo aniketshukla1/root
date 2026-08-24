@@ -1,0 +1,205 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+/* root — design tokens.
+ *
+ * Surfaces, ink and radii follow the field-guide HUD: a blue-black ground,
+ * borders doing the work instead of shadows, 3px corners, and mono as the
+ * chrome typeface — labels, buttons and panel titles are all mono with wide
+ * tracking, which is what makes the whole thing read as an instrument.
+ *
+ * Two rules from the existing app survive untouched, because in a monitoring
+ * tool they are load-bearing:
+ *   Status hues are reserved. Nothing that is not a state may wear one.
+ *   Series hues carry identity only, in fixed order, never sorted by value.
+ * That is also why the accent is azure and not the reference's mint: green
+ * already means healthy here, and an accent you can click must never be
+ * mistakable for a state. */
+:root {
+  --bg:#0a0e14; --panel:#0c1219; --sunk:#111a24; --raised:#141e29;
+  --line:#1c2530; --line-soft:#18222e; --line-strong:#2b3846;
+  --ink:#f0f5fa; --ink-2:#a9b8ca; --muted:#8496ad; --faint:#6f8095;
+
+  --accent:#4cc2ff; --accent-soft:color-mix(in srgb, var(--accent) 11%, var(--bg));
+  --on-accent:#04121c;
+
+  /* status — reserved */
+  --ok:#5fc48c;      --ok-soft:#0d1a14;
+  --warn:#d9a84e;    --warn-soft:#191408;
+  --serious:#dd8a52;
+  --crit:#e0705a;    --crit-soft:#1a1116;
+  --unknown:#6f8095;
+
+  /* categorical identity — fixed order */
+  --s1:#5a9ee0; --s2:#d98a5a; --s3:#4db89a; --s4:#c9a44e;
+  --s5:#d47fa8; --s6:#8d92e8; --s7:#57bcc4; --s8:#dd8080;
+
+  /* cells — the component matrix */
+  --cell-todo:#131c26; --cell-line:#22303e;
+
+  /* plotted surfaces: nominal lane, log severities below warn, chart ruling */
+  --lane-ok:#1c3329;
+  --lvl-debug:#2b3846; --lvl-info:#6f8095;
+  --grat:rgba(255,255,255,.045);
+
+  --r:3px;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+  --sans:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--bg); color:var(--ink-2);
+  font-family:var(--sans); font-size:13px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+a { color:var(--accent); text-decoration:none; }
+a:hover { color:#8ad6ff; }
+
+/* Mono is the chrome typeface: every label, button and panel title. */
+.lbl {
+  font-family:var(--mono); font-size:10px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--muted);
+}
+.mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+.disp { font-family:var(--sans); font-weight:700; letter-spacing:-.03em; }
+
+/* An eyebrow always announces itself with the same sigil. */
+.eyebrow {
+  font-family:var(--mono); font-size:10px; letter-spacing:.2em;
+  text-transform:uppercase; color:var(--accent);
+}
+.eyebrow::before { content:"\25B8\00a0\00a0"; }
+
+.panel, .plate {
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+}
+
+.ph {
+  display:flex; align-items:center; gap:10px; height:33px; padding:0 12px;
+  border-bottom:1px solid var(--line);
+}
+.ph h2 {
+  margin:0; font-family:var(--mono); font-size:10px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--muted); font-weight:400; white-space:nowrap;
+}
+.ph .sub { font-family:var(--mono); font-size:10px; color:var(--faint); }
+
+.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  min-height:27px; padding:0 10px; border:1px solid var(--line); border-radius:var(--r);
+  background:var(--panel); color:var(--ink-2);
+  font-family:var(--mono); font-size:11px; letter-spacing:.04em; cursor:pointer;
+}
+.btn-p { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+.btn-g { border-color:transparent; background:transparent; color:var(--faint); }
+.btn-s { min-height:22px; padding:0 8px; font-size:10px; }
+
+.field {
+  display:flex; align-items:center; gap:7px; height:27px; padding:0 9px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--sunk);
+  color:var(--ink-2); font-family:var(--mono); font-size:11px;
+}
+
+.seg {
+  display:inline-flex; align-items:center; gap:2px; padding:3px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--panel);
+}
+.seg > span {
+  display:inline-flex; align-items:center; height:21px; padding:0 9px; border-radius:2px;
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; color:var(--muted);
+}
+.seg > span.on { background:var(--accent); color:var(--on-accent); }
+
+.tag {
+  display:inline-flex; align-items:center; height:18px; padding:0 6px;
+  border:1px solid var(--line); border-radius:2px; background:var(--panel);
+  font-family:var(--mono); font-size:10px; letter-spacing:.05em;
+  color:var(--muted); white-space:nowrap;
+}
+
+.kbd {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:17px; height:17px; padding:0 4px;
+  border:1px solid var(--line); border-radius:2px; background:var(--sunk);
+  font-family:var(--mono); font-size:10px; color:var(--faint);
+}
+
+.nav {
+  display:flex; align-items:center; gap:10px; height:30px; padding:0 9px;
+  border-radius:var(--r); color:var(--ink-2); font-size:12.5px; position:relative;
+}
+.nav.on { background:var(--sunk); color:var(--ink); }
+.nav.on::before {
+  content:""; position:absolute; left:-9px; top:8px; width:2px; height:14px;
+  background:var(--accent);
+}
+
+.tr { display:grid; align-items:center; height:29px; padding:0 12px; border-top:1px solid var(--line-soft); }
+.th { display:grid; align-items:center; height:26px; padding:0 12px; border-bottom:1px solid var(--line); }
+
+/* Graticule — instrument ruling behind plotted data. */
+.grat { background-image:repeating-linear-gradient(to top, var(--grat) 0 1px, transparent 1px 25%); }
+
+/* A note that carries a state wears it on its leading edge. */
+.note { border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:var(--r); background:var(--panel); }
+
+/* ──────────────────────────────────────────────────────────── motion
+ * One rule: motion explains where a value came from, it never decorates.
+ * A line draws along its own time axis, a bar grows from its baseline, a
+ * series staggers in reading order. Everything is intro-only — nothing
+ * loops, because a console that pulses forever is a console you stop
+ * looking at. All of it stops under prefers-reduced-motion. */
+@keyframes draw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
+@keyframes rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes reach { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes wash { from { opacity: 0; } to { opacity: var(--op, 1); } }
+@keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: var(--op, 1); } }
+
+.a-draw { stroke-dasharray: var(--len); animation: draw 1.15s cubic-bezier(.22,.8,.3,1) both; }
+.a-rise { transform-origin: bottom; animation: rise .5s cubic-bezier(.22,.9,.3,1) both; }
+.a-reach { transform-origin: left; animation: reach .55s cubic-bezier(.22,.9,.3,1) both; }
+.a-wash { animation: wash .7s ease-out both; }
+/* Sweep is draw's sibling for arcs: it animates the offset only, so the
+   element keeps the dash pattern that encodes its value. */
+.a-sweep { animation: draw 1.15s cubic-bezier(.22,.8,.3,1) both; }
+.a-pop  { transform-box: fill-box; transform-origin: center; animation: pop .34s cubic-bezier(.3,1.4,.5,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .a-draw, .a-sweep, .a-rise, .a-reach, .a-wash, .a-pop { animation: none; stroke-dashoffset: 0; transform: none; opacity: 1; }
+}
+
+/* ─────────────────────────────────────────────────────────────── light mode
+ *
+ * Warm paper, not white. A dark HUD inverted onto cold white reads as a
+ * mistake; on paper it reads as printed — which is also what a console looks
+ * like when someone exports a page of it or works next to a window.
+ *
+ * Two things change meaning rather than just value:
+ *   The accent cannot be the field guide's brown. Brown sits on top of the
+ *   warn hue, and an accent must never be mistakable for a state — so the
+ *   azure deepens instead of inverting.
+ *   Nominal inverts direction. In the dark it is a near-black green that
+ *   stays quiet; on paper quiet means a pale tint, with faults holding all
+ *   the saturation. */
+.light {
+  --bg:#f7f3ec; --panel:#fdfbf7; --sunk:#efe8dc; --raised:#f2ebdf;
+  --line:#ddd3c4; --line-soft:#e8dfd0; --line-strong:#c4b7a1;
+  --ink:#2a2622; --ink-2:#4a443d; --muted:#6e6659; --faint:#8c8375;
+
+  --accent:#1d6a9c; --accent-soft:color-mix(in srgb, var(--accent) 10%, var(--bg));
+  --on-accent:#f9f6f0;
+
+  --ok:#4a7a3f; --warn:#96661a; --serious:#b35f24; --crit:#a8443a; --unknown:#8c8375;
+
+  --s1:#2f6fae; --s2:#b0602f; --s3:#2e7f66; --s4:#8f7020;
+  --s5:#a3517a; --s6:#5a5fae; --s7:#2d7f88; --s8:#a85252;
+
+  --cell-todo:#ece4d6; --cell-line:#d3c6b1;
+  --lane-ok:#dde8d4;
+  --lvl-debug:#cabda7; --lvl-info:#9a9081;
+  --grat:rgba(60,46,28,.10);
+  --shadow:0 1px 2px rgba(60,46,28,.05);
+
+  color:var(--ink-2);
+}

@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#000000" />
+    <style>html,body{background:#000}</style>
+    <title>root // layout preview</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Dev-only harness: stubs the Tauri IPC bridge with representative data so
+      // the UI can be rendered and inspected in a plain browser. Not part of the
+      // production build (vite only bundles index.html).
+      (function () {
+        const now = Date.now();
+        const iso = (msAgo) => new Date(now - msAgo).toISOString();
+
+        function walk(count, start, drift, jitter, floor, ceil) {
+          const points = [];
+          let v = start;
+          for (let i = count - 1; i >= 0; i--) {
+            v += (Math.random() - 0.5) * jitter + drift;
+            v = Math.max(floor, Math.min(ceil, v));
+            points.push({ t: iso(i * 15000), v: Math.round(v * 100) / 100 });
+          }
+          return points;
+        }
+
+
+        // --- section helpers -------------------------------------------------
+        const col = (key, label, kind, extra = {}) => ({
+          key, label, kind, align: ["metric","duration","gauge"].includes(kind.type) ? "end" : "start",
+          primary: false, sortable: true, secondary: false, ...extra,
+        });
+        const txt = (value) => ({ type: "text", value });
+        const num = (value) => ({ type: "number", value });
+        const dur = (value) => ({ type: "duration", value });
+        const ts  = (value) => ({ type: "timestamp", value });
+        const tags = (value) => ({ type: "tags", value });
+        const stat = (value) => ({ type: "status", value });
+        const gauge = (value, max, warnAbove) => ({ type: "gauge", value, max, warnAbove });
+        const NUL = { type: "null" };
+        const mkRow = (id, name, health, summary, cells, actions = [], extra = null) =>
+          ({ id, name, health, summary, cells, actions, extra });
+        const sect = (id, label, columns, rows, priority = 50, emptyText = "Nothing to show.", tracked = false) =>
+          ({ id, label, columns, rows, priority, emptyText, tracked });
+
+        const dockerSections = [sect("containers", "Containers", [
+            col("name", "Container", { type: "text" }, { primary: true }),
+            col("state", "State", { type: "text" }),
+            col("cpu", "CPU", { type: "gauge", unit: "percent" }),
+            col("memory", "Memory", { type: "gauge", unit: "bytes" }),
+            col("image", "Image", { type: "text" }, { secondary: true }),
+            col("project", "Project", { type: "text" }, { secondary: true }),
+          ], [
+            mkRow("c1", "checkout-api", "down", "Exited (137) 2 minutes ago", {
+              name: txt("checkout-api"), state: txt("Exited (137) 2 minutes ago"),
+              cpu: NUL, memory: NUL, image: txt("ghcr.io/acme/checkout:1.9"), project: txt("acme"),
+            }, [{ tool: "start_container", label: "Start", args: { container: "checkout-api" }, destructive: false }]),
+            mkRow("c2", "worker-3", "degraded", "Up 4 minutes (unhealthy)", {
+              name: txt("worker-3"), state: txt("Up 4 minutes (unhealthy)"),
+              cpu: gauge(92.4, 100, 85), memory: gauge(1.71e9, 2.0e9),
+              image: txt("ghcr.io/acme/worker:2.3"), project: txt("acme"),
+            }, [{ tool: "restart_container", label: "Restart", args: { container: "worker-3" }, destructive: false },
+                { tool: "stop_container", label: "Stop", args: { container: "worker-3" }, destructive: true }]),
+            mkRow("c3", "postgres", "healthy", "Up 6 days (healthy)", {
+              name: txt("postgres"), state: txt("Up 6 days (healthy)"),
+              cpu: gauge(3.1, 100, 85), memory: gauge(4.2e8, 2.0e9),
+              image: txt("postgres:16-alpine"), project: txt("acme"),
+            }, [{ tool: "restart_container", label: "Restart", args: { container: "postgres" }, destructive: false }]),
+            mkRow("c4", "redis", "healthy", "Up 6 days", {
+              name: txt("redis"), state: txt("Up 6 days"),
+              cpu: gauge(0.8, 100, 85), memory: gauge(9.1e7, 5.0e8),
+              image: txt("redis:7-alpine"), project: txt("acme"),
+            }, [{ tool: "restart_container", label: "Restart", args: { container: "redis" }, destructive: false }]),
+          ], 10, "This engine has no containers.", true)];
+
+        const buildHistory = (pattern) => pattern.split("").map((ch, i) => ({
+          number: 47 - i, result: ch === "F" ? "FAILURE" : ch === "U" ? "UNSTABLE" : "SUCCESS",
+          building: false, durationMs: 30000 + Math.random() * 60000,
+          finishedAt: iso(i * 3600000),
+        }));
+
+        const jenkinsSections = [
+          sect("queue", "Build queue", [
+            col("task", "Task", { type: "text" }, { primary: true }),
+            col("stuck", "State", { type: "text" }),
+            col("why", "Waiting for", { type: "text" }),
+          ], [
+            mkRow("q1", "release", "degraded", "Blocked by upstream lock",
+              { task: txt("release"), stuck: txt("stuck"), why: txt("Blocked by upstream lock") }),
+            mkRow("q2", "deploy", "unknown", "Waiting for next available executor",
+              { task: txt("deploy"), stuck: txt("waiting"), why: txt("Waiting for next available executor") }),
+          ], 5),
+          sect("jobs", "Jobs", [
+            col("job", "Job", { type: "text" }, { primary: true }),
+            col("result", "Last result", { type: "text" }),
+            col("build", "Build", { type: "metric", unit: "count" }),
+            col("duration", "Duration", { type: "duration" }),
+            col("last_run", "Finished", { type: "timestamp" }),
+            col("recent_failures", "Failures / 20", { type: "metric", unit: "count" }, { secondary: true }),
+          ], [
+            mkRow("web-build", "web-build", "down", "#7 — last build failed", {
+              job: txt("web-build"), result: txt("FAILURE"), build: num(7), duration: dur(12),
+              last_run: ts(iso(240000)), recent_failures: num(9),
+            }, [{ tool: "trigger_jenkins_build", label: "Build now", args: { job: "web-build" }, destructive: false }],
+               { builds: buildHistory("FFSFFSFFFSSFSFFSSFFS"), buildable: true }),
+            mkRow("flaky", "flaky", "degraded", "#3 — last build unstable", {
+              job: txt("flaky"), result: txt("UNSTABLE"), build: num(3), duration: dur(9),
+              last_run: ts(iso(900000)), recent_failures: num(6),
+            }, [{ tool: "trigger_jenkins_build", label: "Build now", args: { job: "flaky" }, destructive: false }],
+               { builds: buildHistory("SFSSFSSFSSFSSFSSFSS"), buildable: true }),
+            mkRow("api-build", "api-build", "healthy", "#42 — last build succeeded", {
+              job: txt("api-build"), result: txt("SUCCESS"), build: num(42), duration: dur(45),
+              last_run: ts(iso(600000)), recent_failures: num(0),
+            }, [{ tool: "trigger_jenkins_build", label: "Build now", args: { job: "api-build" }, destructive: false }],
+               { builds: buildHistory("SSSSSSSSSSSSSSSSSSSS"), buildable: true }),
+          ], 10),
+          sect("agents", "Agents", [
+            col("agent", "Agent", { type: "text" }, { primary: true }),
+            col("status", "Status", { type: "text" }),
+            col("executors", "Executors", { type: "metric", unit: "count" }),
+            col("reason", "Offline reason", { type: "text" }),
+          ], [
+            mkRow("n1", "agent-1", "down", "Disk space is too low",
+              { agent: txt("agent-1"), status: txt("offline"), executors: num(2), reason: txt("Disk space is too low") }),
+            mkRow("n2", "built-in", "healthy", "online · busy",
+              { agent: txt("built-in"), status: txt("busy"), executors: num(2), reason: NUL }),
+          ], 20),
+        ];
+
+        const esSections = [
+          sect("nodes", "Nodes", [
+            col("node", "Node", { type: "text" }, { primary: true }),
+            col("heap", "JVM heap", { type: "gauge", unit: "percent" }),
+            col("cpu", "CPU", { type: "gauge", unit: "percent" }),
+            col("disk_used", "Disk used", { type: "gauge", unit: "percent" }),
+            col("disk_free", "Disk free", { type: "metric", unit: "bytes" }),
+            col("roles", "Roles", { type: "tags" }, { secondary: true, sortable: false }),
+          ], [
+            mkRow("n1", "es-data-1", "degraded", "heap 93%, cpu 40%, disk 62% used", {
+              node: txt("es-data-1"), heap: gauge(93, 100, 85), cpu: gauge(40, 100, 85),
+              disk_used: gauge(62, 100, 85), disk_free: num(3.2e11), roles: tags(["data", "master"]),
+            }),
+            mkRow("n2", "es-data-2", "healthy", "heap 54%, cpu 22%, disk 58% used", {
+              node: txt("es-data-2"), heap: gauge(54, 100, 85), cpu: gauge(22, 100, 85),
+              disk_used: gauge(58, 100, 85), disk_free: num(3.6e11), roles: tags(["data"]),
+            }),
+          ], 10, "No node stats were returned.", true),
+          sect("indices", "Indices", [
+            col("index", "Index", { type: "text" }, { primary: true }),
+            col("health", "Health", { type: "status" }),
+            col("size", "Size", { type: "metric", unit: "bytes" }),
+            col("docs", "Docs", { type: "metric", unit: "count" }),
+            col("primaries", "Primaries", { type: "metric", unit: "count" }, { secondary: true }),
+            col("replicas", "Replicas", { type: "metric", unit: "count" }, { secondary: true }),
+          ], [
+            mkRow("i1", "logs-2026.08", "healthy", "412,908,111 docs, 284.1 GB", {
+              index: txt("logs-2026.08"), health: stat("healthy"), size: num(3.05e11),
+              docs: num(412908111), primaries: num(6), replicas: num(1),
+            }),
+            mkRow("i2", "metrics-2026.08", "degraded", "88,214,003 docs, 41.2 GB", {
+              index: txt("metrics-2026.08"), health: stat("degraded"), size: num(4.42e10),
+              docs: num(88214003), primaries: num(3), replicas: num(1),
+            }),
+          ], 20),
+        ];
+
+        const pgSections = [
+          sect("active_queries", "Active queries", [
+            col("pid", "PID", { type: "text" }, { primary: true }),
+            col("duration", "Running for", { type: "duration" }),
+            col("state", "State", { type: "text" }),
+            col("query", "Statement", { type: "code" }, { sortable: false }),
+          ], [
+            mkRow("q1", "pid 14832", "down", "running 252s", {
+              pid: txt("14832"), duration: dur(252), state: txt("active"),
+              query: txt("SELECT o.id, o.total, c.name, c.email FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.created_at > now() - interval '90 days' AND o.status IN ('pending','processing') ORDER BY o.total DESC"),
+            }, [{ tool: "terminate_database_query", label: "Terminate", args: { pid: "14832" }, destructive: true }]),
+            mkRow("q2", "pid 9021", "degraded", "running 38s", {
+              pid: txt("9021"), duration: dur(38), state: txt("idle in transaction"),
+              query: txt("UPDATE inventory SET quantity = quantity - 1 WHERE sku = $1 AND quantity > 0"),
+            }, [{ tool: "terminate_database_query", label: "Terminate", args: { pid: "9021" }, destructive: true }]),
+          ], 5),
+          sect("databases", "Databases", [
+            col("database", "Database", { type: "text" }, { primary: true }),
+            col("size", "Size", { type: "metric", unit: "bytes" }),
+          ], [
+            mkRow("d1", "appdb", "healthy", "84.9 GB", { database: txt("appdb"), size: num(9.11e10) }),
+            mkRow("d2", "analytics", "healthy", "12.4 GB", { database: txt("analytics"), size: num(1.33e10) }),
+          ], 20),
+        ];
+
+        const httpSections = [sect("checks", "Check", [
+            col("url", "URL", { type: "text" }, { primary: true }),
+            col("method", "Method", { type: "text" }),
+            col("status", "Status", { type: "metric", unit: "count" }),
+            col("latency", "Response time", { type: "metric", unit: "millis" }),
+            col("body", "Body check", { type: "text" }),
+          ], [
+            mkRow("u1", "https://status.acme.dev/health", "degraded", "200 OK in 1840ms", {
+              url: txt("https://status.acme.dev/health"), method: txt("GET"),
+              status: num(200), latency: num(1840), body: txt("matched"),
+            }),
+          ], 10)];
+
+        const catalog = [
+          { kind: "docker", label: "Docker", monogram: "DK", accent: 0, category: "Containers",
+            blurb: "Containers, resource usage, health checks, and logs from a Docker Engine.",
+            endpoint: { key: "endpoint", label: "Docker host", kind: "text", required: false, advanced: false },
+            fields: [], defaultPollSecs: 5,
+            capabilities: { logs: true, actions: [{ tool: "restart_container", label: "Restart a container" }], diagnostics: [] } },
+          { kind: "jenkins", label: "Jenkins", monogram: "JK", accent: 1, category: "CI/CD",
+            blurb: "Job results, build queue, agents, and console output from failing builds.",
+            endpoint: { key: "endpoint", label: "Controller URL", kind: "url", required: true, advanced: false },
+            fields: [], defaultPollSecs: 20, capabilities: { logs: true, actions: [], diagnostics: [] } },
+          // Mirrors what registry.rs actually declares, so the generated form
+          // can be inspected here.
+          { kind: "elasticsearch", label: "Elasticsearch", monogram: "ES", accent: 2, category: "Search & analytics",
+            blurb: "Cluster health, node resources, shard and index stats, plus log tailing. Works with OpenSearch.",
+            endpoint: { key: "endpoint", label: "Cluster URL", kind: "url", placeholder: "https://es.internal:9200", required: true, advanced: false },
+            username: { key: "__username", label: "Username", kind: "text", placeholder: "optional",
+                        help: "Leave empty to send the credential below as an API key instead.", required: false, advanced: false },
+            credential: { key: "__secret", label: "Password or API key", kind: "password",
+                          help: "Basic auth password, or a base64 API key.", required: false, advanced: false },
+            fields: [
+              { key: "logIndex", label: "Log index pattern", kind: "text", placeholder: "logs-*",
+                help: "Leave empty to monitor cluster health without tailing documents.", required: false, advanced: false },
+              { key: "timestampField", label: "Timestamp field", kind: "text", placeholder: "@timestamp",
+                default: "@timestamp", required: false, advanced: true },
+              { key: "maxLogLines", label: "Max log lines per poll", kind: "number", default: 200, min: 1, max: 2000,
+                help: "Caps how much this connection can contribute per cycle.", required: false, advanced: true },
+              { key: "insecureTls", label: "Skip TLS verification", kind: "boolean",
+                help: "For internal endpoints with self-signed certificates.", required: false, advanced: true },
+            ],
+            defaultPollSecs: 15,
+            capabilities: { logs: true, actions: [], diagnostics: ["elasticsearch_search"] } },
+          { kind: "postgres", label: "PostgreSQL", monogram: "PG", accent: 3, category: "Databases",
+            blurb: "Connection saturation, table sizes, long-running queries, locks, replication lag.",
+            endpoint: { key: "endpoint", label: "Connection URL", kind: "url", required: true, advanced: false },
+            fields: [], defaultPollSecs: 15, capabilities: { logs: true, actions: [], diagnostics: [] } },
+          { kind: "mysql", label: "MySQL", monogram: "MY", accent: 4, category: "Databases",
+            blurb: "Thread counts, schema sizes, long-running queries, replication state.",
+            endpoint: { key: "endpoint", label: "Connection URL", kind: "url", required: true, advanced: false },
+            fields: [], defaultPollSecs: 15, capabilities: { logs: true, actions: [], diagnostics: [] } },
+          { kind: "http_endpoint", label: "HTTP endpoint", monogram: "EP", accent: 5, category: "Endpoints",
+            blurb: "Uptime, status code, and response time for any URL.",
+            endpoint: { key: "endpoint", label: "URL", kind: "url", required: true, advanced: false },
+            fields: [], defaultPollSecs: 30, capabilities: { logs: true, actions: [], diagnostics: [] } },
+          // A kind this frontend build has never heard of, to exercise the
+          // synthesized-descriptor fallback.
+          { kind: "kafka_cluster", label: "Kafka", monogram: "KF", accent: 6, category: "Streaming",
+            blurb: "Broker health, partition lag, and under-replicated partitions.",
+            endpoint: { key: "endpoint", label: "Bootstrap servers", kind: "text", required: true, advanced: false },
+            fields: [], defaultPollSecs: 20, capabilities: { logs: true, actions: [], diagnostics: [] } },
+        ];
+
+        const snapshots = [
+          { profileId: "p1", profileName: "prod-docker", kind: "docker", health: "degraded",
+            summary: "Engine 29.6.2 — 18/25 containers running, 2 unhealthy",
+            metrics: [
+              { key: "containers", label: "Containers", value: 25, unit: "count" },
+              { key: "running", label: "Running", value: 18, unit: "count" },
+              { key: "unhealthy", label: "Unhealthy", value: 2, unit: "count", warnAbove: 0 },
+              { key: "cpu_total", label: "Total CPU", value: 143.2, unit: "percent" },
+              { key: "mem_total", label: "Total memory", value: 8123456789, unit: "bytes" },
+            ],
+            sections: dockerSections,
+            checkedAt: iso(4000), latencyMs: 63 },
+          { profileId: "p2", profileName: "ci.acme.dev", kind: "jenkins", health: "degraded",
+            summary: "3 jobs — 1 failing, 1 unstable, 2 queued",
+            metrics: [
+              { key: "jobs", label: "Jobs", value: 3, unit: "count" },
+              { key: "failing", label: "Failing", value: 1, unit: "count", warnAbove: 0 },
+              { key: "unstable", label: "Unstable", value: 1, unit: "count", warnAbove: 0 },
+              { key: "queue", label: "Queued", value: 2, unit: "count", warnAbove: 10 },
+              { key: "nodes_offline", label: "Offline nodes", value: 1, unit: "count", warnAbove: 0 },
+            ],
+            sections: jenkinsSections, checkedAt: iso(9000), latencyMs: 412 },
+          { profileId: "p7", profileName: "legacy-ci", kind: "jenkins", health: "down",
+            summary: "Jenkins is unreachable", error: "Jenkins returned 503 for /api/json",
+            metrics: [], sections: [], checkedAt: iso(9000), latencyMs: 20031 },
+          { profileId: "p3", profileName: "logs-cluster", kind: "elasticsearch", health: "healthy",
+            summary: "Cluster `logs-prod` is green — 3 nodes, 0 unassigned shards",
+            metrics: [
+              { key: "nodes", label: "Nodes", value: 3, unit: "count" },
+              { key: "active_shards", label: "Active shards", value: 142, unit: "count" },
+              { key: "unassigned_shards", label: "Unassigned shards", value: 0, unit: "count", warnAbove: 0 },
+              { key: "max_heap", label: "Peak node heap", value: 63.5, unit: "percent", warnAbove: 85 },
+              { key: "store_total", label: "Total store", value: 429496729600, unit: "bytes" },
+            ],
+            sections: esSections, checkedAt: iso(2000), latencyMs: 41 },
+          { profileId: "p4", profileName: "orders-db", kind: "postgres", health: "healthy",
+            summary: "PostgreSQL 16.14 — 22/100 connections, 0 long-running queries",
+            metrics: [
+              { key: "connections", label: "Connections", value: 22, unit: "count" },
+              { key: "connection_pct", label: "Connection use", value: 22, unit: "percent", warnAbove: 80 },
+              { key: "db_size", label: "Database size", value: 91234567890, unit: "bytes" },
+              { key: "cache_hit_ratio", label: "Cache hit ratio", value: 99.4, unit: "percent" },
+              { key: "replication_lag", label: "Replication lag", value: 0.4, unit: "seconds", warnAbove: 30 },
+            ],
+            sections: pgSections, checkedAt: iso(3000), latencyMs: 12 },
+          { profileId: "p5", profileName: "status.acme.dev", kind: "http_endpoint", health: "degraded",
+            summary: "200 OK in 1840ms — slower than 1000ms",
+            metrics: [
+              { key: "up", label: "Up", value: 1, unit: "count" },
+              { key: "latency", label: "Response time", value: 1840, unit: "millis", warnAbove: 1000 },
+              { key: "status", label: "Status code", value: 200, unit: "count" },
+            ],
+            sections: httpSections, checkedAt: iso(1000), latencyMs: 1840 },
+          { profileId: "p8", profileName: "staging-docker", kind: "docker", health: "healthy",
+            summary: "Engine 29.6.2 — 6/6 containers running",
+            metrics: [
+              { key: "containers", label: "Containers", value: 6, unit: "count" },
+              { key: "running", label: "Running", value: 6, unit: "count" },
+              { key: "unhealthy", label: "Unhealthy", value: 0, unit: "count", warnAbove: 0 },
+            ],
+            sections: [sect("containers", "Containers", dockerSections[0].columns, [
+              mkRow("s1", "web", "healthy", "Up 2 days", {
+                name: txt("web"), state: txt("Up 2 days"), cpu: gauge(11.2, 100, 85),
+                memory: gauge(2.4e8, 1.0e9), image: txt("nginx:alpine"), project: txt("staging"),
+              }, [{ tool: "restart_container", label: "Restart", args: { container: "web" }, destructive: false }]),
+              mkRow("s2", "api", "healthy", "Up 2 days", {
+                name: txt("api"), state: txt("Up 2 days"), cpu: gauge(24.9, 100, 85),
+                memory: gauge(5.1e8, 1.0e9), image: txt("ghcr.io/acme/api:2.1"), project: txt("staging"),
+              }, [{ tool: "restart_container", label: "Restart", args: { container: "api" }, destructive: false }]),
+            ], 10)],
+            checkedAt: iso(2500), latencyMs: 47 },
+          { profileId: "p6", profileName: "events-kafka", kind: "kafka_cluster", health: "healthy",
+            summary: "6 brokers, 0 under-replicated partitions",
+            metrics: [
+              { key: "brokers", label: "Brokers", value: 6, unit: "count" },
+              { key: "lag", label: "Max consumer lag", value: 1240, unit: "count", warnAbove: 10000 },
+            ],
+            sections: [], checkedAt: iso(5000), latencyMs: 88 },
+        ];
+
+        const alerts = [
+          { id: "a1", fingerprint: "f1", profileId: "p2", profileName: "ci.acme.dev", kind: "jenkins",
+            severity: "critical", title: "ci.acme.dev is unreachable",
+            detail: "Jenkins returned 503 for /api/json", firstSeen: iso(420000), lastSeen: iso(9000),
+            active: true, acknowledged: false },
+          { id: "a2", fingerprint: "f2", profileId: "p1", profileName: "prod-docker", kind: "docker",
+            severity: "critical", title: "prod-docker · checkout-api", detail: "Exited (137) 2 minutes ago",
+            component: "checkout-api", firstSeen: iso(130000), lastSeen: iso(4000), active: true, acknowledged: false },
+          { id: "a3", fingerprint: "f3", profileId: "p1", profileName: "prod-docker", kind: "docker",
+            severity: "warning", title: "prod-docker · worker-3", detail: "Up 4 minutes (unhealthy)",
+            component: "worker-3", firstSeen: iso(240000), lastSeen: iso(4000), active: true, acknowledged: true },
+          { id: "a4", fingerprint: "f4", profileId: "p5", profileName: "status.acme.dev", kind: "http_endpoint",
+            severity: "warning", title: "status.acme.dev · Response time above threshold",
+            detail: "Response time is 1840ms (threshold 1000ms)", firstSeen: iso(60000), lastSeen: iso(1000),
+            active: true, acknowledged: false },
+          { id: "a5", fingerprint: "f5", profileId: "p4", profileName: "orders-db", kind: "postgres",
+            severity: "warning", title: "orders-db · Long queries above threshold",
+            detail: "Long queries is 3 (threshold 0)", firstSeen: iso(900000), lastSeen: iso(600000),
+            active: false, acknowledged: false },
+        ];
+
+        const history = {
+          p1: [
+            { key: "cpu_total", label: "Total CPU", unit: "percent", points: walk(120, 90, 0.4, 14, 10, 260), min: 41, max: 212, latest: 143.2, changePct: 38.4 },
+            { key: "containers", label: "Containers", unit: "count", points: walk(120, 25, 0, 0.6, 22, 27), min: 22, max: 27, latest: 25 },
+            { key: "unhealthy", label: "Unhealthy", unit: "count", warnAbove: 0, points: walk(120, 0, 0.02, 0.9, 0, 4), min: 0, max: 3, latest: 2, changePct: 100 },
+            { key: "mem_total", label: "Total memory", unit: "bytes", points: walk(120, 6.2e9, 1.6e7, 4e8, 3e9, 1.2e10), min: 4.1e9, max: 9.6e9, latest: 8.12e9, changePct: 22.1 },
+          ],
+          p3: [
+            { key: "max_heap", label: "Peak node heap", unit: "percent", warnAbove: 85, points: walk(120, 58, 0.05, 7, 30, 96), min: 39, max: 91, latest: 63.5, changePct: 9.2 },
+            { key: "active_shards", label: "Active shards", unit: "count", points: walk(120, 142, 0, 1.2, 138, 146), min: 138, max: 146, latest: 142 },
+          ],
+          p4: [
+            { key: "connection_pct", label: "Connection use", unit: "percent", warnAbove: 80, points: walk(120, 24, 0, 6, 4, 74), min: 6, max: 71, latest: 22, changePct: -8.3 },
+            { key: "cache_hit_ratio", label: "Cache hit ratio", unit: "percent", points: walk(120, 99.3, 0, 0.35, 96, 100), min: 96.8, max: 100, latest: 99.4 },
+          ],
+          p5: [
+            { key: "latency", label: "Response time", unit: "millis", warnAbove: 1000, points: walk(120, 420, 12, 260, 90, 3200), min: 118, max: 2940, latest: 1840, changePct: 338.1 },
+          ],
+          p6: [
+            { key: "lag", label: "Max consumer lag", unit: "count", warnAbove: 10000, points: walk(120, 900, 3, 600, 0, 9000), min: 12, max: 6100, latest: 1240, changePct: 37.8 },
+          ],
+        };
+
+        const sources = ["checkout-api", "worker-3", "postgres", "nginx", "redis"];
+        const messages = [
+          ["info", "GET /api/v1/orders 200 in 34ms"],
+          ["info", "connection pool: 8 idle, 2 active"],
+          ["warn", "slow query detected: 1.8s"],
+          ["error", "ERROR: connection refused upstream 10.0.4.19:8080"],
+          ["info", "health check passed"],
+          ["debug", "cache hit ratio 0.994"],
+          ["error", "Traceback (most recent call last): KeyError 'tenant_id'"],
+          ["fatal", "PANIC: out of memory, killing worker"],
+          ["warn", "deprecated endpoint /v0/orders called by mobile/3.2"],
+          ["trace", "span checkout.validate 4ms"],
+        ];
+        const logs = Array.from({ length: 320 }, (_, i) => {
+          const [level, message] = messages[Math.floor(Math.random() * messages.length)];
+          const snapshot = snapshots[Math.floor(Math.random() * snapshots.length)];
+          return {
+            id: `l${i}`, profileId: snapshot.profileId, profileName: snapshot.profileName,
+            kind: snapshot.kind, source: sources[Math.floor(Math.random() * sources.length)],
+            level, message, timestamp: iso(i * 9000),
+            // Most lines are runtime; build console and events are separate
+            // streams so the lane filter can be exercised.
+            stream: message.startsWith("npm ERR") ? "build" : level === "info" && i % 11 === 0 ? "event" : "runtime",
+          };
+        });
+
+        // A handful of genuine build-console lines, which must NOT appear in
+        // the default Live lane.
+        for (let i = 0; i < 24; i++) {
+          logs.push({
+            id: `b${i}`, profileId: "p2", profileName: "ci.acme.dev", kind: "jenkins",
+            source: "web-build#7", level: i > 19 ? "error" : "info",
+            message: i > 19 ? "npm ERR! code ELIFECYCLE" : `> webpack --mode production  [${i}]`,
+            timestamp: iso(240000 + i * 500), stream: "build",
+          });
+        }
+
+        // Bucketed with a deliberate error burst, so the histogram has shape.
+        const buckets = Array.from({ length: 60 }, (_, i) => {
+          const burst = i > 41 && i < 49;
+          const info = Math.round(6 + Math.random() * 22);
+          const warn = Math.round(Math.random() * 4) + (burst ? 6 : 0);
+          const error = burst ? Math.round(9 + Math.random() * 16) : Math.round(Math.random() * 2);
+          const fatal = burst && i === 45 ? 2 : 0;
+          const debug = Math.round(Math.random() * 9);
+          const trace = Math.round(Math.random() * 3);
+          const total = trace + debug + info + warn + error + fatal;
+          return {
+            t: iso((60 - i) * 60000), trace, debug, info, warn, error, fatal, total,
+            byProfile: {
+              "prod-docker": Math.round(total * 0.42),
+              "ci.acme.dev": Math.round(total * 0.28),
+              "logs-cluster": Math.round(total * 0.2),
+              "orders-db": Math.round(total * 0.1),
+            },
+          };
+        });
+
+        const ownership = {
+          p1: { team: "Platform Runtime", owner: "Meera Patel", contact: "#platform-oncall", environment: "production", criticality: "tier_0", runbookUrl: "https://runbooks.internal/docker" },
+          p2: { team: "Developer Productivity", owner: "Arjun Nair", contact: "#devprod-oncall", environment: "production", criticality: "tier_1", runbookUrl: "https://runbooks.internal/jenkins" },
+          p7: { team: "Developer Productivity", owner: "Arjun Nair", contact: "#devprod-oncall", environment: "shared", criticality: "tier_2" },
+          p3: { team: "Search Platform", owner: "Lena Ortiz", contact: "#search-oncall", environment: "production", criticality: "tier_1" },
+          p4: { team: "Database Reliability", owner: "Vikram Shah", contact: "#database-oncall", environment: "production", criticality: "tier_0", runbookUrl: "https://runbooks.internal/postgres" },
+          p5: { team: "Edge Reliability", owner: "Sara Kim", contact: "#edge-oncall", environment: "production", criticality: "tier_1" },
+          p8: { team: "Platform Runtime", owner: "Nina Rao", contact: "#platform-oncall", environment: "staging", criticality: "tier_2" },
+          p6: { team: "Streaming Platform", owner: "Omar Ali", contact: "#streaming-oncall", environment: "production", criticality: "tier_1" },
+        };
+
+        const config = {
+          profiles: snapshots.map((s, i) => ({
+            id: s.profileId, name: s.profileName, kind: s.kind,
+            endpoint: i === 0 ? "" : `https://${s.profileName}`,
+            username: "monitor", hasSecret: i !== 0, enabled: true,
+            pollIntervalSecs: 15, options: {}, metadata: { operations: ownership[s.profileId] },
+          })),
+          llm: { provider: "anthropic", model: "claude-sonnet-4-5", baseUrl: "", maxTokens: 4096,
+                 temperature: 0.2, agentMode: "confirm_actions", hasApiKey: true },
+          retention: { logCapacity: 20000 },
+        };
+
+        // A redeploy a few minutes before the error burst, so the dashboard
+        // shows the shape this feature exists for: the marker sits just left of
+        // where the error rate climbs.
+        const changeEvents = [
+          { id: "c1", profileId: "p1", profileName: "prod-docker", kind: "docker",
+            change: "deployed", source: "observed", section: "Containers", component: "checkout-api",
+            from: "ghcr.io/acme/checkout:1.8", to: "ghcr.io/acme/checkout:1.9",
+            at: iso(9 * 60 * 1000), summary: "checkout-api: ghcr.io/acme/checkout:1.8 → ghcr.io/acme/checkout:1.9" },
+          { id: "c2", profileId: "p1", profileName: "prod-docker", kind: "docker",
+            change: "deployed", source: "observed", section: "Containers", component: "worker-3",
+            from: "ghcr.io/acme/worker:2.2", to: "ghcr.io/acme/worker:2.3",
+            at: iso(26 * 60 * 1000), summary: "worker-3: ghcr.io/acme/worker:2.2 → ghcr.io/acme/worker:2.3" },
+          { id: "c3", profileId: "p1", profileName: "prod-docker", kind: "docker",
+            change: "appeared", source: "observed", section: "Containers", component: "redis",
+            to: "redis:7-alpine", at: iso(44 * 60 * 1000),
+            summary: "redis appeared at redis:7-alpine" },
+          { id: "c4", profileId: "p2", profileName: "ci.acme.dev", kind: "jenkins",
+            change: "deployed", source: "observed", section: "Jobs", component: "web-build",
+            from: "6", to: "7", at: iso(13 * 60 * 1000),
+            summary: "web-build: 6 → 7" },
+          // One posted to the local ingest endpoint, to show the distinction.
+          { id: "c5", profileId: "p1", profileName: "prod-docker", kind: "docker",
+            change: "deployed", source: "reported", section: "Reported", component: "orders-api",
+            from: "3.4.1", to: "3.5.0", at: iso(17 * 60 * 1000),
+            summary: "release 3.5.0 from the deploy pipeline" },
+        ];
+
+        const ingest = {
+          enabled: false, port: 7717, hasToken: false,
+          url: "http://127.0.0.1:7717/v1/deploys", keychainAvailable: true,
+        };
+
+        const handlers = {
+          get_dashboard: () => ({
+            snapshots, alerts, overallHealth: "down", servicesTotal: snapshots.length,
+            servicesHealthy: 3, servicesDown: 1, generatedAt: iso(1200),
+          }),
+          get_service_catalog: () => catalog,
+          get_config: () => config,
+          query_logs: () => logs,
+          log_histogram: () => buckets,
+          get_all_metric_history: () => history,
+          get_metric_history: (args) => history[args.profileId] ?? [],
+          // Per-component history. Only sections marked `tracked` have any;
+          // everything else returns empty and the UI falls back to live values.
+          get_component_history: (args) => {
+            const snap = snapshots.find((s) => s.profileId === args.profileId);
+            const section = snap?.sections.find((s) => s.id === args.sectionId);
+            if (!section?.tracked) return [];
+            const row = section.rows.find((r) => r.id === args.rowId);
+            if (!row) return [];
+            return section.columns
+              .filter((c) => ["metric", "gauge"].includes(c.kind.type))
+              .filter((c) => ["number", "gauge"].includes(row.cells[c.key]?.type))
+              .map((c) => {
+                const latest = row.cells[c.key].value;
+                const pts = walk(120, latest * 0.75, latest * 0.004, latest * 0.12, 0, latest * 1.6);
+                const vals = pts.map((p) => p.v);
+                return {
+                  key: c.key, label: c.label, unit: c.kind.unit,
+                  warnAbove: row.cells[c.key].warnAbove,
+                  points: pts, min: Math.min(...vals), max: Math.max(...vals),
+                  latest, changePct: ((latest - vals[0]) / Math.abs(vals[0] || 1)) * 100,
+                };
+              });
+          },
+          // Deploy markers, derived in the real backend by diffing each
+          // component's revision column between polls.
+          get_change_events: (args) =>
+            changeEvents.filter((c) => !args.profileId || c.profileId === args.profileId),
+          pending_confirmations: () => [],
+          secret_store_available: () => true,
+          get_ingest_settings: () => ingest,
+          save_ingest_settings: (args) => {
+            ingest.enabled = args.enabled;
+            ingest.port = args.port;
+            ingest.url = `http://127.0.0.1:${args.port}/v1/deploys`;
+            if (args.enabled) ingest.hasToken = true;
+            return ingest;
+          },
+          rotate_ingest_token: () => {
+            ingest.hasToken = true;
+            return "7f3c9a1be44d4c0fa2d8e6b501c7d913";
+          },
+          acknowledge_alert: () => alerts[0],
+          refresh_connection: () => snapshots[0],
+          clear_logs: () => null,
+          get_build_console: (args) => ({
+            job: args.job, build: String(args.build ?? "lastBuild"), totalLines: 412,
+            console: [
+              "> acme-web@2.4.0 build",
+              "> webpack --mode production",
+              "",
+              "asset main.js 1.2 MiB [emitted] [minimized]",
+              "npm ERR! code ELIFECYCLE",
+              "npm ERR! errno 137",
+              "npm ERR! acme-web@2.4.0 build: `webpack --mode production`",
+              "npm ERR! Exit status 137",
+              "Build step 'Execute shell' marked build as failure",
+            ].join("\n"),
+          }),
+          correlate: (args) => {
+            const center = args.at;
+            const c = new Date(center).getTime();
+            const at = (offset) => new Date(c + offset * 1000).toISOString();
+            return {
+              center, from: at(-180), to: at(180),
+              lanes: [
+                { profileId: "p1", profileName: "prod-docker", kind: "docker",
+                  total: 41, errorCount: 12,
+                  events: [
+                    { id: "x1", profileId: "p1", profileName: "prod-docker", kind: "docker",
+                      source: "checkout-api", level: "fatal", stream: "runtime",
+                      message: "Container killed: OOMKilled (exit 137)", timestamp: at(-4) },
+                    { id: "x2", profileId: "p1", profileName: "prod-docker", kind: "docker",
+                      source: "checkout-api", level: "error", stream: "runtime",
+                      message: "FATAL: heap out of memory, aborting", timestamp: at(-9) },
+                    { id: "x3", profileId: "p1", profileName: "prod-docker", kind: "docker",
+                      source: "worker-3", level: "warn", stream: "runtime",
+                      message: "memory usage 94% of limit", timestamp: at(-38) },
+                  ],
+                  movements: [
+                    { key: "mem_total", label: "Total memory", unit: "bytes",
+                      from: 6.1e9, to: 9.4e9, changePct: 54.1 },
+                  ] },
+                { profileId: "p2", profileName: "ci.acme.dev", kind: "jenkins",
+                  total: 3, errorCount: 1,
+                  events: [
+                    { id: "y1", profileId: "p2", profileName: "ci.acme.dev", kind: "jenkins",
+                      source: "web-build", level: "error", stream: "event",
+                      message: "Build #7 finished: FAILURE in 12.0s", timestamp: at(0) },
+                  ],
+                  movements: [] },
+                { profileId: "p4", profileName: "orders-db", kind: "postgres",
+                  total: 0, errorCount: 0, events: [],
+                  movements: [
+                    { key: "connection_pct", label: "Connection use", unit: "percent",
+                      from: 22, to: 98, changePct: 345.5 },
+                  ] },
+              ],
+              alerts: alerts.filter((a) => a.active).slice(0, 2),
+            };
+          },
+        };
+
+        let listenerId = 0;
+        window.__TAURI_INTERNALS__ = {
+          invoke: (cmd, args) => {
+            // The event plugin rides the same IPC channel as commands.
+            if (cmd === "plugin:event|listen") return Promise.resolve(++listenerId);
+            if (cmd === "plugin:event|unlisten") return Promise.resolve(null);
+            const handler = handlers[cmd];
+            if (!handler) {
+              console.warn("[preview] unhandled command:", cmd, args);
+              return Promise.resolve(null);
+            }
+            return Promise.resolve(handler(args || {}));
+          },
+          transformCallback: (cb) => cb,
+          // `listen()` returns an unlisten that calls through to this; without
+          // it every effect cleanup throws and React stops re-rendering.
+          unregisterListener: () => {},
+          addPluginListener: () => Promise.resolve({ unregister: () => {} }),
+        };
+        // The event package keeps listener bookkeeping in a dedicated global
+        // in Tauri 2. React StrictMode tears listeners down immediately during
+        // its development probe, so the browser preview must mirror it.
+        window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+          unregisterListener: () => {},
+        };
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

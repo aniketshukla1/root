@@ -1,0 +1,79 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--accent)"></span><span style="flex-grow:11;background:var(--sunk)"></span>
+  </div>
+
+  <header style="display:flex;align-items:center;gap:11px;height:58px;flex-shrink:0;padding:0 24px;border-bottom:1px solid var(--line)">
+    <span style="display:grid;place-items:center;width:26px;height:26px;border-radius:2px;background:var(--accent);color:var(--on-accent)"><!--ICON mark 16 currentColor--></span>
+    <span class="mono" style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink)">root</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:22px">
+      <span class="mono" style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--muted)"><!--ICON check 13 var(--ok)-->Workspace</span>
+      <span class="mono" style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--accent)"><span style="display:grid;place-items:center;width:15px;height:15px;border-radius:9px;background:var(--accent);color:var(--on-accent);font-size:9px;font-weight:600">2</span>Connect a service</span>
+      <span class="mono" style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--faint)"><span style="display:grid;place-items:center;width:15px;height:15px;border-radius:9px;box-shadow:inset 0 0 0 1px var(--line-strong);font-size:9px">3</span>Invite your team</span>
+      <span class="btn btn-g" style="margin-left:10px">Skip for now</span>
+    </div>
+  </header>
+
+  <div style="flex:1;min-height:0;display:flex;justify-content:center;padding:36px 24px">
+    <div style="width:100%;max-width:960px;display:flex;flex-direction:column">
+
+      <p class="eyebrow" style="margin:0 0 13px">Step 2 of 3</p>
+      <h1 class="disp" style="margin:0;font-size:34px;line-height:1.06;color:var(--ink)">Connect something you actually run.</h1>
+      <p style="margin:13px 0 0;max-width:66ch;font-size:14px;line-height:1.6;color:var(--muted)">
+        root has no opinion about what you run — it asks the backend what collectors exist and renders
+        whatever it is handed. Pick one to start with; the rest can wait.
+      </p>
+
+      <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-top:28px;flex:1;min-height:0">
+
+        <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+          <div class="ph"><h2>Service types</h2><span class="sub">12 available</span>
+            <div class="field" style="margin-left:auto;width:150px;height:24px"><!--ICON search 12 var(--faint)--><span style="color:var(--faint)">Search</span></div>
+          </div>
+          <div style="flex:1;min-height:0;padding:12px 14px">
+            <div class="lbl" style="font-size:9px;margin-bottom:9px">Containers &amp; orchestration</div>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:15px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--accent);border-radius:var(--r);background:var(--accent-soft)"><!--MARK DK var(--s1) 22--><span style="flex:1;font-size:12.5px;color:var(--ink)">Docker</span><!--ICON check 13 var(--accent)--></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r)"><!--MARK K8 var(--s7) 22--><span style="flex:1;font-size:12.5px;color:var(--ink-2)">Kubernetes</span></div>
+            </div>
+            <div class="lbl" style="font-size:9px;margin-bottom:9px">Databases</div>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:15px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r)"><!--MARK PG var(--s6) 22--><span style="flex:1;font-size:12.5px;color:var(--ink-2)">Postgres</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r)"><!--MARK MY var(--s5) 22--><span style="flex:1;font-size:12.5px;color:var(--ink-2)">MySQL</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r)"><!--MARK MG var(--s3) 22--><span style="flex:1;font-size:12.5px;color:var(--ink-2)">MongoDB</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r)"><!--MARK RD var(--s2) 22--><span style="flex:1;font-size:12.5px;color:var(--ink-2)">Redis</span></div>
+            </div>
+            <div class="lbl" style="font-size:9px;margin-bottom:9px">Web &amp; endpoints</div>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r)"><!--MARK NG var(--s3) 22--><span style="flex:1;font-size:12.5px;color:var(--ink-2)">Nginx</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r)"><!--MARK HE var(--accent) 22--><span style="flex:1;font-size:12.5px;color:var(--ink-2)">HTTP endpoint</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+          <div class="ph"><h2>Docker</h2><span class="sub">4 fields</span></div>
+          <div style="flex:1;min-height:0;padding:14px 16px;display:flex;flex-direction:column;gap:13px">
+            <div><div class="lbl" style="font-size:9px;margin-bottom:7px">Name</div><div class="field" style="height:32px"><span style="color:var(--ink)">orders-api</span></div></div>
+            <div><div class="lbl" style="font-size:9px;margin-bottom:7px">Socket or host</div><div class="field" style="height:32px;border-color:var(--accent)"><span style="color:var(--ink)">unix:///var/run/docker.sock</span></div></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+              <div><div class="lbl" style="font-size:9px;margin-bottom:7px">Team</div><div class="field" style="height:32px"><span style="color:var(--ink)">payments</span></div></div>
+              <div><div class="lbl" style="font-size:9px;margin-bottom:7px">Environment</div><div class="field" style="height:32px"><span style="color:var(--ink)">production</span><!--ICON down 12 var(--faint)--></div></div>
+            </div>
+
+            <div style="margin-top:auto;display:flex;flex-direction:column;gap:11px">
+              <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid color-mix(in srgb, var(--ok) 30%, transparent);border-radius:var(--r);background:color-mix(in srgb, var(--ok) 8%, transparent)">
+                <!--ICON check 14 var(--ok)-->
+                <span class="mono" style="flex:1;font-size:10.5px;color:var(--ok)">connected — 8 containers found</span>
+              </div>
+              <div style="display:flex;gap:8px">
+                <span class="btn" style="flex:1;height:34px">Test again</span>
+                <span class="btn btn-p" style="flex:1.4;height:34px">Add and continue</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

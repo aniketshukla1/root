@@ -1,0 +1,68 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans);position:relative">
+
+  <!-- The ribbon is the first thing to arrive and the last thing to leave. -->
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span class="a-reach" style="animation-delay:120ms;flex-grow:1;background:var(--crit)"></span>
+    <span class="a-reach" style="animation-delay:180ms;flex-grow:3;background:var(--warn)"></span>
+    <span class="a-reach" style="animation-delay:240ms;flex-grow:1;background:var(--faint)"></span>
+    <span class="a-reach" style="animation-delay:300ms;flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="position:absolute;left:0;right:0;top:0;height:560px;pointer-events:none;background:radial-gradient(110% 90% at 50% -12%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 68%)"></div>
+
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;z-index:1;gap:0">
+
+    <!-- The mark draws itself: one root, then the branches reaching out to
+         what they find. It is the product's own gesture, not a spinner. -->
+    <div style="display:grid;place-items:center;width:112px;height:112px;border-radius:var(--r);background:var(--accent);color:var(--on-accent)">
+      <svg viewBox="0 0 24 24" width="68" height="68" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle class="a-pop" cx="5.6" cy="3.7" r="2" fill="currentColor" stroke="none"/>
+        <path class="a-draw" style="--len:14;animation-delay:180ms" d="M5.6 5.7V19.2"/>
+        <path class="a-draw" style="--len:10;animation-delay:520ms" d="M5.6 9.7h9.3"/>
+        <path class="a-draw" style="--len:10;animation-delay:640ms" d="M5.6 14.45h9.3"/>
+        <path class="a-draw" style="--len:10;animation-delay:760ms" d="M5.6 19.2h9.3"/>
+        <circle class="a-pop" style="animation-delay:840ms" cx="17.4" cy="9.7" r="1.7" stroke-width="1.35"/>
+        <circle class="a-pop" style="animation-delay:940ms" cx="17.4" cy="14.45" r="1.7" stroke-width="1.35"/>
+        <circle class="a-pop" style="animation-delay:1040ms" cx="17.4" cy="19.2" r="1.7" stroke-width="1.35"/>
+      </svg>
+    </div>
+
+    <div class="a-wash" style="animation-delay:900ms;margin-top:30px">
+      <span class="disp" style="font-size:80px;font-weight:700;line-height:.84;letter-spacing:-.05em;color:var(--ink)">root</span>
+    </div>
+
+    <p class="a-wash mono" style="animation-delay:1100ms;margin:22px 0 0;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)">
+      Infrastructure intelligence
+    </p>
+
+    <!-- Named steps, not a fake progress bar. Absence is a state here too:
+         the estate is not "loading", it is being reached one collector at a time. -->
+    <div class="a-wash" style="animation-delay:1400ms;margin-top:52px;width:320px;display:flex;flex-direction:column;gap:9px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <!--ICON check 13 var(--ok)-->
+        <span class="mono" style="flex:1;font-size:11px;color:var(--muted)">Signed in to Acme Platform</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <!--ICON check 13 var(--ok)-->
+        <span class="mono" style="flex:1;font-size:11px;color:var(--muted)">Workspace and thresholds loaded</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="width:13px;height:13px;display:grid;place-items:center;flex-shrink:0">
+          <span style="width:7px;height:7px;border-radius:7px;background:var(--accent)"></span>
+        </span>
+        <span class="mono" style="flex:1;font-size:11px;color:var(--ink-2)">Reaching 12 collectors</span>
+        <span class="mono" style="font-size:11px;color:var(--faint)">9 / 12</span>
+      </div>
+
+      <div style="display:flex;height:4px;gap:2px;margin-top:5px">
+        <span class="a-reach" style="animation-delay:1500ms;flex-grow:9;background:var(--ok);border-radius:1px"></span>
+        <span style="flex-grow:3;background:var(--sunk);border-radius:1px"></span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex-shrink:0;display:flex;align-items:center;padding:0 24px 20px;position:relative;z-index:1">
+    <span class="mono" style="font-size:10px;color:var(--faint)">root 2.4.0</span>
+    <span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">acme.root.app</span>
+  </div>
+</div>

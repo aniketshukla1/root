@@ -1,0 +1,313 @@
+<div style="width:1440px;height:1980px;overflow:hidden;background:var(--bg);font-family:var(--sans);padding:48px 52px 44px;display:flex;flex-direction:column;gap:34px">
+
+  <section style="display:flex;align-items:flex-end;gap:40px">
+    <div style="flex:1;min-width:0">
+      <p class="eyebrow" style="margin:0 0 14px">Chart system</p>
+      <h1 class="disp" style="margin:0;font-size:40px;line-height:1.02;color:var(--ink)">One vocabulary,<br>three readers.</h1>
+      <p style="margin:18px 0 0;max-width:640px;font-size:14px;line-height:1.55;color:var(--muted)">
+        The same estate, asked three different questions. A developer wants the tail of a
+        distribution at 14:04; a maintainer wants the shape of the whole estate; management wants to
+        know whether the commitment held. Every chart below draws to the same rules, so a person who
+        learns one has learned all of them.
+      </p>
+    </div>
+    <div class="panel" style="width:376px;padding:16px 18px;flex-shrink:0">
+      <div class="lbl" style="margin-bottom:11px">The rules, in full</div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:11.5px;line-height:1.5;color:var(--muted)">
+        <div style="display:flex;gap:9px"><span class="mono" style="color:var(--accent);flex-shrink:0">01</span><span>A status hue means a state. Nothing else may wear one.</span></div>
+        <div style="display:flex;gap:9px"><span class="mono" style="color:var(--accent);flex-shrink:0">02</span><span>Series hues carry identity, in fixed order, never sorted by value.</span></div>
+        <div style="display:flex;gap:9px"><span class="mono" style="color:var(--accent);flex-shrink:0">03</span><span>Nominal is quiet. Saturation is reserved for what is wrong.</span></div>
+        <div style="display:flex;gap:9px"><span class="mono" style="color:var(--accent);flex-shrink:0">04</span><span>Motion explains where a value came from, and never loops.</span></div>
+        <div style="display:flex;gap:9px"><span class="mono" style="color:var(--accent);flex-shrink:0">05</span><span>A measure is shown against its limit, or not at all.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ developer -->
+  <section>
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px">
+      <span class="disp" style="font-size:17px;color:var(--ink)">For the developer</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--faint)">one service, one window, full resolution</span>
+      <span style="flex:1;height:1px;background:var(--line);align-self:center"></span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:13px">
+
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph">
+          <h2>Metric over time</h2><span class="sub">cpu · orders-api · last hour</span>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:11px">
+            <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:0;border-top:1px dashed var(--accent)"></span>deploy</span>
+            <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:0;border-top:1px dashed var(--warn)"></span>threshold</span>
+          </div>
+        </div>
+        <div style="padding:14px 16px 12px">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+            <span class="mono" style="font-size:30px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--warn)">62%</span>
+            <span class="mono" style="font-size:11px;color:var(--crit)">▲ 41 points since deploy</span>
+            <span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">warn &gt; 75%</span>
+          </div>
+          <div class="grat"><!--AREA 660 140 var(--warn) 21 spike 0.62--></div>
+          <div style="margin-top:2px"><!--TICKS 660 60 10--></div>
+          <div style="display:flex;justify-content:space-between;margin-top:5px">
+            <span class="mono" style="font-size:9.5px;color:var(--faint)">13:22</span>
+            <span class="mono" style="font-size:9.5px;color:var(--faint)">13:37</span>
+            <span class="mono" style="font-size:9.5px;color:var(--faint)">13:52</span>
+            <span class="mono" style="font-size:9.5px;color:var(--faint)">14:07</span>
+            <span class="mono" style="font-size:9.5px;color:var(--ink-2)">now</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph"><h2>Latency percentiles</h2><span class="sub">p50 · p90 · p99</span></div>
+        <div style="padding:14px 16px 12px">
+          <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:12px">
+            <div><div class="mono" style="font-size:19px;font-weight:500;line-height:1;color:var(--ink)">38ms</div><div class="lbl" style="margin-top:5px;font-size:9px">p50</div></div>
+            <div><div class="mono" style="font-size:19px;font-weight:500;line-height:1;color:var(--ink-2)">210ms</div><div class="lbl" style="margin-top:5px;font-size:9px">p90</div></div>
+            <div><div class="mono" style="font-size:19px;font-weight:500;line-height:1;color:var(--crit)">30.0s</div><div class="lbl" style="margin-top:5px;font-size:9px">p99</div></div>
+          </div>
+          <div class="grat"><!--FAN 400 118 5--></div>
+          <p style="margin:11px 0 0;font-size:11px;line-height:1.5;color:var(--faint)">The median never moved. Averaging would have hidden this entirely.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px;margin-top:13px">
+
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph"><h2>Log severity</h2><span class="sub">128k lines</span></div>
+        <div style="padding:13px 15px 12px">
+          <div class="grat"><!--HIST 380 92 40 23--></div>
+          <div style="margin-top:2px"><!--TICKS 380 40 10--></div>
+          <div style="display:flex;gap:11px;margin-top:9px">
+            <span style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:8px;height:8px;background:var(--crit)"></span>error</span>
+            <span style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:8px;height:8px;background:var(--warn)"></span>warn</span>
+            <span style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:8px;height:8px;background:var(--lvl-info)"></span>info</span>
+            <span style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:8px;height:8px;background:var(--lvl-debug)"></span>debug</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph"><h2>Latency vs load</h2><span class="sub">1 dot = 1 request</span></div>
+        <div style="padding:13px 15px 12px">
+          <div class="grat"><!--SCATTER 380 118 9 150--></div>
+          <div style="display:flex;justify-content:space-between;margin-top:7px">
+            <span class="mono" style="font-size:9.5px;color:var(--faint)">0 req/s</span>
+            <span class="mono" style="font-size:9.5px;color:var(--faint)">4.2k req/s</span>
+          </div>
+          <p style="margin:9px 0 0;font-size:11px;line-height:1.5;color:var(--faint)">Slow requests cluster away from peak load, so this is not saturation.</p>
+        </div>
+      </div>
+
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph"><h2>Noisiest sources</h2><span class="sub">errors, last hour</span></div>
+        <div style="padding:15px 15px 12px;display:flex;flex-direction:column;gap:11px">
+          <!--HBARS-->
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ maintainer -->
+  <section>
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px">
+      <span class="disp" style="font-size:17px;color:var(--ink)">For the maintainer</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--faint)">the whole estate, and what it is running out of</span>
+      <span style="flex:1;height:1px;background:var(--line);align-self:center"></span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.45fr 1fr;gap:13px">
+
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph">
+          <h2>Lanes</h2><span class="sub">state per connection · last hour</span>
+          <div style="margin-left:auto;display:flex;gap:10px">
+            <span style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:8px;background:var(--lane-ok)"></span>healthy</span>
+            <span style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:8px;background:var(--warn)"></span>degraded</span>
+            <span style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:8px;background:var(--crit)"></span>down</span>
+            <span style="display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:8px;background:var(--cell-todo);background-image:repeating-linear-gradient(45deg,var(--faint) 0 1.6px,transparent 1.6px 5px)"></span>no data</span>
+          </div>
+        </div>
+        <div style="padding:12px 16px 13px;display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT down 7--><span class="mono" style="font-size:10.5px;color:var(--ink)">orders-api</span></span><span style="flex:1"><!--LANE 620 60 healthy:0-42,degraded:42-47,down:47-60--></span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT degraded 7--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">payments-db</span></span><span style="flex:1"><!--LANE 620 60 healthy:0-46,degraded:46-60--></span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT degraded 7--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">search-cluster</span></span><span style="flex:1"><!--LANE 620 60 healthy:0-34,degraded:34-60--></span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT degraded 7--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">ci-pipeline</span></span><span style="flex:1"><!--LANE 620 60 healthy:0-22,degraded:22-27,healthy:27-52,degraded:52-60--></span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT unknown 7--><span class="mono" style="font-size:10.5px;color:var(--faint)">queue-broker</span></span><span style="flex:1"><!--LANE 620 60 healthy:0-56,unknown:56-60--></span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT healthy 7--><span class="mono" style="font-size:10.5px;color:var(--muted)">edge-proxy</span></span><span style="flex:1"><!--LANE 620 60 healthy:0-60--></span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT healthy 7--><span class="mono" style="font-size:10.5px;color:var(--muted)">events-bus</span></span><span style="flex:1"><!--LANE 620 60 healthy:0-60--></span></div>
+          <div style="margin-top:5px;display:flex;gap:10px"><span style="width:118px;flex-shrink:0"></span><span style="flex:1"><!--TICKS 620 60 10--></span></div>
+        </div>
+      </div>
+
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph"><h2>Headroom</h2><span class="sub">measure against limit</span></div>
+        <div style="padding:15px 16px 14px;display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:7px">
+              <span class="mono" style="font-size:11px;color:var(--ink-2)">orders-api</span>
+              <span class="mono" style="font-size:11px;color:var(--faint)">memory</span>
+              <span class="mono" style="margin-left:auto;font-size:11px;color:var(--crit)">7.4G / 8G</span>
+            </div>
+            <!--BULLET 92 100 crit 0-->
+          </div>
+          <div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:7px">
+              <span class="mono" style="font-size:11px;color:var(--ink-2)">search-cluster</span>
+              <span class="mono" style="font-size:11px;color:var(--faint)">heap</span>
+              <span class="mono" style="margin-left:auto;font-size:11px;color:var(--warn)">81% / 85%</span>
+            </div>
+            <!--BULLET 81 85 warn 80-->
+          </div>
+          <div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:7px">
+              <span class="mono" style="font-size:11px;color:var(--ink-2)">payments-db</span>
+              <span class="mono" style="font-size:11px;color:var(--faint)">connections</span>
+              <span class="mono" style="margin-left:auto;font-size:11px;color:var(--warn)">318 / 400</span>
+            </div>
+            <!--BULLET 79 100 warn 160-->
+          </div>
+          <div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:7px">
+              <span class="mono" style="font-size:11px;color:var(--ink-2)">edge-proxy</span>
+              <span class="mono" style="font-size:11px;color:var(--faint)">worker slots</span>
+              <span class="mono" style="margin-left:auto;font-size:11px;color:var(--muted)">412 / 1024</span>
+            </div>
+            <!--BULLET 40 100 ok 240-->
+          </div>
+          <div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:7px">
+              <span class="mono" style="font-size:11px;color:var(--ink-2)">session-cache</span>
+              <span class="mono" style="font-size:11px;color:var(--faint)">memory</span>
+              <span class="mono" style="margin-left:auto;font-size:11px;color:var(--muted)">1.4G / 4G</span>
+            </div>
+            <!--BULLET 35 100 ok 320-->
+          </div>
+          <p style="margin:2px 0 0;font-size:11px;line-height:1.5;color:var(--faint)">The tick is the limit. A bar without one is a number nobody can act on.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:13px">
+      <div class="ph">
+        <h2>Component matrix</h2><span class="sub">148 across 9 connections · one square per component</span>
+        <div style="margin-left:auto;display:flex;gap:11px">
+          <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:9px;background:var(--crit)"></span>down</span>
+          <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:9px;background:var(--warn)"></span>degraded</span>
+          <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:9px;background:var(--faint)"></span>unknown</span>
+          <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:9px;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span>healthy</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:24px;padding:13px 14px;flex-wrap:wrap">
+        <div><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><!--MARK DK var(--s1) 14--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">orders-api</span><span class="mono" style="font-size:10px;color:var(--faint)">8</span></div><div style="display:flex;flex-wrap:wrap;gap:3px;max-width:120px"><!--CELLS 8 3 4--></div></div>
+        <div><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><!--MARK K8 var(--s7) 14--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">checkout-web</span><span class="mono" style="font-size:10px;color:var(--faint)">24</span></div><div style="display:flex;flex-wrap:wrap;gap:3px;max-width:222px"><!--CELLS 24 7 1--></div></div>
+        <div><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><!--MARK ES var(--s4) 14--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">search-cluster</span><span class="mono" style="font-size:10px;color:var(--faint)">18</span></div><div style="display:flex;flex-wrap:wrap;gap:3px;max-width:171px"><!--CELLS 18 11 3--></div></div>
+        <div><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><!--MARK JK var(--s5) 14--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">ci-pipeline</span><span class="mono" style="font-size:10px;color:var(--faint)">16</span></div><div style="display:flex;flex-wrap:wrap;gap:3px;max-width:154px"><!--CELLS 16 5 2--></div></div>
+        <div><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><!--MARK KF var(--s8) 14--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">events-bus</span><span class="mono" style="font-size:10px;color:var(--faint)">21</span></div><div style="display:flex;flex-wrap:wrap;gap:3px;max-width:171px"><!--CELLS 21 13 0--></div></div>
+        <div><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><!--MARK NG var(--s3) 14--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">edge-proxy</span><span class="mono" style="font-size:10px;color:var(--faint)">12</span></div><div style="display:flex;flex-wrap:wrap;gap:3px;max-width:120px"><!--CELLS 12 17 0--></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════ management -->
+  <section>
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px">
+      <span class="disp" style="font-size:17px;color:var(--ink)">For management</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--faint)">did the commitment hold, and is it getting better</span>
+      <span style="flex:1;height:1px;background:var(--line);align-self:center"></span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:13px">
+
+      <div class="panel" style="padding:18px 20px">
+        <div class="lbl">Availability · 30 days</div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin-top:12px">
+          <span class="mono" style="font-size:34px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--ink)">99.82%</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:9px">
+          <span class="mono" style="font-size:11px;color:var(--crit)">▼ 0.11</span>
+          <span class="mono" style="font-size:11px;color:var(--faint)">vs 30 days prior</span>
+        </div>
+        <div style="margin-top:16px"><!--SPARK 240 40 var(--s1) 61 fall--></div>
+        <div style="display:flex;justify-content:space-between;margin-top:7px">
+          <span class="mono" style="font-size:9.5px;color:var(--faint)">target 99.9%</span>
+          <span class="mono" style="font-size:9.5px;color:var(--crit)">missed</span>
+        </div>
+      </div>
+
+      <div class="panel" style="padding:18px 20px;display:flex;flex-direction:column;align-items:center">
+        <div class="lbl" style="align-self:flex-start">Error budget</div>
+        <div style="position:relative;margin-top:14px">
+          <!--ARC 128 34 warn-->
+          <div style="position:absolute;inset:0;display:grid;place-items:center">
+            <div style="text-align:center">
+              <div class="mono" style="font-size:24px;font-weight:500;line-height:1;color:var(--ink)">34%</div>
+              <div class="lbl" style="margin-top:5px;font-size:9px">remaining</div>
+            </div>
+          </div>
+        </div>
+        <p style="margin:14px 0 0;font-size:11px;line-height:1.5;color:var(--faint);text-align:center">
+          9.4 of 14.4 minutes spent. At the current burn rate the month runs out on the 24th.
+        </p>
+      </div>
+
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph"><h2>Availability by month</h2><span class="sub">12 months · stacked by state</span></div>
+        <div style="padding:16px 18px 14px">
+          <div style="display:flex;gap:7px;align-items:flex-end"><!--STACKBARS--></div>
+          <div style="display:flex;gap:13px;margin-top:12px">
+            <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:9px;background:var(--ok)"></span>healthy</span>
+            <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:9px;background:var(--warn)"></span>degraded</span>
+            <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:9px;background:var(--crit)"></span>down</span>
+            <span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">worst month: Aug, 4% down</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:13px;margin-top:13px">
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph"><h2>Incident calendar</h2><span class="sub">12 weeks · darkest is worst</span></div>
+        <div style="padding:16px 18px 15px">
+          <div style="display:flex;gap:14px;align-items:flex-start">
+            <div style="display:flex;flex-direction:column;gap:3px;padding-top:0">
+              <span class="mono" style="height:11px;font-size:9px;line-height:11px;color:var(--faint)">M</span>
+              <span class="mono" style="height:11px;font-size:9px;line-height:11px;color:transparent">T</span>
+              <span class="mono" style="height:11px;font-size:9px;line-height:11px;color:var(--faint)">W</span>
+              <span class="mono" style="height:11px;font-size:9px;line-height:11px;color:transparent">T</span>
+              <span class="mono" style="height:11px;font-size:9px;line-height:11px;color:var(--faint)">F</span>
+              <span class="mono" style="height:11px;font-size:9px;line-height:11px;color:transparent">S</span>
+              <span class="mono" style="height:11px;font-size:9px;line-height:11px;color:transparent">S</span>
+            </div>
+            <!--CALENDAR 12 29-->
+          </div>
+          <div style="display:flex;align-items:center;gap:13px;margin-top:14px">
+            <span class="mono" style="font-size:10px;color:var(--faint)">17 incidents · 3 at critical</span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)">
+              quiet
+              <span style="width:11px;height:11px;background:var(--cell-todo)"></span>
+              <span style="width:11px;height:11px;background:color-mix(in srgb, var(--warn) 35%, var(--cell-todo))"></span>
+              <span style="width:11px;height:11px;background:var(--warn)"></span>
+              <span style="width:11px;height:11px;background:var(--crit)"></span>
+              worst
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="ph"><h2>Time to recover</h2><span class="sub">median, per month</span></div>
+        <div style="padding:16px 18px 14px">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px">
+            <span class="mono" style="font-size:26px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--ink)">18m</span>
+            <span class="mono" style="font-size:11px;color:var(--ok)">▼ 7m faster</span>
+          </div>
+          <div class="grat"><!--AREA 300 88 var(--ok) 44 fall--></div>
+          <p style="margin:11px 0 0;font-size:11px;line-height:1.5;color:var(--faint)">Recovery has shortened every month since March. This is the number that says whether the tooling is working.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>

@@ -1,0 +1,176 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span>
+    <span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:1;background:var(--faint)"></span>
+    <span style="flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <!--RAIL services-->
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:13px;height:52px;flex-shrink:0;padding:0 20px">
+        <h1 class="disp" style="margin:0;font-size:22px;color:var(--ink)">Services</h1>
+        <span class="mono" style="font-size:11px;color:var(--faint)">12 connections · 148 components · 9 production</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <div class="field" style="width:190px"><!--ICON search 13 var(--faint)--><span style="color:var(--faint)">Filter</span></div>
+          <div class="seg"><span class="on">All</span><span>Problems</span><span>Production</span></div>
+          <!--ASK-->
+          <span class="btn btn-p"><!--ICON plus 13 currentColor-->Add connection</span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;overflow:hidden;padding:0 20px 16px;display:flex;flex-direction:column;gap:13px">
+
+        <!-- Sorted worst-first: the estate's problems are the reason this
+             screen is open, so they are never below the fold. -->
+        <section class="panel" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+          <div class="th" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px">
+            <span></span><span class="lbl">Name</span><span class="lbl">Type</span><span class="lbl">Health</span>
+            <span class="lbl">Summary</span><span class="lbl">Team</span>
+            <span class="lbl" style="text-align:right">Parts</span><span class="lbl" style="text-align:right">Open</span>
+            <span class="lbl">Trend</span><span class="lbl" style="text-align:right">Checked</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px;border-top:none;border-left:2px solid var(--crit);padding-left:10px;background:color-mix(in srgb, var(--crit) 5%, transparent)">
+            <!--DOT down 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK DK var(--s1) 18--><span style="font-size:12.5px;color:var(--ink)">orders-api</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">Docker</span><!--BADGE down 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">3 of 8 containers exited</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">payments</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">8</span>
+            <span class="mono" style="font-size:11px;color:var(--crit);text-align:right">2</span>
+            <!--SPARK 100 22 var(--s1) 21 spike-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">6s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px;border-left:2px solid var(--warn);padding-left:10px;background:color-mix(in srgb, var(--warn) 4%, transparent)">
+            <!--DOT degraded 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK PG var(--s6) 18--><span style="font-size:12.5px;color:var(--ink)">payments-db</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">Postgres</span><!--BADGE degraded 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">replication lag 42s on replica-2</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">payments</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">6</span>
+            <span class="mono" style="font-size:11px;color:var(--warn);text-align:right">1</span>
+            <!--SPARK 100 22 var(--s6) 34 rise-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">11s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px;border-left:2px solid var(--warn);padding-left:10px;background:color-mix(in srgb, var(--warn) 4%, transparent)">
+            <!--DOT degraded 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK ES var(--s4) 18--><span style="font-size:12.5px;color:var(--ink)">search-cluster</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">Elasticsearch</span><!--BADGE degraded 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">yellow · 2 unassigned shards</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">search</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">18</span>
+            <span class="mono" style="font-size:11px;color:var(--warn);text-align:right">1</span>
+            <!--SPARK 100 22 var(--s4) 57 rise-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">14s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px;border-left:2px solid var(--warn);padding-left:10px;background:color-mix(in srgb, var(--warn) 4%, transparent)">
+            <!--DOT degraded 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK JK var(--s5) 18--><span style="font-size:12.5px;color:var(--ink)">ci-pipeline</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">Jenkins</span><!--BADGE degraded 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">build #4821 failed on main</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">platform</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">16</span>
+            <span class="mono" style="font-size:11px;color:var(--warn);text-align:right">1</span>
+            <!--SPARK 100 22 var(--s5) 88 step-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">31s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px">
+            <!--DOT unknown 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK RB var(--s2) 18--><span style="font-size:12.5px;color:var(--ink-2)">queue-broker</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">RabbitMQ</span><!--BADGE unknown 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">collector unreachable — last seen 4m ago</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">platform</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">9</span>
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">—</span>
+            <span class="mono" style="font-size:11px;color:var(--faint)">no data</span>
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">4m</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px">
+            <!--DOT healthy 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK NG var(--s3) 18--><span style="font-size:12.5px;color:var(--ink)">edge-proxy</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">Nginx</span><!--BADGE healthy 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">12 upstreams healthy · 4.2k req/s</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">platform</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">12</span>
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">—</span>
+            <!--SPARK 100 22 var(--s3) 12 flat-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">9s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px">
+            <!--DOT healthy 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK K8 var(--s7) 18--><span style="font-size:12.5px;color:var(--ink)">checkout-web</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">Kubernetes</span><!--BADGE healthy 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">24 pods ready · 3 nodes</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">checkout</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">24</span>
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">—</span>
+            <!--SPARK 100 22 var(--s7) 26 flat-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">7s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px">
+            <!--DOT healthy 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK KF var(--s8) 18--><span style="font-size:12.5px;color:var(--ink)">events-bus</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">Kafka</span><!--BADGE healthy 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">18 topics · consumer lag 1.2k</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">data</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">21</span>
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">—</span>
+            <!--SPARK 100 22 var(--s8) 44 fall-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">12s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px">
+            <!--DOT healthy 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK RD var(--s2) 18--><span style="font-size:12.5px;color:var(--ink)">session-cache</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">Redis</span><!--BADGE healthy 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">hit rate 99.1% · 2 replicas in sync</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">platform</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">3</span>
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">—</span>
+            <!--SPARK 100 22 var(--s2) 71 flat-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">8s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px">
+            <!--DOT healthy 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK MG var(--s3) 18--><span style="font-size:12.5px;color:var(--ink)">billing-mongo</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">MongoDB</span><!--BADGE healthy 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">primary healthy · 2 secondaries</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">billing</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">3</span>
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">—</span>
+            <!--SPARK 100 22 var(--s3) 91 flat-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">15s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px">
+            <!--DOT healthy 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK PM var(--s4) 18--><span style="font-size:12.5px;color:var(--ink)">metrics-store</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">Prometheus</span><!--BADGE healthy 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">42 targets up · 0 down</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">platform</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">42</span>
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">—</span>
+            <!--SPARK 100 22 var(--s4) 103 flat-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">20s</span>
+          </div>
+
+          <div class="tr" style="grid-template-columns:20px 1.5fr 118px 96px 1fr 92px 78px 88px 108px 84px;gap:14px;height:38px">
+            <!--DOT healthy 9--><span style="display:flex;align-items:center;gap:8px"><!--MARK HE var(--accent) 18--><span style="font-size:12.5px;color:var(--ink)">status-page</span></span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">HTTP endpoint</span><!--BADGE healthy 8-->
+            <span class="mono" style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">200 in 42ms · body matched</span>
+            <span class="mono" style="font-size:11px;color:var(--muted)">platform</span>
+            <span class="mono" style="font-size:11px;color:var(--muted);text-align:right">1</span>
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">—</span>
+            <!--SPARK 100 22 var(--accent) 118 flat-->
+            <span class="mono" style="font-size:11px;color:var(--faint);text-align:right">15s</span>
+          </div>
+
+          <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line)">
+            <span class="mono" style="font-size:10px;color:var(--faint)">12 of 12 shown · sorted worst first</span>
+            <span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">Adding a service type is a backend-only change — this table enumerates nothing.</span>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>

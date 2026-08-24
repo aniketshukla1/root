@@ -1,0 +1,137 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--page);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span>
+    <span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:1;background:var(--unknown)"></span>
+    <span style="flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <!--RAIL assistant-->
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+
+      <header style="display:flex;align-items:center;gap:12px;height:46px;flex-shrink:0;padding:0 18px;border-bottom:1px solid var(--line)">
+        <h1 class="disp" style="margin:0;font-size:16px;font-weight:600;color:var(--ink)">Assistant</h1>
+        <span class="tag" style="color:var(--ok);border-color:color-mix(in oklab,var(--ok) 30%,transparent);background:color-mix(in oklab,var(--ok) 11%,transparent)">read-only</span>
+        <span style="font-size:11.5px;color:var(--ink4)">reads your monitoring data through a fixed set of tools</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <span class="btn btn-g">Clear conversation</span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;overflow:hidden;padding:20px 18px 0">
+        <div style="width:100%;max-width:840px;display:flex;flex-direction:column;gap:18px">
+
+          <div style="display:flex;justify-content:flex-end">
+            <div style="max-width:70%;padding:9px 13px;border-radius:12px 12px 3px 12px;background:var(--raised);border:1px solid var(--line2);font-size:13px;color:var(--ink)">
+              What is failing right now, and which team owns it?
+            </div>
+          </div>
+
+          <div style="display:flex;gap:11px">
+            <span style="flex-shrink:0;color:var(--accent);margin-top:2px"><!--ICON assistant 17 currentColor--></span>
+            <div style="flex:1;min-width:0">
+
+              <!-- The investigation is shown, not summarised away: each step names
+                   the tool it called and what came back. -->
+              <div style="border:1px solid var(--line);border-radius:9px;background:var(--panel);overflow:hidden;margin-bottom:12px">
+                <div style="display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid var(--line)">
+                  <span class="lbl">Investigation</span>
+                  <span class="mono" style="font-size:10px;color:var(--ink4)">5 tool calls · 3.2s</span>
+                  <span style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--ink4)">collapse<!--ICON up 11 currentColor--></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding:6px 11px">
+                  <!--ICON check 12 var(--ok)-->
+                  <span class="mono" style="font-size:10.5px;color:var(--accent);width:130px">list_alerts</span>
+                  <span class="mono" style="flex:1;min-width:0;font-size:10.5px;color:var(--ink4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">4 active · 2 critical · 2 unacknowledged</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding:6px 11px;border-top:1px solid rgba(255,255,255,.04)">
+                  <!--ICON check 12 var(--ok)-->
+                  <span class="mono" style="font-size:10.5px;color:var(--accent);width:130px">get_snapshot</span>
+                  <span class="mono" style="flex:1;min-width:0;font-size:10.5px;color:var(--ink4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">orders-api → down · 5 of 8 containers running</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding:6px 11px;border-top:1px solid rgba(255,255,255,.04)">
+                  <!--ICON check 12 var(--ok)-->
+                  <span class="mono" style="font-size:10.5px;color:var(--accent);width:130px">search_logs</span>
+                  <span class="mono" style="flex:1;min-width:0;font-size:10.5px;color:var(--ink4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">code=137 → 9 lines in 14m, all orders-worker-*</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding:6px 11px;border-top:1px solid rgba(255,255,255,.04)">
+                  <!--ICON check 12 var(--ok)-->
+                  <span class="mono" style="font-size:10.5px;color:var(--accent);width:130px">inspect_component</span>
+                  <span class="mono" style="flex:1;min-width:0;font-size:10.5px;color:var(--ink4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">orders-worker-3 → memory limit 8G, peak 7.98G</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding:6px 11px;border-top:1px solid rgba(255,255,255,.04)">
+                  <!--ICON check 12 var(--ok)-->
+                  <span class="mono" style="font-size:10.5px;color:var(--accent);width:130px">list_changes</span>
+                  <span class="mono" style="flex:1;min-width:0;font-size:10.5px;color:var(--ink4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">orders-api 2.14.2 → 2.14.3 at 14:00, observed</span>
+                </div>
+              </div>
+
+              <div style="font-size:13px;line-height:1.62;color:var(--ink2)">
+                <p style="margin:0 0 11px">
+                  One connection is down: <strong style="color:var(--ink);font-weight:500">orders-api</strong>, owned by
+                  <strong style="color:var(--ink);font-weight:500">payments</strong>. Three of its eight containers are
+                  exiting on <span class="mono" style="font-size:12px;color:var(--ink)">code 137</span> — the kernel OOM
+                  killer, not the application.
+                </p>
+                <p style="margin:0 0 11px">
+                  The restarts begin at <span class="mono" style="font-size:12px;color:var(--ink)">14:04</span>, four
+                  minutes after <span class="mono" style="font-size:12px;color:var(--ink)">2.14.3</span> was deployed.
+                  Memory on <span class="mono" style="font-size:12px;color:var(--ink)">orders-worker-3</span> climbs to
+                  7.98G against an 8G limit and never recovers between restarts, so this reads as a regression in the new
+                  image rather than a load spike — request volume is <em style="color:var(--ink3)">down</em> 12% over the
+                  same window.
+                </p>
+                <div style="border-left:2px solid var(--warn);padding:9px 13px;border-radius:0 8px 8px 0;background:color-mix(in oklab,var(--warn) 5%,transparent);margin-bottom:11px">
+                  <p style="margin:0;font-size:12.5px;color:var(--ink2)">
+                    <strong style="color:var(--ink);font-weight:500">payments-db is also degraded</strong> — replication
+                    lag 42s. That lag starts at 14:06, after the first restart storm, so it is most likely downstream of
+                    this rather than a second fault.
+                  </p>
+                </div>
+                <p style="margin:0 0 9px;font-size:12.5px;color:var(--ink3)">Evidence:</p>
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <div style="display:flex;align-items:center;gap:9px;padding:6px 10px;border:1px solid var(--line);border-radius:7px;background:var(--panel)">
+                    <span class="mono" style="font-size:10px;color:var(--ink4)">14:22:07</span>
+                    <span class="mono" style="font-size:10.5px;flex:1;min-width:0;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">orders-worker-3 · container exited: code=137 reason=OOMKilled</span>
+                    <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--accent)">open<!--ICON open 10 currentColor--></span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:9px;padding:6px 10px;border:1px solid var(--line);border-radius:7px;background:var(--panel)">
+                    <span class="mono" style="font-size:10px;color:var(--ink4)">14:00:12</span>
+                    <span class="mono" style="font-size:10.5px;flex:1;min-width:0;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">orders-api · revision 2.14.2 → 2.14.3 (observed)</span>
+                    <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--accent)">open<!--ICON open 10 currentColor--></span>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display:flex;gap:7px;margin-top:14px">
+                <span class="btn">Correlate 14:04 across every connection</span>
+                <span class="btn">Show memory since the deploy</span>
+                <span class="btn btn-g">Copy findings</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div style="flex-shrink:0;display:flex;justify-content:center;padding:14px 18px 18px">
+        <div style="width:100%;max-width:840px">
+          <div style="display:flex;gap:6px;margin-bottom:9px">
+            <span class="tag" style="height:22px;padding:0 9px;font-size:10.5px;color:var(--ink3)">Is memory trending up on the database?</span>
+            <span class="tag" style="height:22px;padding:0 9px;font-size:10.5px;color:var(--ink3)">Which containers restarted recently?</span>
+            <span class="tag" style="height:22px;padding:0 9px;font-size:10.5px;color:var(--ink3)">What changed before 14:04?</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 11px 9px 13px;border:1px solid var(--line2);border-radius:11px;background:var(--panel);box-shadow:inset 0 1px 0 rgba(255,255,255,.045)">
+            <span style="flex:1;font-size:13px;color:var(--ink4)">Ask about your infrastructure…</span>
+            <span class="mono" style="font-size:10px;color:var(--ink4)">claude · read-only</span>
+            <span class="btn btn-p" style="height:26px;padding:0 11px">Send</span>
+          </div>
+          <p style="margin:8px 2px 0;font-size:10px;color:var(--ink4)">The assistant reads live snapshots, metric history, logs and alerts. It cannot change anything while read-only is on.</p>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>

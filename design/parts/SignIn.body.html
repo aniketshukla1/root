@@ -1,0 +1,67 @@
+<div style="width:1440px;height:900px;display:flex;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+
+  <!-- Left: the promise, stated once, with the estate it is about. -->
+  <div style="width:620px;flex-shrink:0;display:flex;flex-direction:column;justify-content:space-between;padding:48px 52px;border-right:1px solid var(--line);position:relative;overflow:hidden">
+    <div style="position:absolute;left:0;right:0;top:0;height:420px;pointer-events:none;background:radial-gradient(120% 90% at 20% -10%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 66%)"></div>
+
+    <div style="display:flex;align-items:center;gap:11px;position:relative;z-index:1">
+      <span style="display:grid;place-items:center;width:32px;height:32px;border-radius:var(--r);background:var(--accent);color:var(--on-accent)"><!--ICON mark 20 currentColor--></span>
+      <span class="mono" style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink)">root</span>
+    </div>
+
+    <div style="position:relative;z-index:1">
+      <h1 class="disp" style="margin:0;font-size:44px;line-height:1.04;color:var(--ink);max-width:15ch">One window on the whole estate.</h1>
+      <p style="margin:20px 0 0;max-width:46ch;font-size:15px;line-height:1.6;color:var(--muted)">
+        Live health, metric history, a unified log stream, and an assistant that investigates rather
+        than guesses — across every service you run.
+      </p>
+
+      <div style="margin-top:34px;display:flex;flex-direction:column;gap:5px;max-width:420px">
+        <div style="display:flex;align-items:center;gap:11px"><span style="width:100px;flex-shrink:0"><span class="mono" style="font-size:10px;color:var(--faint)">orders-api</span></span><span style="flex:1"><!--LANE 300 60 healthy:0-42,degraded:42-47,down:47-60--></span></div>
+        <div style="display:flex;align-items:center;gap:11px"><span style="width:100px;flex-shrink:0"><span class="mono" style="font-size:10px;color:var(--faint)">payments-db</span></span><span style="flex:1"><!--LANE 300 60 healthy:0-46,degraded:46-60--></span></div>
+        <div style="display:flex;align-items:center;gap:11px"><span style="width:100px;flex-shrink:0"><span class="mono" style="font-size:10px;color:var(--faint)">edge-proxy</span></span><span style="flex:1"><!--LANE 300 60 healthy:0-60--></span></div>
+        <div style="display:flex;align-items:center;gap:11px"><span style="width:100px;flex-shrink:0"><span class="mono" style="font-size:10px;color:var(--faint)">events-bus</span></span><span style="flex:1"><!--LANE 300 60 healthy:0-60--></span></div>
+      </div>
+    </div>
+
+    <p class="mono" style="margin:0;font-size:10px;color:var(--faint);position:relative;z-index:1">SOC 2 Type II · data encrypted at rest and in transit</p>
+  </div>
+
+  <!-- Right: one job. -->
+  <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;padding:48px">
+    <div style="width:380px">
+      <h2 class="disp" style="margin:0;font-size:26px;color:var(--ink)">Sign in</h2>
+      <p style="margin:9px 0 0;font-size:13px;color:var(--muted)">Use your work email, or continue with your provider.</p>
+
+      <div style="margin-top:28px;display:flex;flex-direction:column;gap:11px">
+        <div>
+          <div class="lbl" style="font-size:9px;margin-bottom:7px">Work email</div>
+          <div class="field" style="height:38px;font-size:13px;border-color:var(--accent)"><span style="color:var(--ink)">aniket@acme.io</span></div>
+        </div>
+        <div>
+          <div style="display:flex;align-items:baseline;margin-bottom:7px">
+            <span class="lbl" style="font-size:9px">Password</span>
+            <a href="#" class="mono" style="margin-left:auto;font-size:10px">Forgot?</a>
+          </div>
+          <div class="field" style="height:38px;font-size:13px"><span style="color:var(--muted);letter-spacing:.2em">••••••••••••</span></div>
+        </div>
+        <span class="btn btn-p" style="height:38px;margin-top:5px;font-size:12px">Sign in</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;margin:24px 0">
+        <span style="flex:1;height:1px;background:var(--line)"></span>
+        <span class="mono" style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)">or</span>
+        <span style="flex:1;height:1px;background:var(--line)"></span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <span class="btn" style="height:36px;font-size:12px;justify-content:flex-start;gap:10px;padding:0 13px"><!--ICON services 14 var(--muted)-->Continue with SAML SSO</span>
+        <span class="btn" style="height:36px;font-size:12px;justify-content:flex-start;gap:10px;padding:0 13px"><!--ICON open 14 var(--muted)-->Continue with Google Workspace</span>
+      </div>
+
+      <p style="margin:26px 0 0;font-size:11.5px;line-height:1.55;color:var(--faint)">
+        New here? <a href="#">Create a workspace</a> — connect your first service in under a minute.
+      </p>
+    </div>
+  </div>
+</div>

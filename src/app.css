@@ -1,0 +1,348 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------- design tokens
+ *
+ * Surfaces, ink and radii follow the field-guide HUD: a blue-black ground,
+ * borders doing the work instead of shadows, 3px corners, and mono as the
+ * chrome typeface — labels, buttons and panel titles are all mono with wide
+ * tracking, which is what makes the surface read as an instrument.
+ *
+ * Three rules govern every colour here, and they are absolute:
+ *
+ *   1. Status hues (ok / warn / serious / crit) are reserved. Nothing else may
+ *      use them, so a colour that looks like an alarm always is one. This is
+ *      also why the accent is azure rather than a green: green already means
+ *      healthy, and an accent you can click must never be mistakable for a
+ *      state.
+ *   2. Series hues carry identity only, never state. The order is fixed and
+ *      assigned in sequence — never cycled, never sorted by value.
+ *   3. Everything else is neutral ink. Text never wears a series colour.
+ *
+ * Both themes define the complete set. Dark is the default; light is warm
+ * paper rather than cold white, because a dark HUD inverted onto white reads
+ * as a mistake and on paper it reads as printed.
+ */
+@theme {
+  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* surfaces, lightest-on-top */
+  --color-page: #0a0e14;
+  --color-panel: #0c1219;
+  --color-sunk: #111a24;
+  --color-raised: #141e29;
+  --color-overlay: #181f28;
+
+  /* hairlines */
+  --color-line: #1c2530;
+  --color-line-soft: #18222e;
+  --color-line-strong: #2b3846;
+
+  /* ink */
+  --color-ink: #f0f5fa;
+  --color-ink-2: #a9b8ca;
+  --color-ink-3: #8496ad;
+  --color-ink-4: #6f8095;
+
+  /* interaction */
+  --color-accent: #4cc2ff;
+  --color-accent-dim: #1c8fd6;
+  --color-on-accent: #04121c;
+
+  /* status — reserved, never used for identity */
+  --color-ok: #5fc48c;
+  --color-warn: #d9a84e;
+  --color-serious: #dd8a52;
+  --color-crit: #e0705a;
+  --color-unknown: #6f8095;
+
+  /* categorical identity — fixed order */
+  --color-series-1: #5a9ee0;
+  --color-series-2: #d98a5a;
+  --color-series-3: #4db89a;
+  --color-series-4: #c9a44e;
+  --color-series-5: #d47fa8;
+  --color-series-6: #8d92e8;
+  --color-series-7: #57bcc4;
+  --color-series-8: #dd8080;
+
+  /* plotted surfaces: the quiet nominal lane, log severities below warn,
+     the component-matrix ground, and the chart ruling */
+  --color-lane-ok: #1c3329;
+  --color-cell-todo: #131c26;
+  --color-lvl-debug: #2b3846;
+  --color-lvl-info: #6f8095;
+
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 3px;
+}
+
+/* Values that are not colours cannot live in @theme, so the ruling tint and
+   the shadow ride on plain custom properties that both themes redefine. */
+:root {
+  --grat: rgba(255, 255, 255, 0.045);
+  --plate-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* ------------------------------------------------------------------- light
+ *
+ * Warm paper, not white. Two things change meaning rather than just value:
+ * the accent deepens instead of inverting to the field guide's brown, because
+ * brown sits on top of the warn hue; and nominal inverts direction — a
+ * near-black green becomes a pale tint, with the faults keeping all the
+ * saturation.
+ */
+:root[data-theme="light"] {
+  --color-page: #f7f3ec;
+  --color-panel: #fdfbf7;
+  --color-sunk: #efe8dc;
+  --color-raised: #f2ebdf;
+  --color-overlay: #ffffff;
+
+  --color-line: #ddd3c4;
+  --color-line-soft: #e8dfd0;
+  --color-line-strong: #c4b7a1;
+
+  --color-ink: #2a2622;
+  --color-ink-2: #4a443d;
+  --color-ink-3: #6e6659;
+  --color-ink-4: #8c8375;
+
+  --color-accent: #1d6a9c;
+  --color-accent-dim: #17567e;
+  --color-on-accent: #f9f6f0;
+
+  --color-ok: #4a7a3f;
+  --color-warn: #96661a;
+  --color-serious: #b35f24;
+  --color-crit: #a8443a;
+  --color-unknown: #8c8375;
+
+  --color-series-1: #2f6fae;
+  --color-series-2: #b0602f;
+  --color-series-3: #2e7f66;
+  --color-series-4: #8f7020;
+  --color-series-5: #a3517a;
+  --color-series-6: #5a5fae;
+  --color-series-7: #2d7f88;
+  --color-series-8: #a85252;
+
+  --color-lane-ok: #dde8d4;
+  --color-cell-todo: #ece4d6;
+  --color-lvl-debug: #cabda7;
+  --color-lvl-info: #9a9081;
+
+  --grat: rgba(60, 46, 28, 0.1);
+  --plate-shadow: 0 1px 2px rgba(60, 46, 28, 0.05);
+}
+
+/* ------------------------------------------------------------------- density
+ *
+ * One switch, two scales. Everything that repeats down the page — table rows,
+ * list items, the type scale — reads from these, so the toggle is a single
+ * attribute on <html> rather than a prop threaded through every component.
+ */
+:root,
+:root[data-density="compact"] {
+  --row-h: 29px;
+  --ui-size: 13px;
+  --mono-size: 11px;
+  --pad-x: 12px;
+  --gutter: 16px;
+  --panel-pad: 12px;
+}
+
+:root[data-density="comfortable"] {
+  --row-h: 34px;
+  --ui-size: 14px;
+  --mono-size: 12px;
+  --pad-x: 14px;
+  --gutter: 20px;
+  --panel-pad: 16px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-page);
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-page);
+    color: var(--color-ink-2);
+    font-family: var(--font-sans);
+    font-size: var(--ui-size);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  /* Numbers must align vertically wherever they stack. */
+  code,
+  kbd,
+  pre,
+  samp,
+  .tnum {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-accent) 35%, transparent);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 6px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-4);
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  /* Mono is the chrome typeface. Column headers and micro-labels are the only
+     uppercase in the product — it reads as tabular chrome, not editorial voice. */
+  .label {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-ink-3);
+  }
+
+  .panel {
+    background: var(--color-panel);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+  }
+
+  /* Rows are the densest surface in the app; the hover wash has to be
+     perceptible without becoming a stripe pattern at 29px. */
+  .row-hover:hover {
+    background: color-mix(in oklab, var(--color-ink) 5%, transparent);
+  }
+
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--mono-size);
+  }
+
+  /* Instrument ruling behind plotted data. */
+  .grat {
+    background-image: repeating-linear-gradient(
+      to top,
+      var(--grat) 0 1px,
+      transparent 1px 25%
+    );
+  }
+
+  /* Direct children of a scrolling flex column must not shrink.
+     A scroll container has a definite height, so flex items default to being
+     squeezed to fit it — and a panel with `overflow-hidden` then clips its own
+     content instead of letting the page scroll. This has bitten every screen
+     built as a vertical stack, so it lives here rather than as a `shrink-0`
+     repeated on every panel. */
+  .stack > * {
+    flex-shrink: 0;
+  }
+}
+
+/* -------------------------------------------------------------------- motion
+ *
+ * One rule: motion explains where a value came from, it never decorates.
+ * A line draws along its own time axis, a bar grows from its baseline, a
+ * series staggers in reading order. Everything is intro-only — nothing loops,
+ * because a console that pulses forever is a console you stop looking at.
+ *
+ * These are the CSS equivalents of the Motion variants in `src/ui/motion.ts`;
+ * use them for plain SVG that never needs orchestrating, and Motion for
+ * anything that enters, exits, or staggers.
+ */
+@keyframes draw {
+  from { stroke-dashoffset: var(--len); }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes rise {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes reach {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes wash {
+  from { opacity: 0; }
+  to { opacity: var(--op, 1); }
+}
+
+.a-draw {
+  stroke-dasharray: var(--len);
+  animation: draw 1.15s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+}
+/* Sweep is draw's sibling for arcs: it animates the offset only, so the
+   element keeps the dash pattern that encodes its value. */
+.a-sweep { animation: draw 1.15s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
+.a-rise { transform-origin: bottom; animation: rise 0.5s cubic-bezier(0.22, 0.9, 0.3, 1) both; }
+.a-reach { transform-origin: left; animation: reach 0.55s cubic-bezier(0.22, 0.9, 0.3, 1) both; }
+.a-wash { animation: wash 0.7s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .a-draw,
+  .a-sweep { stroke-dashoffset: 0; }
+  .a-rise,
+  .a-reach { transform: none; }
+  .a-wash { opacity: var(--op, 1); }
+}

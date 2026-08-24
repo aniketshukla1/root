@@ -1,0 +1,157 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span><span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:1;background:var(--faint)"></span><span style="flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <!--RAIL alerts-->
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:13px;height:52px;flex-shrink:0;padding:0 20px">
+        <h1 class="disp" style="margin:0;font-size:22px;color:var(--ink)">Alerts</h1>
+        <span class="mono" style="font-size:11px;color:var(--faint)">keyed by condition — a problem that persists updates in place</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <div class="seg"><span class="on">Active</span><span>Unacknowledged</span><span>Resolved</span><span>All</span></div>
+          <!--ASK-->
+          <span class="btn"><!--ICON check 13 var(--faint)-->Acknowledge all</span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;overflow:hidden;padding:0 20px 16px;display:flex;flex-direction:column;gap:12px">
+
+        <section class="panel" style="display:flex;align-items:center;padding:15px 18px;flex-shrink:0">
+          <div style="padding-right:26px"><div class="mono" style="font-size:26px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--crit)">2</div><div class="lbl" style="margin-top:8px">Critical</div></div>
+          <div style="padding-right:26px"><div class="mono" style="font-size:26px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--warn)">2</div><div class="lbl" style="margin-top:8px">Warning</div></div>
+          <span style="width:1px;height:40px;background:var(--line);margin-right:26px"></span>
+          <div style="padding-right:26px"><div class="mono" style="font-size:26px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--ink)">38m</div><div class="lbl" style="margin-top:8px">Oldest open</div></div>
+          <div style="padding-right:26px"><div class="mono" style="font-size:26px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--ink)">3</div><div class="lbl" style="margin-top:8px">Connections</div></div>
+          <span style="width:1px;height:40px;background:var(--line);margin-right:26px"></span>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:8px"><span class="lbl">Firing over 6 hours</span><span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">17 resolved today</span></div>
+            <div class="grat"><!--HIST 520 32 60 41--></div>
+            <div style="margin-top:2px"><!--TICKS 520 60 10--></div>
+          </div>
+        </section>
+
+        <section class="panel" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+          <div class="ph">
+            <h2>Open</h2><span class="sub">grouped by connection</span>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:9px">
+              <div class="field" style="width:186px"><!--ICON search 12 var(--faint)--><span style="color:var(--faint)">Filter alerts</span></div>
+              <div class="seg"><span class="on">Connection</span><span>Severity</span><span>Age</span></div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 12px;background:var(--sunk);border-bottom:1px solid var(--line)">
+            <!--MARK DK var(--s1) 16--><span style="font-size:11.5px;font-weight:500;color:var(--ink)">orders-api</span><!--BADGE down 8-->
+            <span class="mono" style="font-size:10px;color:var(--faint)">payments · production</span>
+            <span class="mono" style="margin-left:auto;font-size:10px;color:var(--crit)">2 open</span>
+          </div>
+
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px;border-left:2px solid var(--crit);background:color-mix(in srgb,var(--crit) 5%,transparent);padding-left:10px">
+            <span style="margin-top:2px"><!--DOT down 9--></span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:12.5px;font-weight:500;color:var(--ink)">3 containers exited with code 137</span>
+                <span class="tag" style="color:var(--crit);border-color:color-mix(in srgb,var(--crit) 30%,transparent);background:color-mix(in srgb,var(--crit) 10%,transparent)">CRITICAL</span>
+                <span class="tag">Containers</span>
+              </div>
+              <p class="mono" style="margin:6px 0 0;font-size:10.5px;color:var(--muted)">orders-worker-3, orders-worker-7, orders-worker-8 · reason=OOMKilled · memory limit 8G</p>
+              <div class="mono" style="display:flex;align-items:center;gap:9px;margin-top:8px;font-size:10px;color:var(--faint)">
+                <span>firing since <span style="color:var(--muted)">14:04:11</span></span><span style="opacity:.4">·</span><span>18m</span>
+                <span style="opacity:.4">·</span><span>threshold running &lt; 8</span><span style="opacity:.4">·</span><span>updated in place 9×</span>
+              </div>
+            </div>
+            <div style="width:132px;flex-shrink:0"><!--SPARK 132 30 var(--crit) 55 step--></div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
+              <span class="mono" style="font-size:10px;color:var(--faint)">4m ago</span>
+              <div style="display:flex;gap:6px"><span class="btn btn-s">Acknowledge</span><span class="btn btn-s btn-g">Open</span></div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px;border-top:1px solid var(--line-soft);border-left:2px solid var(--warn);background:color-mix(in srgb,var(--warn) 4%,transparent);padding-left:10px">
+            <span style="margin-top:2px"><!--DOT degraded 9--></span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:12.5px;font-weight:500;color:var(--ink)">Error rate 8.1% over 2% threshold</span>
+                <span class="tag" style="color:var(--warn);border-color:color-mix(in srgb,var(--warn) 30%,transparent);background:color-mix(in srgb,var(--warn) 10%,transparent)">WARNING</span>
+                <span class="tag" style="color:var(--accent);border-color:color-mix(in srgb,var(--accent) 28%,transparent);background:var(--accent-soft)">since deploy 2.14.3</span>
+              </div>
+              <p class="mono" style="margin:6px 0 0;font-size:10.5px;color:var(--muted)">5xx responses on POST /v2/orders · 1.8k req/s · p99 30.0s</p>
+              <div class="mono" style="display:flex;align-items:center;gap:9px;margin-top:8px;font-size:10px;color:var(--faint)">
+                <span>firing since <span style="color:var(--muted)">14:06:40</span></span><span style="opacity:.4">·</span><span>16m</span>
+                <span style="opacity:.4">·</span><span>threshold error_rate &gt; 2%</span>
+              </div>
+            </div>
+            <div style="width:132px;flex-shrink:0"><!--SPARK 132 30 var(--warn) 66 spike--></div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
+              <span class="mono" style="font-size:10px;color:var(--faint)">2m ago</span>
+              <div style="display:flex;gap:6px"><span class="btn btn-s">Acknowledge</span><span class="btn btn-s btn-g">Open</span></div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 12px;background:var(--sunk);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+            <!--MARK PG var(--s6) 16--><span style="font-size:11.5px;font-weight:500;color:var(--ink)">payments-db</span><!--BADGE degraded 8-->
+            <span class="mono" style="font-size:10px;color:var(--faint)">payments · production</span>
+            <span class="mono" style="margin-left:auto;font-size:10px;color:var(--warn)">1 open</span>
+          </div>
+
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px;opacity:.72">
+            <span style="margin-top:2px"><!--DOT down 9--></span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:12.5px;font-weight:500;color:var(--ink)">Replication lag 42s exceeds 30s threshold</span>
+                <span class="tag" style="color:var(--crit);border-color:color-mix(in srgb,var(--crit) 30%,transparent);background:color-mix(in srgb,var(--crit) 10%,transparent)">CRITICAL</span>
+                <span class="tag">replica-2</span>
+              </div>
+              <p class="mono" style="margin:6px 0 0;font-size:10.5px;color:var(--muted)">streaming replication · primary db-01 · lag rising 1.4s per minute</p>
+              <div class="mono" style="display:flex;align-items:center;gap:9px;margin-top:8px;font-size:10px;color:var(--faint)">
+                <span>firing since <span style="color:var(--muted)">14:06:02</span></span><span style="opacity:.4">·</span><span>16m</span>
+                <span style="opacity:.4">·</span><span style="display:flex;align-items:center;gap:4px"><!--ICON check 11 var(--ok)-->acknowledged by ann 9m ago</span>
+              </div>
+            </div>
+            <div style="width:132px;flex-shrink:0"><!--SPARK 132 30 var(--s6) 34 rise--></div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
+              <span class="mono" style="font-size:10px;color:var(--faint)">11m ago</span>
+              <span class="btn btn-s btn-g">Open</span>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 12px;background:var(--sunk);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+            <!--MARK ES var(--s4) 16--><span style="font-size:11.5px;font-weight:500;color:var(--ink)">search-cluster</span><!--BADGE degraded 8-->
+            <span class="mono" style="font-size:10px;color:var(--faint)">search · production</span>
+            <span class="mono" style="margin-left:auto;font-size:10px;color:var(--warn)">1 open</span>
+          </div>
+
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px;opacity:.72">
+            <span style="margin-top:2px"><!--DOT degraded 9--></span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:12.5px;font-weight:500;color:var(--ink)">2 shards unassigned for 26 minutes</span>
+                <span class="tag" style="color:var(--warn);border-color:color-mix(in srgb,var(--warn) 30%,transparent);background:color-mix(in srgb,var(--warn) 10%,transparent)">WARNING</span>
+                <span class="tag">Indices</span>
+              </div>
+              <p class="mono" style="margin:6px 0 0;font-size:10.5px;color:var(--muted)">orders-2026.08 [3] · orders-2026.08 [7] · cluster status yellow</p>
+              <div class="mono" style="display:flex;align-items:center;gap:9px;margin-top:8px;font-size:10px;color:var(--faint)">
+                <span>firing since <span style="color:var(--muted)">13:56:18</span></span><span style="opacity:.4">·</span><span>26m</span>
+                <span style="opacity:.4">·</span><span style="display:flex;align-items:center;gap:4px"><!--ICON check 11 var(--ok)-->acknowledged by dev 20m ago</span>
+              </div>
+            </div>
+            <div style="width:132px;flex-shrink:0"><!--SPARK 132 30 var(--s4) 57 rise--></div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
+              <span class="mono" style="font-size:10px;color:var(--faint)">26m ago</span>
+              <span class="btn btn-s btn-g">Open</span>
+            </div>
+          </div>
+
+          <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line)">
+            <span class="mono" style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--faint)"><!--ICON check 12 var(--ok)-->resolved in the last hour <span style="color:var(--muted)">3</span></span>
+            <span class="mono" style="font-size:10px;color:var(--faint)">edge-proxy · upstream checkout-web recovered at 13:48</span>
+            <span class="mono" style="margin-left:auto;display:flex;align-items:center;gap:3px;font-size:10px;color:var(--faint)">Show resolved<!--ICON right 11 currentColor--></span>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>

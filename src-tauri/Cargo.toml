@@ -1,0 +1,86 @@
+[package]
+name = "inframonitoring"
+version = "0.1.0"
+description = "root — infrastructure intelligence"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "inframonitoring_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "process", "net"] }
+anyhow = "1.0.104"
+thiserror = "2.0.19"
+async-trait = "0.1.91"
+futures-util = "0.3.33"
+chrono = { version = "0.4.45", features = ["serde"] }
+uuid = { version = "1.24.0", features = ["v4", "serde"] }
+# Local deploy ingest. Only the pieces a single POST route needs — no tower
+# middleware stack, no multipart, no compression.
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+# Constant-time token comparison, so a wrong token cannot be recovered by
+# timing the reply.
+subtle = "2.6"
+bollard = "0.21.0"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "mysql", "chrono", "json"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "stream", "http2", "charset", "query"] }
+# The `v1` feature (the default) is what selects the per-platform credential
+# store and exposes the `Entry` API: keychain on macOS, the credential manager
+# on Windows, and the D-Bus secret service on Linux.
+keyring = { version = "4.1.6", features = ["v1"] }
+url = "2.5.8"
+kube = { version = "4.2.0", default-features = false, features = ["client", "config", "rustls-tls"] }
+# The version feature picks which API structs are generated. Pinned rather than
+# "latest" so a crate bump cannot silently change the wire types underneath us;
+# core/v1 and apps/v1 are stable enough that v1_33 talks to older and newer
+# servers alike.
+k8s-openapi = { version = "0.28.0", default-features = false, features = ["v1_33"] }
+# Not used directly for TLS — this is here only to name a crypto provider.
+# kube's rustls-tls pulls in aws-lc-rs while sqlx pulls in ring, so rustls sees
+# two providers and refuses to guess, panicking on the first TLS handshake.
+# `install_crypto_provider()` in lib.rs resolves it once at startup.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+redis = { version = "1.5.0", default-features = false, features = ["tokio-comp"] }
+# `compat-3-3-0` and a bson major are mandatory, not optional: the crate has a
+# compile_error! for each. Turning default features off drops them, so they are
+# named here rather than pulling in the default OpenSSL-backed TLS stack.
+mongodb = { version = "3.8.0", default-features = false, features = [
+    "rustls-tls",
+    "compat-3-3-0",
+    "bson-3",
+] }
+# librdkafka is built from bundled source (cmake-build) and statically linked,
+# so the app ships without a system Kafka library.
+#
+# `ssl-vendored` compiles OpenSSL in rather than linking the host's. It is the
+# expensive feature here, and it is not optional in practice: without it
+# librdkafka has no TLS *and* no SCRAM, which between them cover nearly every
+# real broker. A PLAINTEXT-only Kafka collector would only work against a
+# laptop.  GSSAPI/Kerberos is the one mechanism still unsupported — it needs
+# cyrus-sasl on the host, which cannot be vendored.
+rdkafka = { version = "0.39", default-features = false, features = [
+    "tokio",
+    "cmake-build",
+    "libz",
+    "ssl-vendored",
+] }
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
+wiremock = "0.6.5"

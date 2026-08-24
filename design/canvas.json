@@ -1,0 +1,351 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Overview",
+      "page": "page-1"
+    },
+    {
+      "file": "Services.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Services",
+      "page": "page-1"
+    },
+    {
+      "file": "ServiceDetail.dc.html",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Service detail",
+      "page": "page-1"
+    },
+    {
+      "file": "Metrics.dc.html",
+      "x": 4680,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Metrics",
+      "page": "page-1"
+    },
+    {
+      "file": "Logs.dc.html",
+      "x": 0,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Logs",
+      "page": "page-1"
+    },
+    {
+      "file": "Explain.dc.html",
+      "x": 1560,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Assistant dock",
+      "page": "page-1"
+    },
+    {
+      "file": "Alerts.dc.html",
+      "x": 3120,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Alerts",
+      "page": "page-1"
+    },
+    {
+      "file": "Assistant.dc.html",
+      "x": 4680,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Assistant",
+      "page": "page-1"
+    },
+    {
+      "file": "Settings.dc.html",
+      "x": 0,
+      "y": 2000,
+      "w": 1440,
+      "h": 900,
+      "title": "Settings",
+      "page": "page-1"
+    },
+    {
+      "file": "Splash.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Splash",
+      "page": "page-2"
+    },
+    {
+      "file": "SignIn.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Sign in",
+      "page": "page-2"
+    },
+    {
+      "file": "Onboarding.dc.html",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Onboarding",
+      "page": "page-2"
+    },
+    {
+      "file": "Team.dc.html",
+      "x": 4680,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Members & roles",
+      "page": "page-2"
+    },
+    {
+      "file": "Billing.dc.html",
+      "x": 0,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Billing",
+      "page": "page-2"
+    },
+    {
+      "file": "MainLight.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Overview",
+      "page": "page-3"
+    },
+    {
+      "file": "ServicesLight.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Services",
+      "page": "page-3"
+    },
+    {
+      "file": "ServiceDetailLight.dc.html",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Service detail",
+      "page": "page-3"
+    },
+    {
+      "file": "MetricsLight.dc.html",
+      "x": 4680,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Metrics",
+      "page": "page-3"
+    },
+    {
+      "file": "LogsLight.dc.html",
+      "x": 6240,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Logs",
+      "page": "page-3"
+    },
+    {
+      "file": "ExplainLight.dc.html",
+      "x": 0,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Assistant dock",
+      "page": "page-3"
+    },
+    {
+      "file": "AlertsLight.dc.html",
+      "x": 1560,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Alerts",
+      "page": "page-3"
+    },
+    {
+      "file": "AssistantLight.dc.html",
+      "x": 3120,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Assistant",
+      "page": "page-3"
+    },
+    {
+      "file": "SettingsLight.dc.html",
+      "x": 4680,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Settings",
+      "page": "page-3"
+    },
+    {
+      "file": "SplashLight.dc.html",
+      "x": 6240,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "Splash",
+      "page": "page-3"
+    },
+    {
+      "file": "SignInLight.dc.html",
+      "x": 0,
+      "y": 2000,
+      "w": 1440,
+      "h": 900,
+      "title": "Sign in",
+      "page": "page-3"
+    },
+    {
+      "file": "OnboardingLight.dc.html",
+      "x": 1560,
+      "y": 2000,
+      "w": 1440,
+      "h": 900,
+      "title": "Onboarding",
+      "page": "page-3"
+    },
+    {
+      "file": "TeamLight.dc.html",
+      "x": 3120,
+      "y": 2000,
+      "w": 1440,
+      "h": 900,
+      "title": "Members & roles",
+      "page": "page-3"
+    },
+    {
+      "file": "BillingLight.dc.html",
+      "x": 4680,
+      "y": 2000,
+      "w": 1440,
+      "h": 900,
+      "title": "Billing",
+      "page": "page-3"
+    },
+    {
+      "file": "Charts.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1980,
+      "title": "Chart system \u2014 dark",
+      "page": "page-4"
+    },
+    {
+      "file": "ChartsLight.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 1980,
+      "title": "Chart system \u2014 light",
+      "page": "page-4"
+    },
+    {
+      "file": "Brand.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1700,
+      "title": "Identity & tokens",
+      "page": "page-5"
+    }
+  ],
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Product"
+    },
+    {
+      "id": "page-2",
+      "name": "Get started & account"
+    },
+    {
+      "id": "page-3",
+      "name": "Light"
+    },
+    {
+      "id": "page-4",
+      "name": "Charts"
+    },
+    {
+      "id": "page-5",
+      "name": "Identity"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-product",
+      "x": 0,
+      "y": -230,
+      "w": 620,
+      "page": "page-1",
+      "text": "NINE APP SCREENS. Every one is a real 1440x900 window \u2014 nothing scrolls off.\n\nASSISTANT DOCK: every header carries an Ask handle, and any row representing a problem carries an Explain action in its own trailing column so it can never crowd the message. Clicking it opens the dock with that line already loaded \u2014 what the error means, why it is happening here with the evidence plotted, and what to check next. The operator never leaves the screen the problem is on."
+    },
+    {
+      "id": "note-acct",
+      "x": 0,
+      "y": -280,
+      "w": 640,
+      "page": "page-2",
+      "text": "GET STARTED & ACCOUNT \u2014 the five screens the product needed once it stopped being local.\n\nSPLASH is the brand moment: the mark draws itself \u2014 one root, then branches reaching out to what they find. That is the product's own gesture rather than a spinner. Underneath it, named steps with a real count (9 of 12 collectors reached), not a fake progress bar. Absence is a state here too.\n\nBILLING reuses the chart vocabulary rather than inventing a second one: plan usage is a measure against a limit, so it is drawn with the same bullet bars as service headroom, and spend uses the same stacked bars as availability.\n\nROLES are four, and the assistant stays read-only for Viewers."
+    },
+    {
+      "id": "note-light",
+      "x": 0,
+      "y": -180,
+      "w": 600,
+      "page": "page-3",
+      "text": "ALL FOURTEEN, on warm paper. Identical markup with one class, so the palettes cannot drift.\n\nTwo things change meaning rather than value: the accent deepens rather than inverting to brown (brown sits on top of the warn hue), and nominal inverts direction \u2014 a near-black green becomes a pale tint, with faults keeping all the saturation."
+    },
+    {
+      "id": "note-charts",
+      "x": 0,
+      "y": -220,
+      "w": 620,
+      "page": "page-4",
+      "text": "CHART SYSTEM \u2014 twelve charts, three readers: developer, maintainer, management.\n\nMotion is intro-only and explains provenance: a line draws along its own time axis, a bar grows from its baseline, a series staggers in reading order. Nothing loops. All of it stops under reduced-motion.\n\nThese rules map onto Framer Motion directly \u2014 pathLength for the draw, variants with staggerChildren for series, useReducedMotion for the opt-out \u2014 so this is buildable as written."
+    },
+    {
+      "id": "note-brand",
+      "x": 0,
+      "y": -200,
+      "w": 580,
+      "page": "page-5",
+      "text": "IDENTITY \u2014 two faces, IBM Plex Sans and IBM Plex Mono.\n\nThe mark is a filesystem tree: one solid root, three branches, three open leaves. Root node, root cause, tree root. On the splash it draws itself in that order.\n\nThe mint accent still could not carry across from swe-prep: green already means healthy here, so an accent you can click would be mistakable for a state."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-2"
+  }
+}

@@ -1,0 +1,258 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span>
+    <span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:1;background:var(--faint)"></span>
+    <span style="flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <!--RAIL services-->
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:11px;height:50px;flex-shrink:0;padding:0 20px">
+        <span class="mono" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--faint)">Services<!--ICON right 11 currentColor--></span>
+        <!--MARK DK var(--s1) 22-->
+        <h1 class="disp" style="margin:0;font-size:20px;color:var(--ink)">orders-api</h1>
+        <!--BADGE down 10-->
+        <span class="tag">Docker</span><span class="tag">production</span><span class="tag">payments</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <div class="seg"><span>15m</span><span class="on">1h</span><span>6h</span><span>24h</span></div>
+          <span class="btn"><!--ICON bolt 13 var(--faint)-->Actions</span>
+          <!--ASK-->
+          <span class="btn btn-g" style="padding:0 6px"><!--ICON refresh 14 var(--faint)--></span>
+        </div>
+      </header>
+
+      <div style="display:flex;align-items:center;gap:20px;height:32px;flex-shrink:0;padding:0 20px;border-bottom:1px solid var(--line)">
+        <span class="mono" style="display:flex;align-items:center;height:32px;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);border-bottom:2px solid var(--accent);margin-bottom:-1px">Dashboard</span>
+        <span class="mono" style="display:flex;align-items:center;gap:6px;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)">Components<span style="padding:0 5px;border-radius:2px;background:var(--sunk);color:var(--muted)">8</span></span>
+        <span class="mono" style="display:flex;align-items:center;gap:6px;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)">Alerts<span style="padding:0 5px;border-radius:2px;background:color-mix(in srgb,var(--crit) 16%,transparent);color:var(--crit)">2</span></span>
+        <span class="mono" style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)">Metrics</span>
+        <span class="mono" style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)">Logs</span>
+        <span class="mono" style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)">Configuration</span>
+      </div>
+
+      <div style="flex:1;min-height:0;overflow:hidden;padding:13px 20px 16px;display:flex;flex-direction:column;gap:12px">
+
+        <section class="panel" style="display:flex;flex-shrink:0">
+          <div style="flex:1;padding:12px 16px;border-right:1px solid var(--line)">
+            <div class="lbl" style="font-size:9px">Containers running</div>
+            <div style="display:flex;align-items:flex-end;gap:9px;margin-top:8px">
+              <span class="mono" style="font-size:22px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--crit)">5/8</span>
+              <span style="margin-bottom:2px"><!--SPARK 60 22 var(--crit) 4 fall--></span>
+            </div>
+          </div>
+          <div style="flex:1;padding:12px 16px;border-right:1px solid var(--line)">
+            <div class="lbl" style="font-size:9px">CPU</div>
+            <div style="display:flex;align-items:flex-end;gap:9px;margin-top:8px">
+              <span class="mono" style="font-size:22px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--warn)">62%</span>
+              <span style="margin-bottom:2px"><!--SPARK 60 22 var(--warn) 21 spike 0.8--></span>
+            </div>
+          </div>
+          <div style="flex:1;padding:12px 16px;border-right:1px solid var(--line)">
+            <div class="lbl" style="font-size:9px">Memory</div>
+            <div style="display:flex;align-items:flex-end;gap:9px;margin-top:8px">
+              <span class="mono" style="font-size:22px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--crit)">7.4G</span>
+              <span style="margin-bottom:2px"><!--SPARK 60 22 var(--crit) 33 rise--></span>
+            </div>
+          </div>
+          <div style="flex:1;padding:12px 16px;border-right:1px solid var(--line)">
+            <div class="lbl" style="font-size:9px">Restarts · 1h</div>
+            <div style="display:flex;align-items:flex-end;gap:9px;margin-top:8px">
+              <span class="mono" style="font-size:22px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--crit)">14</span>
+              <span style="margin-bottom:2px"><!--SPARK 60 22 var(--crit) 55 step--></span>
+            </div>
+          </div>
+          <div style="flex:1;padding:12px 16px;border-right:1px solid var(--line)">
+            <div class="lbl" style="font-size:9px">Error rate</div>
+            <div style="display:flex;align-items:flex-end;gap:9px;margin-top:8px">
+              <span class="mono" style="font-size:22px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--crit)">8.1%</span>
+              <span style="margin-bottom:2px"><!--SPARK 60 22 var(--crit) 66 spike--></span>
+            </div>
+          </div>
+          <div style="flex:1.15;padding:12px 16px">
+            <div class="lbl" style="font-size:9px">Revision</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:9px">
+              <span class="mono" style="font-size:12px;color:var(--ink-2)">orders-api:2.14.3</span>
+              <span class="tag" style="color:var(--accent);border-color:color-mix(in srgb,var(--accent) 30%,transparent);background:var(--accent-soft)">22m ago</span>
+            </div>
+          </div>
+        </section>
+
+        <div style="display:grid;grid-template-columns:1.62fr 1fr;gap:12px;flex:1;min-height:0">
+
+          <div style="display:flex;flex-direction:column;gap:12px;min-height:0">
+            <section class="panel" style="flex-shrink:0">
+              <div class="ph">
+                <h2>Time series</h2><span class="sub">last hour · 1 deploy in window</span>
+                <div style="margin-left:auto;display:flex;align-items:center;gap:11px">
+                  <span style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--faint)"><span style="width:9px;height:0;border-top:1px dashed var(--accent)"></span>deploy</span>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line)">
+                <div style="background:var(--panel);padding:11px 13px 12px">
+                  <div style="display:flex;align-items:baseline;gap:7px;margin-bottom:9px">
+                    <span class="mono" style="font-size:10.5px;color:var(--muted)">cpu</span>
+                    <span class="mono" style="font-size:11px;color:var(--warn)">62%</span>
+                    <span class="mono" style="margin-left:auto;font-size:9.5px;color:var(--faint)">warn 75%</span>
+                  </div>
+                  <div class="grat"><!--AREA 300 96 var(--warn) 21 spike 0.62--></div>
+                  <div style="margin-top:2px"><!--TICKS 300 30 5--></div>
+                </div>
+                <div style="background:var(--panel);padding:11px 13px 12px">
+                  <div style="display:flex;align-items:baseline;gap:7px;margin-bottom:9px">
+                    <span class="mono" style="font-size:10.5px;color:var(--muted)">memory</span>
+                    <span class="mono" style="font-size:11px;color:var(--crit)">7.4G</span>
+                    <span class="mono" style="margin-left:auto;font-size:9.5px;color:var(--faint)">limit 8G</span>
+                  </div>
+                  <div class="grat"><!--AREA 300 96 var(--crit) 33 rise 0.62--></div>
+                  <div style="margin-top:2px"><!--TICKS 300 30 5--></div>
+                </div>
+                <div style="background:var(--panel);padding:11px 13px 12px">
+                  <div style="display:flex;align-items:baseline;gap:7px;margin-bottom:9px">
+                    <span class="mono" style="font-size:10.5px;color:var(--muted)">requests</span>
+                    <span class="mono" style="font-size:11px;color:var(--ink-2)">1.8k/s</span>
+                    <span class="mono" style="margin-left:auto;font-size:9.5px;color:var(--faint)">5xx 8.1%</span>
+                  </div>
+                  <div class="grat"><!--AREA 300 96 var(--s3) 77 fall 0.62--></div>
+                  <div style="margin-top:2px"><!--TICKS 300 30 5--></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+              <div class="ph">
+                <h2>Containers</h2><span class="sub">3 of 8 need attention</span>
+                <span class="mono" style="margin-left:auto;display:flex;align-items:center;gap:3px;font-size:10px;color:var(--faint)">All components<!--ICON right 11 currentColor--></span>
+              </div>
+              <div class="th" style="grid-template-columns:20px 1.5fr 1.3fr 62px 66px 58px 66px 80px;gap:12px">
+                <span></span><span class="lbl">Name</span><span class="lbl">Image</span>
+                <span class="lbl" style="text-align:right">CPU</span><span class="lbl" style="text-align:right">Memory</span>
+                <span class="lbl" style="text-align:right">Restarts</span><span class="lbl" style="text-align:right">Uptime</span><span class="lbl">Status</span>
+              </div>
+              <div class="tr" style="grid-template-columns:20px 1.5fr 1.3fr 62px 66px 58px 66px 80px;gap:12px;border-top:none">
+                <!--DOT down 8--><span class="mono" style="font-size:11.5px;color:var(--ink)">orders-worker-3</span>
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">orders-api:2.14.3</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--faint)">—</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--faint)">—</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--crit)">9</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--faint)">—</span>
+                <span class="mono" style="font-size:10.5px;color:var(--crit)">exited 137</span>
+              </div>
+              <div class="tr" style="grid-template-columns:20px 1.5fr 1.3fr 62px 66px 58px 66px 80px;gap:12px">
+                <!--DOT down 8--><span class="mono" style="font-size:11.5px;color:var(--ink)">orders-worker-7</span>
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">orders-api:2.14.3</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--faint)">—</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--faint)">—</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--crit)">4</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--faint)">—</span>
+                <span class="mono" style="font-size:10.5px;color:var(--crit)">exited 137</span>
+              </div>
+              <div class="tr" style="grid-template-columns:20px 1.5fr 1.3fr 62px 66px 58px 66px 80px;gap:12px">
+                <!--DOT degraded 8--><span class="mono" style="font-size:11.5px;color:var(--ink)">orders-worker-5</span>
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">orders-api:2.14.3</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--warn)">88%</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--warn)">7.1G</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">1</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">22m</span>
+                <span class="mono" style="font-size:10.5px;color:var(--warn)">running</span>
+              </div>
+              <div class="tr" style="grid-template-columns:20px 1.5fr 1.3fr 62px 66px 58px 66px 80px;gap:12px">
+                <!--DOT healthy 8--><span class="mono" style="font-size:11.5px;color:var(--ink)">orders-worker-1</span>
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">orders-api:2.14.3</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">41%</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">3.2G</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">0</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">22m</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">running</span>
+              </div>
+              <div class="tr" style="grid-template-columns:20px 1.5fr 1.3fr 62px 66px 58px 66px 80px;gap:12px">
+                <!--DOT healthy 8--><span class="mono" style="font-size:11.5px;color:var(--ink)">orders-api-gateway</span>
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">api-gateway:1.9.1</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">18%</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">1.1G</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">0</span>
+                <span class="mono" style="font-size:11px;text-align:right;color:var(--ink-2)">3h</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">running</span>
+              </div>
+            </section>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;min-height:0">
+            <section class="panel" style="flex-shrink:0">
+              <div class="ph"><h2>Headroom</h2><span class="sub">against limit</span></div>
+              <div style="padding:13px 15px;display:flex;flex-direction:column;gap:12px">
+                <div>
+                  <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+                    <span class="mono" style="font-size:10.5px;color:var(--muted)">memory</span>
+                    <span class="mono" style="margin-left:auto;font-size:10.5px;color:var(--crit)">7.4G / 8G</span>
+                  </div>
+                  <!--BULLET 92 100 crit 0-->
+                </div>
+                <div>
+                  <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+                    <span class="mono" style="font-size:10.5px;color:var(--muted)">cpu</span>
+                    <span class="mono" style="margin-left:auto;font-size:10.5px;color:var(--warn)">62% / 75%</span>
+                  </div>
+                  <!--BULLET 62 75 warn 80-->
+                </div>
+                <div>
+                  <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+                    <span class="mono" style="font-size:10.5px;color:var(--muted)">pool</span>
+                    <span class="mono" style="margin-left:auto;font-size:10.5px;color:var(--crit)">20 / 20</span>
+                  </div>
+                  <!--BULLET 100 100 crit 160-->
+                </div>
+              </div>
+            </section>
+
+            <section class="panel" style="flex-shrink:0">
+              <div class="ph"><h2>Deploys</h2><span class="sub">1 in window</span></div>
+              <div style="padding:12px 15px 13px">
+                <div style="display:flex;gap:11px">
+                  <div style="display:flex;flex-direction:column;align-items:center;padding-top:4px">
+                    <span style="width:7px;height:7px;background:var(--accent)"></span>
+                    <span style="flex:1;width:1px;background:var(--line-strong);margin:4px 0"></span>
+                  </div>
+                  <div style="flex:1;min-width:0">
+                    <div style="display:flex;align-items:center;gap:7px">
+                      <span style="font-size:12px;color:var(--ink)">Deployed worker</span>
+                      <span class="mono" style="font-size:10px;color:var(--faint)">22m ago</span>
+                    </div>
+                    <div class="mono" style="margin-top:4px;font-size:10.5px;color:var(--muted)"><span style="color:var(--faint)">2.14.2</span> → <span style="color:var(--accent)">2.14.3</span></div>
+                    <span class="tag" style="margin-top:7px">observed</span>
+                  </div>
+                </div>
+                <div style="display:flex;gap:11px;margin-top:11px">
+                  <div style="display:flex;flex-direction:column;align-items:center;padding-top:4px">
+                    <span style="width:7px;height:7px;box-shadow:inset 0 0 0 1.5px var(--faint)"></span>
+                  </div>
+                  <div style="flex:1;min-width:0">
+                    <div style="display:flex;align-items:center;gap:7px">
+                      <span style="font-size:12px;color:var(--ink-2)">Deployed api-gateway</span>
+                      <span class="mono" style="font-size:10px;color:var(--faint)">3h ago</span>
+                    </div>
+                    <div class="mono" style="margin-top:4px;font-size:10.5px;color:var(--muted)"><span style="color:var(--faint)">1.9.0</span> → <span style="color:var(--ink-2)">1.9.1</span></div>
+                    <span class="tag" style="margin-top:7px">reported</span>
+                  </div>
+                </div>
+                <p style="margin:13px 0 0;font-size:10.5px;line-height:1.5;color:var(--faint)">A reported deploy is a pipeline's assertion. An observed one is a revision this collector saw change.</p>
+              </div>
+            </section>
+
+            <section class="panel" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+              <div class="ph"><h2>Logs</h2><span class="sub">31 at error or above</span></div>
+              <div style="flex:1;min-height:0;padding-top:3px">
+                <div style="display:flex;align-items:baseline;gap:8px;padding:4px 13px"><span class="mono" style="font-size:9.5px;color:var(--faint)">14:22:07</span><span class="mono" style="font-size:9.5px;color:var(--crit);width:32px">ERROR</span><span class="mono" style="flex:1;min-width:0;font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">connection refused 10.4.2.19:5432</span></div>
+                <div style="display:flex;align-items:baseline;gap:8px;padding:4px 13px"><span class="mono" style="font-size:9.5px;color:var(--faint)">14:22:04</span><span class="mono" style="font-size:9.5px;color:var(--crit);width:32px">ERROR</span><span class="mono" style="flex:1;min-width:0;font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">worker exited, code 137 (OOMKilled)</span></div>
+                <div style="display:flex;align-items:baseline;gap:8px;padding:4px 13px"><span class="mono" style="font-size:9.5px;color:var(--faint)">14:21:59</span><span class="mono" style="font-size:9.5px;color:var(--warn);width:32px">WARN</span><span class="mono" style="flex:1;min-width:0;font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">heap 7.1G of 8G, gc pause 412ms</span></div>
+                <div style="display:flex;align-items:baseline;gap:8px;padding:4px 13px"><span class="mono" style="font-size:9.5px;color:var(--faint)">14:21:51</span><span class="mono" style="font-size:9.5px;color:var(--crit);width:32px">ERROR</span><span class="mono" style="flex:1;min-width:0;font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">POST /v2/orders 502 in 30012ms</span></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

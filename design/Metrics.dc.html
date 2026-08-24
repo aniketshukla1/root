@@ -1,0 +1,379 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+/* root — design tokens.
+ *
+ * Surfaces, ink and radii follow the field-guide HUD: a blue-black ground,
+ * borders doing the work instead of shadows, 3px corners, and mono as the
+ * chrome typeface — labels, buttons and panel titles are all mono with wide
+ * tracking, which is what makes the whole thing read as an instrument.
+ *
+ * Two rules from the existing app survive untouched, because in a monitoring
+ * tool they are load-bearing:
+ *   Status hues are reserved. Nothing that is not a state may wear one.
+ *   Series hues carry identity only, in fixed order, never sorted by value.
+ * That is also why the accent is azure and not the reference's mint: green
+ * already means healthy here, and an accent you can click must never be
+ * mistakable for a state. */
+:root {
+  --bg:#0a0e14; --panel:#0c1219; --sunk:#111a24; --raised:#141e29;
+  --line:#1c2530; --line-soft:#18222e; --line-strong:#2b3846;
+  --ink:#f0f5fa; --ink-2:#a9b8ca; --muted:#8496ad; --faint:#6f8095;
+
+  --accent:#4cc2ff; --accent-soft:color-mix(in srgb, var(--accent) 11%, var(--bg));
+  --on-accent:#04121c;
+
+  /* status — reserved */
+  --ok:#5fc48c;      --ok-soft:#0d1a14;
+  --warn:#d9a84e;    --warn-soft:#191408;
+  --serious:#dd8a52;
+  --crit:#e0705a;    --crit-soft:#1a1116;
+  --unknown:#6f8095;
+
+  /* categorical identity — fixed order */
+  --s1:#5a9ee0; --s2:#d98a5a; --s3:#4db89a; --s4:#c9a44e;
+  --s5:#d47fa8; --s6:#8d92e8; --s7:#57bcc4; --s8:#dd8080;
+
+  /* cells — the component matrix */
+  --cell-todo:#131c26; --cell-line:#22303e;
+
+  /* plotted surfaces: nominal lane, log severities below warn, chart ruling */
+  --lane-ok:#1c3329;
+  --lvl-debug:#2b3846; --lvl-info:#6f8095;
+  --grat:rgba(255,255,255,.045);
+
+  --r:3px;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+  --sans:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--bg); color:var(--ink-2);
+  font-family:var(--sans); font-size:13px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+a { color:var(--accent); text-decoration:none; }
+a:hover { color:#8ad6ff; }
+
+/* Mono is the chrome typeface: every label, button and panel title. */
+.lbl {
+  font-family:var(--mono); font-size:10px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--muted);
+}
+.mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+.disp { font-family:var(--sans); font-weight:700; letter-spacing:-.03em; }
+
+/* An eyebrow always announces itself with the same sigil. */
+.eyebrow {
+  font-family:var(--mono); font-size:10px; letter-spacing:.2em;
+  text-transform:uppercase; color:var(--accent);
+}
+.eyebrow::before { content:"\25B8\00a0\00a0"; }
+
+.panel, .plate {
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+}
+
+.ph {
+  display:flex; align-items:center; gap:10px; height:33px; padding:0 12px;
+  border-bottom:1px solid var(--line);
+}
+.ph h2 {
+  margin:0; font-family:var(--mono); font-size:10px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--muted); font-weight:400; white-space:nowrap;
+}
+.ph .sub { font-family:var(--mono); font-size:10px; color:var(--faint); }
+
+.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  min-height:27px; padding:0 10px; border:1px solid var(--line); border-radius:var(--r);
+  background:var(--panel); color:var(--ink-2);
+  font-family:var(--mono); font-size:11px; letter-spacing:.04em; cursor:pointer;
+}
+.btn-p { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+.btn-g { border-color:transparent; background:transparent; color:var(--faint); }
+.btn-s { min-height:22px; padding:0 8px; font-size:10px; }
+
+.field {
+  display:flex; align-items:center; gap:7px; height:27px; padding:0 9px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--sunk);
+  color:var(--ink-2); font-family:var(--mono); font-size:11px;
+}
+
+.seg {
+  display:inline-flex; align-items:center; gap:2px; padding:3px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--panel);
+}
+.seg > span {
+  display:inline-flex; align-items:center; height:21px; padding:0 9px; border-radius:2px;
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; color:var(--muted);
+}
+.seg > span.on { background:var(--accent); color:var(--on-accent); }
+
+.tag {
+  display:inline-flex; align-items:center; height:18px; padding:0 6px;
+  border:1px solid var(--line); border-radius:2px; background:var(--panel);
+  font-family:var(--mono); font-size:10px; letter-spacing:.05em;
+  color:var(--muted); white-space:nowrap;
+}
+
+.kbd {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:17px; height:17px; padding:0 4px;
+  border:1px solid var(--line); border-radius:2px; background:var(--sunk);
+  font-family:var(--mono); font-size:10px; color:var(--faint);
+}
+
+.nav {
+  display:flex; align-items:center; gap:10px; height:30px; padding:0 9px;
+  border-radius:var(--r); color:var(--ink-2); font-size:12.5px; position:relative;
+}
+.nav.on { background:var(--sunk); color:var(--ink); }
+.nav.on::before {
+  content:""; position:absolute; left:-9px; top:8px; width:2px; height:14px;
+  background:var(--accent);
+}
+
+.tr { display:grid; align-items:center; height:29px; padding:0 12px; border-top:1px solid var(--line-soft); }
+.th { display:grid; align-items:center; height:26px; padding:0 12px; border-bottom:1px solid var(--line); }
+
+/* Graticule — instrument ruling behind plotted data. */
+.grat { background-image:repeating-linear-gradient(to top, var(--grat) 0 1px, transparent 1px 25%); }
+
+/* A note that carries a state wears it on its leading edge. */
+.note { border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:var(--r); background:var(--panel); }
+
+/* ──────────────────────────────────────────────────────────── motion
+ * One rule: motion explains where a value came from, it never decorates.
+ * A line draws along its own time axis, a bar grows from its baseline, a
+ * series staggers in reading order. Everything is intro-only — nothing
+ * loops, because a console that pulses forever is a console you stop
+ * looking at. All of it stops under prefers-reduced-motion. */
+@keyframes draw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
+@keyframes rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes reach { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes wash { from { opacity: 0; } to { opacity: var(--op, 1); } }
+@keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: var(--op, 1); } }
+
+.a-draw { stroke-dasharray: var(--len); animation: draw 1.15s cubic-bezier(.22,.8,.3,1) both; }
+.a-rise { transform-origin: bottom; animation: rise .5s cubic-bezier(.22,.9,.3,1) both; }
+.a-reach { transform-origin: left; animation: reach .55s cubic-bezier(.22,.9,.3,1) both; }
+.a-wash { animation: wash .7s ease-out both; }
+/* Sweep is draw's sibling for arcs: it animates the offset only, so the
+   element keeps the dash pattern that encodes its value. */
+.a-sweep { animation: draw 1.15s cubic-bezier(.22,.8,.3,1) both; }
+.a-pop  { transform-box: fill-box; transform-origin: center; animation: pop .34s cubic-bezier(.3,1.4,.5,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .a-draw, .a-sweep, .a-rise, .a-reach, .a-wash, .a-pop { animation: none; stroke-dashoffset: 0; transform: none; opacity: 1; }
+}
+
+/* ─────────────────────────────────────────────────────────────── light mode
+ *
+ * Warm paper, not white. A dark HUD inverted onto cold white reads as a
+ * mistake; on paper it reads as printed — which is also what a console looks
+ * like when someone exports a page of it or works next to a window.
+ *
+ * Two things change meaning rather than just value:
+ *   The accent cannot be the field guide's brown. Brown sits on top of the
+ *   warn hue, and an accent must never be mistakable for a state — so the
+ *   azure deepens instead of inverting.
+ *   Nominal inverts direction. In the dark it is a near-black green that
+ *   stays quiet; on paper quiet means a pale tint, with faults holding all
+ *   the saturation. */
+.light {
+  --bg:#f7f3ec; --panel:#fdfbf7; --sunk:#efe8dc; --raised:#f2ebdf;
+  --line:#ddd3c4; --line-soft:#e8dfd0; --line-strong:#c4b7a1;
+  --ink:#2a2622; --ink-2:#4a443d; --muted:#6e6659; --faint:#8c8375;
+
+  --accent:#1d6a9c; --accent-soft:color-mix(in srgb, var(--accent) 10%, var(--bg));
+  --on-accent:#f9f6f0;
+
+  --ok:#4a7a3f; --warn:#96661a; --serious:#b35f24; --crit:#a8443a; --unknown:#8c8375;
+
+  --s1:#2f6fae; --s2:#b0602f; --s3:#2e7f66; --s4:#8f7020;
+  --s5:#a3517a; --s6:#5a5fae; --s7:#2d7f88; --s8:#a85252;
+
+  --cell-todo:#ece4d6; --cell-line:#d3c6b1;
+  --lane-ok:#dde8d4;
+  --lvl-debug:#cabda7; --lvl-info:#9a9081;
+  --grat:rgba(60,46,28,.10);
+  --shadow:0 1px 2px rgba(60,46,28,.05);
+
+  color:var(--ink-2);
+}
+
+  </style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span><span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:1;background:var(--faint)"></span><span style="flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <nav style="width:214px;flex-shrink:0;display:flex;flex-direction:column;gap:2px;padding:14px 12px;border-right:1px solid var(--line);background:var(--panel)">
+      <div style="display:flex;align-items:center;gap:9px;height:28px;padding:0 5px;margin-bottom:13px">
+        <span style="display:grid;place-items:center;width:26px;height:26px;border-radius:2px;background:var(--accent);color:var(--on-accent);flex-shrink:0"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><circle cx="5.6" cy="3.7" r="2" fill="currentColor" stroke="none"/><path d="M5.6 5.7V19.2"/><path d="M5.6 9.7h9.3"/><path d="M5.6 14.45h9.3"/><path d="M5.6 19.2h9.3"/><circle cx="17.4" cy="9.7" r="1.7" stroke-width="1.35"/><circle cx="17.4" cy="14.45" r="1.7" stroke-width="1.35"/><circle cx="17.4" cy="19.2" r="1.7" stroke-width="1.35"/></svg></span>
+        <span class="mono" style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink)">root</span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:7px">
+          <span style="width:6px;height:6px;background:var(--warn)"></span>
+          <span style="color:var(--faint);display:flex"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14.5 5.2 7.7 12l6.8 6.8"/></svg></span>
+        </span>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><circle cx="10.8" cy="10.8" r="6.4"/><path d="M15.6 15.6l4.6 4.6"/></svg><span style="color:var(--faint)">Search</span>
+        <span class="kbd" style="margin-left:auto">⌘K</span>
+      </div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><rect x="3" y="3" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1"/></svg><span>Overview</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M12 2.8 21 7.4 12 12 3 7.4z"/><path d="M3 12.2 12 16.8l9-4.6"/><path d="M3 16.6 12 21.2l9-4.6"/></svg><span>Services</span><span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">12</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M12 3.4a5.4 5.4 0 0 0-5.4 5.4v3.4L5 15.8h14l-1.6-3.6V8.8A5.4 5.4 0 0 0 12 3.4z"/><path d="M9.9 18.8a2.2 2.2 0 0 0 4.2 0"/></svg><span>Alerts</span><span class="mono" style="margin-left:auto;font-size:10px;color:var(--warn)">4</span></div>
+      <div class="nav on"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M3.5 20.2h17"/><path d="M6 16.2l3.9-5 3 3 4.8-7.2"/></svg><span>Metrics</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M4 6.2h16M4 10.4h11M4 14.6h16M4 18.8h8"/></svg><span>Logs</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M11.8 3.2l1.75 4.9 4.9 1.75-4.9 1.75-1.75 4.9-1.75-4.9-4.9-1.75 4.9-1.75z"/><path d="M18.4 15.4l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/></svg><span>Assistant</span></div>
+      <div style="margin-top:auto;display:flex;flex-direction:column;gap:2px">
+        <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M3.6 7.6h9.2M17.4 7.6h3M3.6 16.4h3.4M11.6 16.4h8.8"/><circle cx="15.1" cy="7.6" r="2.3"/><circle cx="9.3" cy="16.4" r="2.3"/></svg><span>Settings</span></div>
+        <div style="display:flex;align-items:center;gap:9px;margin-top:10px;padding:8px 7px;border-top:1px solid var(--line)">
+          <span style="display:grid;place-items:center;width:24px;height:24px;border-radius:2px;flex-shrink:0;color:var(--s6);box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--s6) 45%, transparent);background:color-mix(in srgb, var(--s6) 15%, transparent)"><span class="mono" style="font-size:9.5px;font-weight:600;line-height:1">AC</span></span>
+          <span style="flex:1;min-width:0">
+            <span style="display:block;font-size:11.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Acme Platform</span>
+            <span class="mono" style="display:block;font-size:9.5px;color:var(--faint)">aniket · admin</span>
+          </span>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M5.2 9.2 12 16l6.8-6.8"/></svg>
+        </div>
+      </div>
+    </nav>
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:13px;height:52px;flex-shrink:0;padding:0 20px">
+        <h1 class="disp" style="margin:0;font-size:22px;color:var(--ink)">Metrics</h1>
+        <span class="mono" style="font-size:11px;color:var(--faint)">64 series across 12 connections</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <span class="mono" style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--faint)"><span style="width:9px;height:0;border-top:1px dashed var(--accent)"></span>deploys on</span>
+          <div class="seg"><span>15m</span><span class="on">1h</span><span>6h</span><span>24h</span><span>7d</span></div>
+          <span class="btn" style="gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M11.8 3.2l1.75 4.9 4.9 1.75-4.9 1.75-1.75 4.9-1.75-4.9-4.9-1.75 4.9-1.75z"/><path d="M18.4 15.4l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/></svg>Ask<span class="kbd" style="margin-left:2px">⌘J</span></span>
+          <span class="btn"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><rect x="8.6" y="8.6" width="11.6" height="11.6" rx="1"/><path d="M15.4 5.4a2 2 0 0 0-2-2H5.8a2 2 0 0 0-2 2V13a2 2 0 0 0 2 2"/></svg>Compare</span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;display:flex;padding:0 20px 16px;gap:12px">
+
+        <aside class="panel" style="width:224px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden">
+          <div class="ph"><h2>Series</h2></div>
+          <div style="padding:9px 11px;border-bottom:1px solid var(--line)">
+            <div class="field"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><circle cx="10.8" cy="10.8" r="6.4"/><path d="M15.6 15.6l4.6 4.6"/></svg><span style="color:var(--faint)">Filter series</span></div>
+          </div>
+          <div style="flex:1;min-height:0;padding:7px 0">
+            <div class="lbl" style="padding:6px 13px 5px;font-size:9px">orders-api</div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px;background:var(--sunk);border-left:2px solid var(--accent);padding-left:11px"><span style="width:8px;height:8px;background:var(--warn)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink)">cpu</span><span class="mono" style="font-size:10px;color:var(--warn)">62%</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px;border-left:2px solid var(--crit);padding-left:11px"><span style="width:8px;height:8px;background:var(--crit)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink)">memory</span><span class="mono" style="font-size:10px;color:var(--crit)">7.4G</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s3)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">requests</span><span class="mono" style="font-size:10px;color:var(--muted)">1.8k</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s6)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">error_rate</span><span class="mono" style="font-size:10px;color:var(--crit)">8.1%</span></div>
+            <div class="lbl" style="padding:11px 13px 5px;font-size:9px">payments-db</div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s1)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">replica_lag</span><span class="mono" style="font-size:10px;color:var(--warn)">42s</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s7)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">connections</span><span class="mono" style="font-size:10px;color:var(--muted)">318</span></div>
+            <div class="lbl" style="padding:11px 13px 5px;font-size:9px">edge-proxy</div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s2)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">req_per_sec</span><span class="mono" style="font-size:10px;color:var(--muted)">4.2k</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s8)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">p99_latency</span><span class="mono" style="font-size:10px;color:var(--muted)">38ms</span></div>
+          </div>
+          <div style="padding:9px 12px;border-top:1px solid var(--line)">
+            <p style="margin:0;font-family:var(--mono);font-size:9.5px;line-height:1.5;color:var(--faint)">Series colour is identity, in fixed order. It never means a state.</p>
+          </div>
+        </aside>
+
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+
+          <section class="panel" style="flex-shrink:0">
+            <div class="ph">
+              <h2>orders-api · memory</h2><span class="sub">last hour · 240 samples</span>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:11px">
+                <span class="mono" style="font-size:10px;color:var(--faint)">limit 8G</span>
+                <span class="mono" style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--faint)">Correlate<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M9.5 5.2 16.3 12l-6.8 6.8"/></svg></span>
+              </div>
+            </div>
+            <div style="padding:14px 16px 12px">
+              <div style="display:flex;align-items:baseline;gap:11px;margin-bottom:12px">
+                <span class="mono" style="font-size:30px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--crit)">7.4G</span>
+                <span class="mono" style="font-size:11px;color:var(--crit)">▲ 3.9G since deploy</span>
+                <div style="margin-left:auto;display:flex;gap:16px">
+                  <div style="text-align:right"><div class="mono" style="font-size:12px;color:var(--ink-2)">3.2G</div><div class="lbl" style="margin-top:3px;font-size:9px">min</div></div>
+                  <div style="text-align:right"><div class="mono" style="font-size:12px;color:var(--ink-2)">5.1G</div><div class="lbl" style="margin-top:3px;font-size:9px">mean</div></div>
+                  <div style="text-align:right"><div class="mono" style="font-size:12px;color:var(--crit)">7.98G</div><div class="lbl" style="margin-top:3px;font-size:9px">peak</div></div>
+                </div>
+              </div>
+              <div class="grat"><svg width="900" height="176" viewBox="0 0 900 176" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%">
+<defs><linearGradient id="ar33" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--crit)" stop-opacity=".28"/><stop offset="1" stop-color="var(--crit)" stop-opacity=".02"/></linearGradient></defs>
+<polygon points="0,176 0.0,74.4 15.3,69.9 30.5,78.7 45.8,78.0 61.0,69.1 76.3,72.4 91.5,68.5 106.8,60.2 122.0,48.1 137.3,50.2 152.5,41.5 167.8,45.7 183.1,36.7 198.3,27.0 213.6,22.3 228.8,18.9 244.1,25.3 259.3,32.7 274.6,35.8 289.8,26.4 305.1,30.5 320.3,23.5 335.6,20.3 350.8,17.2 366.1,12.6 381.4,11.5 396.6,11.5 411.9,11.5 427.1,11.5 442.4,11.5 457.6,11.5 472.9,12.8 488.1,11.5 503.4,11.5 518.6,11.5 533.9,11.5 549.2,17.8 564.4,18.0 579.7,22.0 594.9,19.7 610.2,11.5 625.4,17.3 640.7,11.5 655.9,11.5 671.2,11.5 686.4,11.5 701.7,11.5 716.9,12.1 732.2,15.0 747.5,22.3 762.7,23.3 778.0,30.9 793.2,26.0 808.5,24.2 823.7,27.3 839.0,27.1 854.2,18.9 869.5,11.6 884.7,11.5 900.0,11.5 900,176" fill="url(#ar33)"/>
+<polyline points="0.0,74.4 15.3,69.9 30.5,78.7 45.8,78.0 61.0,69.1 76.3,72.4 91.5,68.5 106.8,60.2 122.0,48.1 137.3,50.2 152.5,41.5 167.8,45.7 183.1,36.7 198.3,27.0 213.6,22.3 228.8,18.9 244.1,25.3 259.3,32.7 274.6,35.8 289.8,26.4 305.1,30.5 320.3,23.5 335.6,20.3 350.8,17.2 366.1,12.6 381.4,11.5 396.6,11.5 411.9,11.5 427.1,11.5 442.4,11.5 457.6,11.5 472.9,12.8 488.1,11.5 503.4,11.5 518.6,11.5 533.9,11.5 549.2,17.8 564.4,18.0 579.7,22.0 594.9,19.7 610.2,11.5 625.4,17.3 640.7,11.5 655.9,11.5 671.2,11.5 686.4,11.5 701.7,11.5 716.9,12.1 732.2,15.0 747.5,22.3 762.7,23.3 778.0,30.9 793.2,26.0 808.5,24.2 823.7,27.3 839.0,27.1 854.2,18.9 869.5,11.6 884.7,11.5 900.0,11.5" fill="none" stroke="var(--crit)" stroke-width="1.5" stroke-linejoin="round"/><line x1="558.0" y1="0" x2="558.0" y2="176" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/><path d="M554.5 0 L561.5 0 L558.0 5.5 Z" fill="var(--accent)"/></svg></div>
+              <div style="margin-top:2px"><svg width="900" height="6" viewBox="0 0 900 6" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%;height:6px"><line x1="0.50" y1="0" x2="0.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="15.48" y1="0" x2="15.48" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="30.47" y1="0" x2="30.47" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="45.45" y1="0" x2="45.45" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="60.43" y1="0" x2="60.43" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="75.42" y1="0" x2="75.42" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="90.40" y1="0" x2="90.40" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="105.38" y1="0" x2="105.38" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="120.37" y1="0" x2="120.37" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="135.35" y1="0" x2="135.35" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="150.33" y1="0" x2="150.33" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="165.32" y1="0" x2="165.32" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="180.30" y1="0" x2="180.30" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="195.28" y1="0" x2="195.28" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="210.27" y1="0" x2="210.27" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="225.25" y1="0" x2="225.25" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="240.23" y1="0" x2="240.23" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="255.22" y1="0" x2="255.22" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="270.20" y1="0" x2="270.20" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="285.18" y1="0" x2="285.18" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="300.17" y1="0" x2="300.17" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="315.15" y1="0" x2="315.15" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="330.13" y1="0" x2="330.13" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="345.12" y1="0" x2="345.12" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="360.10" y1="0" x2="360.10" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="375.08" y1="0" x2="375.08" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="390.07" y1="0" x2="390.07" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="405.05" y1="0" x2="405.05" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="420.03" y1="0" x2="420.03" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="435.02" y1="0" x2="435.02" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="450.00" y1="0" x2="450.00" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="464.98" y1="0" x2="464.98" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="479.97" y1="0" x2="479.97" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="494.95" y1="0" x2="494.95" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="509.93" y1="0" x2="509.93" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="524.92" y1="0" x2="524.92" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="539.90" y1="0" x2="539.90" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="554.88" y1="0" x2="554.88" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="569.87" y1="0" x2="569.87" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="584.85" y1="0" x2="584.85" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="599.83" y1="0" x2="599.83" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="614.82" y1="0" x2="614.82" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="629.80" y1="0" x2="629.80" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="644.78" y1="0" x2="644.78" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="659.77" y1="0" x2="659.77" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="674.75" y1="0" x2="674.75" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="689.73" y1="0" x2="689.73" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="704.72" y1="0" x2="704.72" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="719.70" y1="0" x2="719.70" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="734.68" y1="0" x2="734.68" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="749.67" y1="0" x2="749.67" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="764.65" y1="0" x2="764.65" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="779.63" y1="0" x2="779.63" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="794.62" y1="0" x2="794.62" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="809.60" y1="0" x2="809.60" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="824.58" y1="0" x2="824.58" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="839.57" y1="0" x2="839.57" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="854.55" y1="0" x2="854.55" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="869.53" y1="0" x2="869.53" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="884.52" y1="0" x2="884.52" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="899.50" y1="0" x2="899.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/></svg></div>
+              <div style="display:flex;justify-content:space-between;margin-top:5px">
+                <span class="mono" style="font-size:9.5px;color:var(--faint)">13:22</span>
+                <span class="mono" style="font-size:9.5px;color:var(--faint)">13:37</span>
+                <span class="mono" style="font-size:9.5px;color:var(--faint)">13:52</span>
+                <span class="mono" style="font-size:9.5px;color:var(--faint)">14:07</span>
+                <span class="mono" style="font-size:9.5px;color:var(--ink-2)">now</span>
+              </div>
+            </div>
+          </section>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;flex:1;min-height:0">
+            <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+              <div class="ph"><h2>cpu</h2><span class="sub mono">62%</span></div>
+              <div style="padding:12px 14px">
+                <div class="grat"><svg width="300" height="116" viewBox="0 0 300 116" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%">
+<defs><linearGradient id="ar21" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--warn)" stop-opacity=".28"/><stop offset="1" stop-color="var(--warn)" stop-opacity=".02"/></linearGradient></defs>
+<polygon points="0,116 0.0,57.9 5.1,61.0 10.2,62.7 15.3,63.0 20.3,57.4 25.4,52.1 30.5,54.3 35.6,55.1 40.7,51.2 45.8,55.6 50.8,57.9 55.9,56.3 61.0,58.6 66.1,64.3 71.2,58.4 76.3,62.6 81.4,61.8 86.4,57.2 91.5,63.6 96.6,63.7 101.7,67.6 106.8,66.9 111.9,67.4 116.9,73.1 122.0,70.7 127.1,66.4 132.2,60.7 137.3,58.5 142.4,57.3 147.5,61.8 152.5,64.2 157.6,65.9 162.7,68.6 167.8,66.6 172.9,67.7 178.0,69.3 183.1,63.2 188.1,62.0 193.2,58.4 198.3,61.0 203.4,55.8 208.5,49.8 213.6,45.6 218.6,43.6 223.7,40.6 228.8,32.8 233.9,30.8 239.0,28.3 244.1,16.8 249.2,10.1 254.2,8.5 259.3,8.5 264.4,8.5 269.5,8.5 274.6,8.5 279.7,8.5 284.7,8.5 289.8,8.5 294.9,8.5 300.0,8.5 300,116" fill="url(#ar21)"/>
+<polyline points="0.0,57.9 5.1,61.0 10.2,62.7 15.3,63.0 20.3,57.4 25.4,52.1 30.5,54.3 35.6,55.1 40.7,51.2 45.8,55.6 50.8,57.9 55.9,56.3 61.0,58.6 66.1,64.3 71.2,58.4 76.3,62.6 81.4,61.8 86.4,57.2 91.5,63.6 96.6,63.7 101.7,67.6 106.8,66.9 111.9,67.4 116.9,73.1 122.0,70.7 127.1,66.4 132.2,60.7 137.3,58.5 142.4,57.3 147.5,61.8 152.5,64.2 157.6,65.9 162.7,68.6 167.8,66.6 172.9,67.7 178.0,69.3 183.1,63.2 188.1,62.0 193.2,58.4 198.3,61.0 203.4,55.8 208.5,49.8 213.6,45.6 218.6,43.6 223.7,40.6 228.8,32.8 233.9,30.8 239.0,28.3 244.1,16.8 249.2,10.1 254.2,8.5 259.3,8.5 264.4,8.5 269.5,8.5 274.6,8.5 279.7,8.5 284.7,8.5 289.8,8.5 294.9,8.5 300.0,8.5" fill="none" stroke="var(--warn)" stroke-width="1.5" stroke-linejoin="round"/><line x1="186.0" y1="0" x2="186.0" y2="116" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/><path d="M182.5 0 L189.5 0 L186.0 5.5 Z" fill="var(--accent)"/></svg></div>
+                <div style="margin-top:2px"><svg width="300" height="6" viewBox="0 0 300 6" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%;height:6px"><line x1="0.50" y1="0" x2="0.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="10.47" y1="0" x2="10.47" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="20.43" y1="0" x2="20.43" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="30.40" y1="0" x2="30.40" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="40.37" y1="0" x2="40.37" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="50.33" y1="0" x2="50.33" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="60.30" y1="0" x2="60.30" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="70.27" y1="0" x2="70.27" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="80.23" y1="0" x2="80.23" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="90.20" y1="0" x2="90.20" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="100.17" y1="0" x2="100.17" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="110.13" y1="0" x2="110.13" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="120.10" y1="0" x2="120.10" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="130.07" y1="0" x2="130.07" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="140.03" y1="0" x2="140.03" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="150.00" y1="0" x2="150.00" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="159.97" y1="0" x2="159.97" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="169.93" y1="0" x2="169.93" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="179.90" y1="0" x2="179.90" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="189.87" y1="0" x2="189.87" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="199.83" y1="0" x2="199.83" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="209.80" y1="0" x2="209.80" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="219.77" y1="0" x2="219.77" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="229.73" y1="0" x2="229.73" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="239.70" y1="0" x2="239.70" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="249.67" y1="0" x2="249.67" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="259.63" y1="0" x2="259.63" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="269.60" y1="0" x2="269.60" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="279.57" y1="0" x2="279.57" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="289.53" y1="0" x2="289.53" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="299.50" y1="0" x2="299.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/></svg></div>
+              </div>
+            </section>
+            <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+              <div class="ph"><h2>error_rate</h2><span class="sub mono">8.1%</span></div>
+              <div style="padding:12px 14px">
+                <div class="grat"><svg width="300" height="116" viewBox="0 0 300 116" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%">
+<defs><linearGradient id="ar66" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--s6)" stop-opacity=".28"/><stop offset="1" stop-color="var(--s6)" stop-opacity=".02"/></linearGradient></defs>
+<polygon points="0,116 0.0,72.1 5.1,76.0 10.2,72.7 15.3,71.4 20.3,66.2 25.4,72.7 30.5,79.8 35.6,79.1 40.7,82.4 45.8,89.5 50.8,96.4 55.9,89.7 61.0,88.3 66.1,90.4 71.2,85.3 76.3,78.5 81.4,80.3 86.4,78.2 91.5,72.2 96.6,76.9 101.7,81.8 106.8,78.7 111.9,74.7 116.9,79.3 122.0,83.8 127.1,90.2 132.2,90.7 137.3,93.9 142.4,94.8 147.5,93.4 152.5,97.9 157.6,101.5 162.7,105.5 167.8,106.4 172.9,106.4 178.0,105.2 183.1,98.1 188.1,95.7 193.2,88.8 198.3,85.0 203.4,90.1 208.5,89.1 213.6,85.9 218.6,85.0 223.7,79.1 228.8,70.7 233.9,57.9 239.0,50.1 244.1,43.5 249.2,38.8 254.2,34.1 259.3,27.6 264.4,14.1 269.5,12.2 274.6,8.5 279.7,8.5 284.7,8.5 289.8,8.5 294.9,8.5 300.0,8.5 300,116" fill="url(#ar66)"/>
+<polyline points="0.0,72.1 5.1,76.0 10.2,72.7 15.3,71.4 20.3,66.2 25.4,72.7 30.5,79.8 35.6,79.1 40.7,82.4 45.8,89.5 50.8,96.4 55.9,89.7 61.0,88.3 66.1,90.4 71.2,85.3 76.3,78.5 81.4,80.3 86.4,78.2 91.5,72.2 96.6,76.9 101.7,81.8 106.8,78.7 111.9,74.7 116.9,79.3 122.0,83.8 127.1,90.2 132.2,90.7 137.3,93.9 142.4,94.8 147.5,93.4 152.5,97.9 157.6,101.5 162.7,105.5 167.8,106.4 172.9,106.4 178.0,105.2 183.1,98.1 188.1,95.7 193.2,88.8 198.3,85.0 203.4,90.1 208.5,89.1 213.6,85.9 218.6,85.0 223.7,79.1 228.8,70.7 233.9,57.9 239.0,50.1 244.1,43.5 249.2,38.8 254.2,34.1 259.3,27.6 264.4,14.1 269.5,12.2 274.6,8.5 279.7,8.5 284.7,8.5 289.8,8.5 294.9,8.5 300.0,8.5" fill="none" stroke="var(--s6)" stroke-width="1.5" stroke-linejoin="round"/><line x1="186.0" y1="0" x2="186.0" y2="116" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/><path d="M182.5 0 L189.5 0 L186.0 5.5 Z" fill="var(--accent)"/></svg></div>
+                <div style="margin-top:2px"><svg width="300" height="6" viewBox="0 0 300 6" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%;height:6px"><line x1="0.50" y1="0" x2="0.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="10.47" y1="0" x2="10.47" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="20.43" y1="0" x2="20.43" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="30.40" y1="0" x2="30.40" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="40.37" y1="0" x2="40.37" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="50.33" y1="0" x2="50.33" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="60.30" y1="0" x2="60.30" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="70.27" y1="0" x2="70.27" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="80.23" y1="0" x2="80.23" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="90.20" y1="0" x2="90.20" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="100.17" y1="0" x2="100.17" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="110.13" y1="0" x2="110.13" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="120.10" y1="0" x2="120.10" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="130.07" y1="0" x2="130.07" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="140.03" y1="0" x2="140.03" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="150.00" y1="0" x2="150.00" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="159.97" y1="0" x2="159.97" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="169.93" y1="0" x2="169.93" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="179.90" y1="0" x2="179.90" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="189.87" y1="0" x2="189.87" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="199.83" y1="0" x2="199.83" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="209.80" y1="0" x2="209.80" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="219.77" y1="0" x2="219.77" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="229.73" y1="0" x2="229.73" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="239.70" y1="0" x2="239.70" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="249.67" y1="0" x2="249.67" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="259.63" y1="0" x2="259.63" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="269.60" y1="0" x2="269.60" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="279.57" y1="0" x2="279.57" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="289.53" y1="0" x2="289.53" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="299.50" y1="0" x2="299.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/></svg></div>
+              </div>
+            </section>
+            <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+              <div class="ph"><h2>p99 latency</h2><span class="sub mono">30.0s</span></div>
+              <div style="padding:12px 14px">
+                <div class="grat"><svg viewBox="0 0 300 116" width="300" height="116" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%">
+<polygon class="a-wash" style="--op:.07" points="0.0,99.3 7.0,99.7 14.0,99.5 20.9,100.1 27.9,100.0 34.9,99.7 41.9,99.7 48.8,99.2 55.8,99.5 62.8,99.2 69.8,98.8 76.7,98.6 83.7,99.3 90.7,99.3 97.7,99.6 104.7,99.1 111.6,99.3 118.6,99.0 125.6,98.7 132.6,99.0 139.5,99.7 146.5,99.3 153.5,99.7 160.5,100.0 167.4,100.5 174.4,100.5 181.4,99.9 188.4,100.2 195.3,100.8 202.3,100.3 209.3,100.6 216.3,100.7 223.3,100.0 230.2,100.3 237.2,100.5 244.2,100.9 251.2,100.4 258.1,100.1 265.1,99.6 272.1,99.5 279.1,99.1 286.0,98.9 293.0,99.4 300.0,99.2 300.0,10.2 293.0,10.2 286.0,10.2 279.1,10.2 272.1,10.2 265.1,10.2 258.1,15.8 251.2,21.6 244.2,27.9 237.2,33.4 230.2,39.2 223.3,44.9 216.3,50.7 209.3,54.6 202.3,53.8 195.3,53.4 188.4,52.1 181.4,51.1 174.4,51.4 167.4,51.2 160.5,50.7 153.5,50.6 146.5,50.6 139.5,51.6 132.6,51.7 125.6,52.3 118.6,53.6 111.6,54.9 104.7,54.2 97.7,53.7 90.7,52.5 83.7,51.6 76.7,50.3 69.8,50.0 62.8,49.9 55.8,50.2 48.8,49.9 41.9,50.7 34.9,51.2 27.9,52.1 20.9,53.0 14.0,53.4 7.0,54.6 0.0,55.2" fill="var(--s1)" opacity=".07"/>
+<polyline class="a-wash" style="--op:.45" points="0.0,55.2 7.0,54.6 14.0,53.4 20.9,53.0 27.9,52.1 34.9,51.2 41.9,50.7 48.8,49.9 55.8,50.2 62.8,49.9 69.8,50.0 76.7,50.3 83.7,51.6 90.7,52.5 97.7,53.7 104.7,54.2 111.6,54.9 118.6,53.6 125.6,52.3 132.6,51.7 139.5,51.6 146.5,50.6 153.5,50.6 160.5,50.7 167.4,51.2 174.4,51.4 181.4,51.1 188.4,52.1 195.3,53.4 202.3,53.8 209.3,54.6 216.3,50.7 223.3,44.9 230.2,39.2 237.2,33.4 244.2,27.9 251.2,21.6 258.1,15.8 265.1,10.2 272.1,10.2 279.1,10.2 286.0,10.2 293.0,10.2 300.0,10.2" fill="none" stroke="var(--s1)" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" opacity=".45"/><polyline class="a-wash" style="--op:.7" points="0.0,76.2 7.0,75.6 14.0,74.4 20.9,74.0 27.9,73.1 34.9,72.2 41.9,71.7 48.8,70.9 55.8,71.2 62.8,70.9 69.8,71.0 76.7,71.3 83.7,72.6 90.7,73.5 97.7,74.7 104.7,75.2 111.6,75.9 118.6,74.6 125.6,73.3 132.6,72.7 139.5,72.6 146.5,71.6 153.5,71.6 160.5,71.7 167.4,72.2 174.4,72.4 181.4,72.1 188.4,73.1 195.3,74.4 202.3,74.8 209.3,76.0 216.3,77.2 223.3,76.3 230.2,75.6 237.2,74.8 244.2,74.3 251.2,73.1 258.1,72.3 265.1,71.4 272.1,71.2 279.1,70.8 286.0,70.9 293.0,71.8 300.0,72.3" fill="none" stroke="var(--s1)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" opacity=".7"/><polyline class="a-draw" style="--len:390;--op:1" points="0.0,99.3 7.0,99.7 14.0,99.5 20.9,100.1 27.9,100.0 34.9,99.7 41.9,99.7 48.8,99.2 55.8,99.5 62.8,99.2 69.8,98.8 76.7,98.6 83.7,99.3 90.7,99.3 97.7,99.6 104.7,99.1 111.6,99.3 118.6,99.0 125.6,98.7 132.6,99.0 139.5,99.7 146.5,99.3 153.5,99.7 160.5,100.0 167.4,100.5 174.4,100.5 181.4,99.9 188.4,100.2 195.3,100.8 202.3,100.3 209.3,100.6 216.3,100.7 223.3,100.0 230.2,100.3 237.2,100.5 244.2,100.9 251.2,100.4 258.1,100.1 265.1,99.6 272.1,99.5 279.1,99.1 286.0,98.9 293.0,99.4 300.0,99.2" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="1"/></svg></div>
+                <div style="display:flex;gap:11px;margin-top:8px">
+                  <span class="mono" style="font-size:9.5px;color:var(--faint)">p50 38ms</span>
+                  <span class="mono" style="font-size:9.5px;color:var(--faint)">p90 210ms</span>
+                  <span class="mono" style="font-size:9.5px;color:var(--crit)">p99 30.0s</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

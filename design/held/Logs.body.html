@@ -1,0 +1,212 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--page);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span>
+    <span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:1;background:var(--unknown)"></span>
+    <span style="flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <!--RAIL logs-->
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+
+      <header style="display:flex;align-items:center;gap:12px;height:46px;flex-shrink:0;padding:0 18px;border-bottom:1px solid var(--line)">
+        <h1 class="disp" style="margin:0;font-size:16px;font-weight:600;color:var(--ink)">Logs</h1>
+        <div style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink4)">
+          <span class="mono" style="color:var(--ink2)">128,412</span><span>lines buffered</span>
+          <span style="opacity:.4">·</span><span>in memory only</span>
+        </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <div class="seg"><span class="on">Merged</span><span>Split</span></div>
+          <div class="seg"><span class="on">15m</span><span>1h</span><span>6h</span><span>24h</span></div>
+          <span class="btn">Clear buffer</span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column;padding:14px 18px 0;gap:12px">
+
+        <section class="panel" style="flex-shrink:0">
+          <div class="ph">
+            <h2>Activity</h2><span class="sub">stacked by severity · click a bucket to zoom</span>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+              <span class="tag" style="color:var(--crit);border-color:color-mix(in oklab,var(--crit) 30%,transparent);background:color-mix(in oklab,var(--crit) 11%,transparent)">error <span class="mono" style="margin-left:4px">2,104</span></span>
+              <span class="tag" style="color:var(--warn);border-color:color-mix(in oklab,var(--warn) 30%,transparent);background:color-mix(in oklab,var(--warn) 11%,transparent)">warn <span class="mono" style="margin-left:4px">7,880</span></span>
+              <span class="tag">info <span class="mono" style="margin-left:4px">61,204</span></span>
+              <span class="tag">debug <span class="mono" style="margin-left:4px">57,224</span></span>
+            </div>
+          </div>
+          <div style="padding:12px 14px 10px">
+            <div class="grat"><!--HIST 1170 78 78 23--></div>
+            <div style="display:flex;justify-content:space-between;margin-top:7px">
+              <span class="mono" style="font-size:10px;color:var(--ink4)">14:07</span>
+              <span class="mono" style="font-size:10px;color:var(--ink4)">14:11</span>
+              <span class="mono" style="font-size:10px;color:var(--ink4)">14:14</span>
+              <span class="mono" style="font-size:10px;color:var(--ink4)">14:18</span>
+              <span class="mono" style="font-size:10px;color:var(--ink4)">14:22</span>
+            </div>
+          </div>
+        </section>
+
+        <div style="display:flex;gap:12px;flex:1;min-height:0;padding-bottom:14px">
+
+          <aside class="panel" style="width:214px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden">
+            <div class="ph"><h2>Connections</h2></div>
+            <div style="flex:1;min-height:0;padding:5px 0">
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px;background:var(--raised)">
+                <!--DOT down 8--><span style="flex:1;font-size:11.5px;color:var(--ink)">orders-api</span>
+                <span class="mono" style="font-size:10px;color:var(--crit)">1,204</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
+                <!--DOT degraded 8--><span style="flex:1;font-size:11.5px;color:var(--ink2)">payments-db</span>
+                <span class="mono" style="font-size:10px;color:var(--warn)">318</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
+                <!--DOT degraded 8--><span style="flex:1;font-size:11.5px;color:var(--ink2)">search-cluster</span>
+                <span class="mono" style="font-size:10px;color:var(--warn)">96</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
+                <!--DOT degraded 8--><span style="flex:1;font-size:11.5px;color:var(--ink2)">ci-pipeline</span>
+                <span class="mono" style="font-size:10px;color:var(--ink4)">41</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
+                <!--DOT healthy 8--><span style="flex:1;font-size:11.5px;color:var(--ink2)">edge-proxy</span>
+                <span class="mono" style="font-size:10px;color:var(--ink4)">48,102</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
+                <!--DOT healthy 8--><span style="flex:1;font-size:11.5px;color:var(--ink2)">checkout-web</span>
+                <span class="mono" style="font-size:10px;color:var(--ink4)">31,880</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
+                <!--DOT healthy 8--><span style="flex:1;font-size:11.5px;color:var(--ink2)">events-bus</span>
+                <span class="mono" style="font-size:10px;color:var(--ink4)">27,410</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
+                <!--DOT healthy 8--><span style="flex:1;font-size:11.5px;color:var(--ink2)">session-cache</span>
+                <span class="mono" style="font-size:10px;color:var(--ink4)">18,904</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px">
+                <!--DOT unknown 8--><span style="flex:1;font-size:11.5px;color:var(--ink4)">queue-broker</span>
+                <span class="mono" style="font-size:10px;color:var(--ink4)">0</span>
+              </div>
+            </div>
+            <div style="padding:10px 12px;border-top:1px solid var(--line)">
+              <p style="margin:0;font-size:10px;line-height:1.55;color:var(--ink4)">Build console lives with its build. Slow queries are rows in Active queries, not duplicate lines here.</p>
+            </div>
+          </aside>
+
+          <section class="panel" style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--line)">
+              <div class="field" style="flex:1;min-width:0">
+                <!--ICON search 13 var(--ink4)-->
+                <span class="mono" style="color:var(--ink)">code=137</span>
+                <span style="margin-left:auto;color:var(--ink4);font-size:10.5px">2,104 matches</span>
+              </div>
+              <div class="seg">
+                <span class="on">Runtime + events</span><span>Runtime</span><span>Events</span><span>Build output</span><span>Everything</span>
+              </div>
+              <span class="btn btn-g" style="padding:0 7px"><!--ICON filter 13 var(--ink3)--></span>
+            </div>
+
+            <div class="th" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+              <span class="lbl">Time</span><span class="lbl">Level</span><span class="lbl">Connection</span><span class="lbl">Source</span><span class="lbl">Message</span>
+            </div>
+
+            <div style="flex:1;min-height:0;overflow:hidden">
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px;border-top:none;background:color-mix(in oklab, var(--crit) 5%, transparent);border-left:2px solid var(--crit);padding-left:10px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink3)">14:22:07.412</span>
+                <span class="mono" style="font-size:10px;color:var(--crit)">ERROR</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">orders-api</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">worker-3</span>
+                <span class="mono" style="font-size:11px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">container exited: <span style="background:color-mix(in oklab,var(--warn) 26%,transparent);border-radius:3px;padding:0 2px">code=137</span> reason=OOMKilled restart_count=9</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:22:06.881</span>
+                <span class="mono" style="font-size:10px;color:var(--crit)">ERROR</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">orders-api</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">worker-1</span>
+                <span class="mono" style="font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">POST /v2/orders 502 in 30012ms upstream=orders-worker-3</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:22:05.204</span>
+                <span class="mono" style="font-size:10px;color:var(--warn)">WARN</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">payments-db</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">replica-2</span>
+                <span class="mono" style="font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">streaming replication lag 42.3s exceeds 30s</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:22:04.997</span>
+                <span class="mono" style="font-size:10px;color:var(--crit)">ERROR</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">orders-api</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">worker-3</span>
+                <span class="mono" style="font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">connection refused: dial tcp 10.4.2.19:5432</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:22:04.310</span>
+                <span class="mono" style="font-size:10px;color:#6C7C8C">INFO</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">orders-api</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">daemon</span>
+                <span class="mono" style="font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">restarting orders-worker-3 (policy: on-failure)</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:22:03.118</span>
+                <span class="mono" style="font-size:10px;color:var(--crit)">ERROR</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">orders-api</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">worker-7</span>
+                <span class="mono" style="font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">connection pool exhausted after 30s, 0 of 20 free</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:22:01.442</span>
+                <span class="mono" style="font-size:10px;color:var(--warn)">WARN</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">search-cluster</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">es-node-4</span>
+                <span class="mono" style="font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">shard [orders-2026.08][3] unassigned, retry 4</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:21:59.870</span>
+                <span class="mono" style="font-size:10px;color:#6C7C8C">INFO</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">edge-proxy</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">access</span>
+                <span class="mono" style="font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GET /health 200 in 2ms upstream=checkout-web</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:21:58.201</span>
+                <span class="mono" style="font-size:10px;color:var(--warn)">WARN</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">orders-api</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">worker-5</span>
+                <span class="mono" style="font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">heap 7.1G of 8G limit, gc pause 412ms</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:21:56.664</span>
+                <span class="mono" style="font-size:10px;color:#46535F">DEBUG</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">session-cache</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">replica-1</span>
+                <span class="mono" style="font-size:11px;color:var(--ink4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">sync full completed, 1.4G in 802ms</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:21:55.023</span>
+                <span class="mono" style="font-size:10px;color:#6C7C8C">INFO</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">ci-pipeline</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">orders-release</span>
+                <span class="mono" style="font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">build #4821 finished: FAILURE in 14m 02s</span>
+              </div>
+              <div class="tr" style="grid-template-columns:74px 46px 120px 118px 1fr;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--ink4)">14:21:53.780</span>
+                <span class="mono" style="font-size:10px;color:#46535F">DEBUG</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis">events-bus</span>
+                <span class="mono" style="font-size:10.5px;color:var(--ink4);overflow:hidden;text-overflow:ellipsis">broker-2</span>
+                <span class="mono" style="font-size:11px;color:var(--ink4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">group orders-consumer rebalanced, 12 partitions</span>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 12px;border-top:1px solid var(--line)">
+              <span style="font-size:10.5px;color:var(--ink4)">Showing 2,104 of 128,412 lines</span>
+              <span class="btn" style="margin-left:auto;height:22px;padding:0 9px;font-size:10.5px"><!--ICON clock 12 var(--ink3)-->Correlate this moment</span>
+              <span class="btn" style="height:22px;padding:0 9px;font-size:10.5px"><!--ICON copy 12 var(--ink3)-->Copy</span>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

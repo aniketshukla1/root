@@ -1,0 +1,502 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+/* root — design tokens.
+ *
+ * Surfaces, ink and radii follow the field-guide HUD: a blue-black ground,
+ * borders doing the work instead of shadows, 3px corners, and mono as the
+ * chrome typeface — labels, buttons and panel titles are all mono with wide
+ * tracking, which is what makes the whole thing read as an instrument.
+ *
+ * Two rules from the existing app survive untouched, because in a monitoring
+ * tool they are load-bearing:
+ *   Status hues are reserved. Nothing that is not a state may wear one.
+ *   Series hues carry identity only, in fixed order, never sorted by value.
+ * That is also why the accent is azure and not the reference's mint: green
+ * already means healthy here, and an accent you can click must never be
+ * mistakable for a state. */
+:root {
+  --bg:#0a0e14; --panel:#0c1219; --sunk:#111a24; --raised:#141e29;
+  --line:#1c2530; --line-soft:#18222e; --line-strong:#2b3846;
+  --ink:#f0f5fa; --ink-2:#a9b8ca; --muted:#8496ad; --faint:#6f8095;
+
+  --accent:#4cc2ff; --accent-soft:color-mix(in srgb, var(--accent) 11%, var(--bg));
+  --on-accent:#04121c;
+
+  /* status — reserved */
+  --ok:#5fc48c;      --ok-soft:#0d1a14;
+  --warn:#d9a84e;    --warn-soft:#191408;
+  --serious:#dd8a52;
+  --crit:#e0705a;    --crit-soft:#1a1116;
+  --unknown:#6f8095;
+
+  /* categorical identity — fixed order */
+  --s1:#5a9ee0; --s2:#d98a5a; --s3:#4db89a; --s4:#c9a44e;
+  --s5:#d47fa8; --s6:#8d92e8; --s7:#57bcc4; --s8:#dd8080;
+
+  /* cells — the component matrix */
+  --cell-todo:#131c26; --cell-line:#22303e;
+
+  /* plotted surfaces: nominal lane, log severities below warn, chart ruling */
+  --lane-ok:#1c3329;
+  --lvl-debug:#2b3846; --lvl-info:#6f8095;
+  --grat:rgba(255,255,255,.045);
+
+  --r:3px;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+  --sans:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--bg); color:var(--ink-2);
+  font-family:var(--sans); font-size:13px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+a { color:var(--accent); text-decoration:none; }
+a:hover { color:#8ad6ff; }
+
+/* Mono is the chrome typeface: every label, button and panel title. */
+.lbl {
+  font-family:var(--mono); font-size:10px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--muted);
+}
+.mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+.disp { font-family:var(--sans); font-weight:700; letter-spacing:-.03em; }
+
+/* An eyebrow always announces itself with the same sigil. */
+.eyebrow {
+  font-family:var(--mono); font-size:10px; letter-spacing:.2em;
+  text-transform:uppercase; color:var(--accent);
+}
+.eyebrow::before { content:"\25B8\00a0\00a0"; }
+
+.panel, .plate {
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+}
+
+.ph {
+  display:flex; align-items:center; gap:10px; height:33px; padding:0 12px;
+  border-bottom:1px solid var(--line);
+}
+.ph h2 {
+  margin:0; font-family:var(--mono); font-size:10px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--muted); font-weight:400; white-space:nowrap;
+}
+.ph .sub { font-family:var(--mono); font-size:10px; color:var(--faint); }
+
+.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  min-height:27px; padding:0 10px; border:1px solid var(--line); border-radius:var(--r);
+  background:var(--panel); color:var(--ink-2);
+  font-family:var(--mono); font-size:11px; letter-spacing:.04em; cursor:pointer;
+}
+.btn-p { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+.btn-g { border-color:transparent; background:transparent; color:var(--faint); }
+.btn-s { min-height:22px; padding:0 8px; font-size:10px; }
+
+.field {
+  display:flex; align-items:center; gap:7px; height:27px; padding:0 9px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--sunk);
+  color:var(--ink-2); font-family:var(--mono); font-size:11px;
+}
+
+.seg {
+  display:inline-flex; align-items:center; gap:2px; padding:3px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--panel);
+}
+.seg > span {
+  display:inline-flex; align-items:center; height:21px; padding:0 9px; border-radius:2px;
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; color:var(--muted);
+}
+.seg > span.on { background:var(--accent); color:var(--on-accent); }
+
+.tag {
+  display:inline-flex; align-items:center; height:18px; padding:0 6px;
+  border:1px solid var(--line); border-radius:2px; background:var(--panel);
+  font-family:var(--mono); font-size:10px; letter-spacing:.05em;
+  color:var(--muted); white-space:nowrap;
+}
+
+.kbd {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:17px; height:17px; padding:0 4px;
+  border:1px solid var(--line); border-radius:2px; background:var(--sunk);
+  font-family:var(--mono); font-size:10px; color:var(--faint);
+}
+
+.nav {
+  display:flex; align-items:center; gap:10px; height:30px; padding:0 9px;
+  border-radius:var(--r); color:var(--ink-2); font-size:12.5px; position:relative;
+}
+.nav.on { background:var(--sunk); color:var(--ink); }
+.nav.on::before {
+  content:""; position:absolute; left:-9px; top:8px; width:2px; height:14px;
+  background:var(--accent);
+}
+
+.tr { display:grid; align-items:center; height:29px; padding:0 12px; border-top:1px solid var(--line-soft); }
+.th { display:grid; align-items:center; height:26px; padding:0 12px; border-bottom:1px solid var(--line); }
+
+/* Graticule — instrument ruling behind plotted data. */
+.grat { background-image:repeating-linear-gradient(to top, var(--grat) 0 1px, transparent 1px 25%); }
+
+/* A note that carries a state wears it on its leading edge. */
+.note { border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:var(--r); background:var(--panel); }
+
+/* ──────────────────────────────────────────────────────────── motion
+ * One rule: motion explains where a value came from, it never decorates.
+ * A line draws along its own time axis, a bar grows from its baseline, a
+ * series staggers in reading order. Everything is intro-only — nothing
+ * loops, because a console that pulses forever is a console you stop
+ * looking at. All of it stops under prefers-reduced-motion. */
+@keyframes draw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
+@keyframes rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes reach { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes wash { from { opacity: 0; } to { opacity: var(--op, 1); } }
+@keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: var(--op, 1); } }
+
+.a-draw { stroke-dasharray: var(--len); animation: draw 1.15s cubic-bezier(.22,.8,.3,1) both; }
+.a-rise { transform-origin: bottom; animation: rise .5s cubic-bezier(.22,.9,.3,1) both; }
+.a-reach { transform-origin: left; animation: reach .55s cubic-bezier(.22,.9,.3,1) both; }
+.a-wash { animation: wash .7s ease-out both; }
+/* Sweep is draw's sibling for arcs: it animates the offset only, so the
+   element keeps the dash pattern that encodes its value. */
+.a-sweep { animation: draw 1.15s cubic-bezier(.22,.8,.3,1) both; }
+.a-pop  { transform-box: fill-box; transform-origin: center; animation: pop .34s cubic-bezier(.3,1.4,.5,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .a-draw, .a-sweep, .a-rise, .a-reach, .a-wash, .a-pop { animation: none; stroke-dashoffset: 0; transform: none; opacity: 1; }
+}
+
+/* ─────────────────────────────────────────────────────────────── light mode
+ *
+ * Warm paper, not white. A dark HUD inverted onto cold white reads as a
+ * mistake; on paper it reads as printed — which is also what a console looks
+ * like when someone exports a page of it or works next to a window.
+ *
+ * Two things change meaning rather than just value:
+ *   The accent cannot be the field guide's brown. Brown sits on top of the
+ *   warn hue, and an accent must never be mistakable for a state — so the
+ *   azure deepens instead of inverting.
+ *   Nominal inverts direction. In the dark it is a near-black green that
+ *   stays quiet; on paper quiet means a pale tint, with faults holding all
+ *   the saturation. */
+.light {
+  --bg:#f7f3ec; --panel:#fdfbf7; --sunk:#efe8dc; --raised:#f2ebdf;
+  --line:#ddd3c4; --line-soft:#e8dfd0; --line-strong:#c4b7a1;
+  --ink:#2a2622; --ink-2:#4a443d; --muted:#6e6659; --faint:#8c8375;
+
+  --accent:#1d6a9c; --accent-soft:color-mix(in srgb, var(--accent) 10%, var(--bg));
+  --on-accent:#f9f6f0;
+
+  --ok:#4a7a3f; --warn:#96661a; --serious:#b35f24; --crit:#a8443a; --unknown:#8c8375;
+
+  --s1:#2f6fae; --s2:#b0602f; --s3:#2e7f66; --s4:#8f7020;
+  --s5:#a3517a; --s6:#5a5fae; --s7:#2d7f88; --s8:#a85252;
+
+  --cell-todo:#ece4d6; --cell-line:#d3c6b1;
+  --lane-ok:#dde8d4;
+  --lvl-debug:#cabda7; --lvl-info:#9a9081;
+  --grat:rgba(60,46,28,.10);
+  --shadow:0 1px 2px rgba(60,46,28,.05);
+
+  color:var(--ink-2);
+}
+
+  </style>
+</helmet>
+<div class="light" style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span><span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:1;background:var(--faint)"></span><span style="flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <nav style="width:214px;flex-shrink:0;display:flex;flex-direction:column;gap:2px;padding:14px 12px;border-right:1px solid var(--line);background:var(--panel)">
+      <div style="display:flex;align-items:center;gap:9px;height:28px;padding:0 5px;margin-bottom:13px">
+        <span style="display:grid;place-items:center;width:26px;height:26px;border-radius:2px;background:var(--accent);color:var(--on-accent);flex-shrink:0"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><circle cx="5.6" cy="3.7" r="2" fill="currentColor" stroke="none"/><path d="M5.6 5.7V19.2"/><path d="M5.6 9.7h9.3"/><path d="M5.6 14.45h9.3"/><path d="M5.6 19.2h9.3"/><circle cx="17.4" cy="9.7" r="1.7" stroke-width="1.35"/><circle cx="17.4" cy="14.45" r="1.7" stroke-width="1.35"/><circle cx="17.4" cy="19.2" r="1.7" stroke-width="1.35"/></svg></span>
+        <span class="mono" style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink)">root</span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:7px">
+          <span style="width:6px;height:6px;background:var(--warn)"></span>
+          <span style="color:var(--faint);display:flex"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14.5 5.2 7.7 12l6.8 6.8"/></svg></span>
+        </span>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><circle cx="10.8" cy="10.8" r="6.4"/><path d="M15.6 15.6l4.6 4.6"/></svg><span style="color:var(--faint)">Search</span>
+        <span class="kbd" style="margin-left:auto">⌘K</span>
+      </div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><rect x="3" y="3" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1"/></svg><span>Overview</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M12 2.8 21 7.4 12 12 3 7.4z"/><path d="M3 12.2 12 16.8l9-4.6"/><path d="M3 16.6 12 21.2l9-4.6"/></svg><span>Services</span><span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">12</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M12 3.4a5.4 5.4 0 0 0-5.4 5.4v3.4L5 15.8h14l-1.6-3.6V8.8A5.4 5.4 0 0 0 12 3.4z"/><path d="M9.9 18.8a2.2 2.2 0 0 0 4.2 0"/></svg><span>Alerts</span><span class="mono" style="margin-left:auto;font-size:10px;color:var(--warn)">4</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M3.5 20.2h17"/><path d="M6 16.2l3.9-5 3 3 4.8-7.2"/></svg><span>Metrics</span></div>
+      <div class="nav on"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M4 6.2h16M4 10.4h11M4 14.6h16M4 18.8h8"/></svg><span>Logs</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M11.8 3.2l1.75 4.9 4.9 1.75-4.9 1.75-1.75 4.9-1.75-4.9-4.9-1.75 4.9-1.75z"/><path d="M18.4 15.4l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/></svg><span>Assistant</span></div>
+      <div style="margin-top:auto;display:flex;flex-direction:column;gap:2px">
+        <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M3.6 7.6h9.2M17.4 7.6h3M3.6 16.4h3.4M11.6 16.4h8.8"/><circle cx="15.1" cy="7.6" r="2.3"/><circle cx="9.3" cy="16.4" r="2.3"/></svg><span>Settings</span></div>
+        <div style="display:flex;align-items:center;gap:9px;margin-top:10px;padding:8px 7px;border-top:1px solid var(--line)">
+          <span style="display:grid;place-items:center;width:24px;height:24px;border-radius:2px;flex-shrink:0;color:var(--s6);box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--s6) 45%, transparent);background:color-mix(in srgb, var(--s6) 15%, transparent)"><span class="mono" style="font-size:9.5px;font-weight:600;line-height:1">AC</span></span>
+          <span style="flex:1;min-width:0">
+            <span style="display:block;font-size:11.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Acme Platform</span>
+            <span class="mono" style="display:block;font-size:9.5px;color:var(--faint)">aniket · admin</span>
+          </span>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M5.2 9.2 12 16l6.8-6.8"/></svg>
+        </div>
+      </div>
+    </nav>
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:13px;height:52px;flex-shrink:0;padding:0 20px">
+        <h1 class="disp" style="margin:0;font-size:22px;color:var(--ink)">Logs</h1>
+        <span class="mono" style="font-size:11px;color:var(--faint)">128,412 lines buffered · retained 7 days across the workspace</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <div class="seg"><span class="on">Merged</span><span>Split</span></div>
+          <div class="seg"><span class="on">15m</span><span>1h</span><span>6h</span><span>24h</span></div>
+          <span class="btn" style="gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M11.8 3.2l1.75 4.9 4.9 1.75-4.9 1.75-1.75 4.9-1.75-4.9-4.9-1.75 4.9-1.75z"/><path d="M18.4 15.4l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/></svg>Ask<span class="kbd" style="margin-left:2px">⌘J</span></span>
+          <span class="btn">Clear buffer</span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column;padding:0 0 16px 20px;gap:12px">
+
+        <section class="panel" style="flex-shrink:0">
+          <div class="ph">
+            <h2>Activity</h2><span class="sub">stacked by severity · click a bucket to zoom</span>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:7px">
+              <span class="tag" style="color:var(--crit);border-color:color-mix(in srgb,var(--crit) 30%,transparent);background:color-mix(in srgb,var(--crit) 10%,transparent)">error <span style="margin-left:5px">2,104</span></span>
+              <span class="tag" style="color:var(--warn);border-color:color-mix(in srgb,var(--warn) 30%,transparent);background:color-mix(in srgb,var(--warn) 10%,transparent)">warn <span style="margin-left:5px">7,880</span></span>
+              <span class="tag">info <span style="margin-left:5px">61,204</span></span>
+              <span class="tag">debug <span style="margin-left:5px">57,224</span></span>
+            </div>
+          </div>
+          <div style="padding:13px 16px 11px">
+            <div class="grat"><svg width="800" height="74" viewBox="0 0 800 74" aria-hidden="true" style="display:block;width:100%"><rect x="0.00" y="67.18" width="11.37" height="6.82" fill="var(--lvl-debug)"/><rect x="0.00" y="57.17" width="11.37" height="10.01" fill="var(--lvl-info)"/><rect x="0.00" y="53.53" width="11.37" height="3.64" fill="var(--warn)"/><rect x="0.00" y="51.26" width="11.37" height="2.27" fill="var(--crit)"/><rect x="13.37" y="67.36" width="11.37" height="6.64" fill="var(--lvl-debug)"/><rect x="13.37" y="57.62" width="11.37" height="9.74" fill="var(--lvl-info)"/><rect x="13.37" y="54.08" width="11.37" height="3.54" fill="var(--warn)"/><rect x="13.37" y="51.86" width="11.37" height="2.21" fill="var(--crit)"/><rect x="26.73" y="63.16" width="11.37" height="10.84" fill="var(--lvl-debug)"/><rect x="26.73" y="47.26" width="11.37" height="15.90" fill="var(--lvl-info)"/><rect x="26.73" y="41.48" width="11.37" height="5.78" fill="var(--warn)"/><rect x="26.73" y="37.87" width="11.37" height="3.61" fill="var(--crit)"/><rect x="40.10" y="65.59" width="11.37" height="8.41" fill="var(--lvl-debug)"/><rect x="40.10" y="53.26" width="11.37" height="12.33" fill="var(--lvl-info)"/><rect x="40.10" y="48.78" width="11.37" height="4.48" fill="var(--warn)"/><rect x="40.10" y="45.98" width="11.37" height="2.80" fill="var(--crit)"/><rect x="53.47" y="65.46" width="11.37" height="8.54" fill="var(--lvl-debug)"/><rect x="53.47" y="52.92" width="11.37" height="12.53" fill="var(--lvl-info)"/><rect x="53.47" y="48.37" width="11.37" height="4.56" fill="var(--warn)"/><rect x="53.47" y="45.52" width="11.37" height="2.85" fill="var(--crit)"/><rect x="66.83" y="66.27" width="11.37" height="7.73" fill="var(--lvl-debug)"/><rect x="66.83" y="54.94" width="11.37" height="11.33" fill="var(--lvl-info)"/><rect x="66.83" y="50.82" width="11.37" height="4.12" fill="var(--warn)"/><rect x="66.83" y="48.24" width="11.37" height="2.58" fill="var(--crit)"/><rect x="80.20" y="64.06" width="11.37" height="9.94" fill="var(--lvl-debug)"/><rect x="80.20" y="49.47" width="11.37" height="14.59" fill="var(--lvl-info)"/><rect x="80.20" y="44.17" width="11.37" height="5.30" fill="var(--warn)"/><rect x="80.20" y="40.85" width="11.37" height="3.31" fill="var(--crit)"/><rect x="93.57" y="60.77" width="11.37" height="13.23" fill="var(--lvl-debug)"/><rect x="93.57" y="41.36" width="11.37" height="19.41" fill="var(--lvl-info)"/><rect x="93.57" y="34.31" width="11.37" height="7.06" fill="var(--warn)"/><rect x="93.57" y="29.90" width="11.37" height="4.41" fill="var(--crit)"/><rect x="106.93" y="61.72" width="11.37" height="12.28" fill="var(--lvl-debug)"/><rect x="106.93" y="43.70" width="11.37" height="18.01" fill="var(--lvl-info)"/><rect x="106.93" y="37.15" width="11.37" height="6.55" fill="var(--warn)"/><rect x="106.93" y="33.06" width="11.37" height="4.09" fill="var(--crit)"/><rect x="120.30" y="67.80" width="11.37" height="6.20" fill="var(--lvl-debug)"/><rect x="120.30" y="58.71" width="11.37" height="9.09" fill="var(--lvl-info)"/><rect x="120.30" y="55.40" width="11.37" height="3.31" fill="var(--warn)"/><rect x="120.30" y="53.34" width="11.37" height="2.07" fill="var(--crit)"/><rect x="133.67" y="62.59" width="11.37" height="11.41" fill="var(--lvl-debug)"/><rect x="133.67" y="45.86" width="11.37" height="16.73" fill="var(--lvl-info)"/><rect x="133.67" y="39.77" width="11.37" height="6.08" fill="var(--warn)"/><rect x="133.67" y="35.97" width="11.37" height="3.80" fill="var(--crit)"/><rect x="147.03" y="66.31" width="11.37" height="7.69" fill="var(--lvl-debug)"/><rect x="147.03" y="55.04" width="11.37" height="11.27" fill="var(--lvl-info)"/><rect x="147.03" y="50.94" width="11.37" height="4.10" fill="var(--warn)"/><rect x="147.03" y="48.38" width="11.37" height="2.56" fill="var(--crit)"/><rect x="160.40" y="67.23" width="11.37" height="6.77" fill="var(--lvl-debug)"/><rect x="160.40" y="57.29" width="11.37" height="9.94" fill="var(--lvl-info)"/><rect x="160.40" y="53.68" width="11.37" height="3.61" fill="var(--warn)"/><rect x="160.40" y="51.42" width="11.37" height="2.26" fill="var(--crit)"/><rect x="173.77" y="60.53" width="11.37" height="13.47" fill="var(--lvl-debug)"/><rect x="173.77" y="40.77" width="11.37" height="19.76" fill="var(--lvl-info)"/><rect x="173.77" y="33.59" width="11.37" height="7.18" fill="var(--warn)"/><rect x="173.77" y="29.10" width="11.37" height="4.49" fill="var(--crit)"/><rect x="187.13" y="61.62" width="11.37" height="12.38" fill="var(--lvl-debug)"/><rect x="187.13" y="43.46" width="11.37" height="18.16" fill="var(--lvl-info)"/><rect x="187.13" y="36.85" width="11.37" height="6.60" fill="var(--warn)"/><rect x="187.13" y="32.72" width="11.37" height="4.13" fill="var(--crit)"/><rect x="200.50" y="64.35" width="11.37" height="9.65" fill="var(--lvl-debug)"/><rect x="200.50" y="50.20" width="11.37" height="14.15" fill="var(--lvl-info)"/><rect x="200.50" y="45.06" width="11.37" height="5.15" fill="var(--warn)"/><rect x="200.50" y="41.84" width="11.37" height="3.22" fill="var(--crit)"/><rect x="213.87" y="62.35" width="11.37" height="11.65" fill="var(--lvl-debug)"/><rect x="213.87" y="45.26" width="11.37" height="17.09" fill="var(--lvl-info)"/><rect x="213.87" y="39.04" width="11.37" height="6.21" fill="var(--warn)"/><rect x="213.87" y="35.16" width="11.37" height="3.88" fill="var(--crit)"/><rect x="227.23" y="67.46" width="11.37" height="6.54" fill="var(--lvl-debug)"/><rect x="227.23" y="57.86" width="11.37" height="9.60" fill="var(--lvl-info)"/><rect x="227.23" y="54.37" width="11.37" height="3.49" fill="var(--warn)"/><rect x="227.23" y="52.19" width="11.37" height="2.18" fill="var(--crit)"/><rect x="240.60" y="64.50" width="11.37" height="9.50" fill="var(--lvl-debug)"/><rect x="240.60" y="50.57" width="11.37" height="13.93" fill="var(--lvl-info)"/><rect x="240.60" y="45.50" width="11.37" height="5.07" fill="var(--warn)"/><rect x="240.60" y="42.33" width="11.37" height="3.17" fill="var(--crit)"/><rect x="253.97" y="62.99" width="11.37" height="11.01" fill="var(--lvl-debug)"/><rect x="253.97" y="46.84" width="11.37" height="16.15" fill="var(--lvl-info)"/><rect x="253.97" y="40.97" width="11.37" height="5.87" fill="var(--warn)"/><rect x="253.97" y="37.30" width="11.37" height="3.67" fill="var(--crit)"/><rect x="267.33" y="60.53" width="11.37" height="13.47" fill="var(--lvl-debug)"/><rect x="267.33" y="40.77" width="11.37" height="19.76" fill="var(--lvl-info)"/><rect x="267.33" y="33.59" width="11.37" height="7.18" fill="var(--warn)"/><rect x="267.33" y="29.10" width="11.37" height="4.49" fill="var(--crit)"/><rect x="280.70" y="66.28" width="11.37" height="7.72" fill="var(--lvl-debug)"/><rect x="280.70" y="54.96" width="11.37" height="11.32" fill="var(--lvl-info)"/><rect x="280.70" y="50.85" width="11.37" height="4.12" fill="var(--warn)"/><rect x="280.70" y="48.27" width="11.37" height="2.57" fill="var(--crit)"/><rect x="294.07" y="61.57" width="11.37" height="12.43" fill="var(--lvl-debug)"/><rect x="294.07" y="43.34" width="11.37" height="18.23" fill="var(--lvl-info)"/><rect x="294.07" y="36.71" width="11.37" height="6.63" fill="var(--warn)"/><rect x="294.07" y="32.56" width="11.37" height="4.14" fill="var(--crit)"/><rect x="307.43" y="66.15" width="11.37" height="7.85" fill="var(--lvl-debug)"/><rect x="307.43" y="54.65" width="11.37" height="11.51" fill="var(--lvl-info)"/><rect x="307.43" y="50.46" width="11.37" height="4.18" fill="var(--warn)"/><rect x="307.43" y="47.85" width="11.37" height="2.62" fill="var(--crit)"/><rect x="320.80" y="66.45" width="11.37" height="7.55" fill="var(--lvl-debug)"/><rect x="320.80" y="55.37" width="11.37" height="11.08" fill="var(--lvl-info)"/><rect x="320.80" y="51.34" width="11.37" height="4.03" fill="var(--warn)"/><rect x="320.80" y="48.82" width="11.37" height="2.52" fill="var(--crit)"/><rect x="334.17" y="62.04" width="11.37" height="11.96" fill="var(--lvl-debug)"/><rect x="334.17" y="44.49" width="11.37" height="17.55" fill="var(--lvl-info)"/><rect x="334.17" y="38.11" width="11.37" height="6.38" fill="var(--warn)"/><rect x="334.17" y="34.12" width="11.37" height="3.99" fill="var(--crit)"/><rect x="347.53" y="66.70" width="11.37" height="7.30" fill="var(--lvl-debug)"/><rect x="347.53" y="55.99" width="11.37" height="10.71" fill="var(--lvl-info)"/><rect x="347.53" y="52.09" width="11.37" height="3.89" fill="var(--warn)"/><rect x="347.53" y="49.66" width="11.37" height="2.43" fill="var(--crit)"/><rect x="360.90" y="62.54" width="11.37" height="11.46" fill="var(--lvl-debug)"/><rect x="360.90" y="45.74" width="11.37" height="16.81" fill="var(--lvl-info)"/><rect x="360.90" y="39.63" width="11.37" height="6.11" fill="var(--warn)"/><rect x="360.90" y="35.81" width="11.37" height="3.82" fill="var(--crit)"/><rect x="374.27" y="65.10" width="11.37" height="8.90" fill="var(--lvl-debug)"/><rect x="374.27" y="52.05" width="11.37" height="13.05" fill="var(--lvl-info)"/><rect x="374.27" y="47.31" width="11.37" height="4.75" fill="var(--warn)"/><rect x="374.27" y="44.34" width="11.37" height="2.97" fill="var(--crit)"/><rect x="387.63" y="64.08" width="11.37" height="9.92" fill="var(--lvl-debug)"/><rect x="387.63" y="49.53" width="11.37" height="14.55" fill="var(--lvl-info)"/><rect x="387.63" y="44.24" width="11.37" height="5.29" fill="var(--warn)"/><rect x="387.63" y="40.93" width="11.37" height="3.31" fill="var(--crit)"/><rect x="401.00" y="60.82" width="11.37" height="13.18" fill="var(--lvl-debug)"/><rect x="401.00" y="41.50" width="11.37" height="19.32" fill="var(--lvl-info)"/><rect x="401.00" y="34.47" width="11.37" height="7.03" fill="var(--warn)"/><rect x="401.00" y="30.08" width="11.37" height="4.39" fill="var(--crit)"/><rect x="414.37" y="62.17" width="11.37" height="11.83" fill="var(--lvl-debug)"/><rect x="414.37" y="44.82" width="11.37" height="17.35" fill="var(--lvl-info)"/><rect x="414.37" y="38.51" width="11.37" height="6.31" fill="var(--warn)"/><rect x="414.37" y="34.57" width="11.37" height="3.94" fill="var(--crit)"/><rect x="427.73" y="61.20" width="11.37" height="12.80" fill="var(--lvl-debug)"/><rect x="427.73" y="42.44" width="11.37" height="18.77" fill="var(--lvl-info)"/><rect x="427.73" y="35.61" width="11.37" height="6.82" fill="var(--warn)"/><rect x="427.73" y="31.35" width="11.37" height="4.27" fill="var(--crit)"/><rect x="441.10" y="61.07" width="11.37" height="12.93" fill="var(--lvl-debug)"/><rect x="441.10" y="42.10" width="11.37" height="18.96" fill="var(--lvl-info)"/><rect x="441.10" y="35.21" width="11.37" height="6.90" fill="var(--warn)"/><rect x="441.10" y="30.90" width="11.37" height="4.31" fill="var(--crit)"/><rect x="454.47" y="63.06" width="11.37" height="10.94" fill="var(--lvl-debug)"/><rect x="454.47" y="47.01" width="11.37" height="16.05" fill="var(--lvl-info)"/><rect x="454.47" y="41.18" width="11.37" height="5.83" fill="var(--warn)"/><rect x="454.47" y="37.53" width="11.37" height="3.65" fill="var(--crit)"/><rect x="467.83" y="61.82" width="11.37" height="12.18" fill="var(--lvl-debug)"/><rect x="467.83" y="43.97" width="11.37" height="17.86" fill="var(--lvl-info)"/><rect x="467.83" y="37.47" width="11.37" height="6.49" fill="var(--warn)"/><rect x="467.83" y="33.42" width="11.37" height="4.06" fill="var(--crit)"/><rect x="481.20" y="62.59" width="11.37" height="11.41" fill="var(--lvl-debug)"/><rect x="481.20" y="45.86" width="11.37" height="16.73" fill="var(--lvl-info)"/><rect x="481.20" y="39.78" width="11.37" height="6.08" fill="var(--warn)"/><rect x="481.20" y="35.97" width="11.37" height="3.80" fill="var(--crit)"/><rect x="494.57" y="64.68" width="11.37" height="9.32" fill="var(--lvl-debug)"/><rect x="494.57" y="51.01" width="11.37" height="13.67" fill="var(--lvl-info)"/><rect x="494.57" y="27.51" width="11.37" height="23.50" fill="var(--warn)"/><rect x="494.57" y="12.82" width="11.37" height="14.69" fill="var(--crit)"/><rect x="507.93" y="64.30" width="11.37" height="9.70" fill="var(--lvl-debug)"/><rect x="507.93" y="50.06" width="11.37" height="14.23" fill="var(--lvl-info)"/><rect x="507.93" y="25.59" width="11.37" height="24.47" fill="var(--warn)"/><rect x="507.93" y="10.30" width="11.37" height="15.29" fill="var(--crit)"/><rect x="521.30" y="63.45" width="11.37" height="10.55" fill="var(--lvl-debug)"/><rect x="521.30" y="47.98" width="11.37" height="15.47" fill="var(--lvl-info)"/><rect x="521.30" y="21.38" width="11.37" height="26.60" fill="var(--warn)"/><rect x="521.30" y="4.75" width="11.37" height="16.62" fill="var(--crit)"/><rect x="534.67" y="61.95" width="11.37" height="12.04" fill="var(--lvl-debug)"/><rect x="534.67" y="44.29" width="11.37" height="17.67" fill="var(--lvl-info)"/><rect x="534.67" y="13.92" width="11.37" height="30.37" fill="var(--warn)"/><rect x="534.67" y="-5.06" width="11.37" height="18.98" fill="var(--crit)"/><rect x="548.03" y="61.95" width="11.37" height="12.04" fill="var(--lvl-debug)"/><rect x="548.03" y="44.29" width="11.37" height="17.67" fill="var(--lvl-info)"/><rect x="548.03" y="13.92" width="11.37" height="30.37" fill="var(--warn)"/><rect x="548.03" y="-5.06" width="11.37" height="18.98" fill="var(--crit)"/><rect x="561.40" y="62.25" width="11.37" height="11.75" fill="var(--lvl-debug)"/><rect x="561.40" y="45.02" width="11.37" height="17.23" fill="var(--lvl-info)"/><rect x="561.40" y="15.40" width="11.37" height="29.62" fill="var(--warn)"/><rect x="561.40" y="-3.11" width="11.37" height="18.51" fill="var(--crit)"/><rect x="574.77" y="62.93" width="11.37" height="11.07" fill="var(--lvl-debug)"/><rect x="574.77" y="46.68" width="11.37" height="16.24" fill="var(--lvl-info)"/><rect x="574.77" y="18.76" width="11.37" height="27.92" fill="var(--warn)"/><rect x="574.77" y="1.31" width="11.37" height="17.45" fill="var(--crit)"/><rect x="588.13" y="64.27" width="11.37" height="9.73" fill="var(--lvl-debug)"/><rect x="588.13" y="49.99" width="11.37" height="14.28" fill="var(--lvl-info)"/><rect x="588.13" y="25.44" width="11.37" height="24.54" fill="var(--warn)"/><rect x="588.13" y="10.11" width="11.37" height="15.34" fill="var(--crit)"/><rect x="601.50" y="61.95" width="11.37" height="12.04" fill="var(--lvl-debug)"/><rect x="601.50" y="44.29" width="11.37" height="17.67" fill="var(--lvl-info)"/><rect x="601.50" y="13.92" width="11.37" height="30.37" fill="var(--warn)"/><rect x="601.50" y="-5.06" width="11.37" height="18.98" fill="var(--crit)"/><rect x="614.87" y="64.73" width="11.37" height="9.27" fill="var(--lvl-debug)"/><rect x="614.87" y="51.14" width="11.37" height="13.59" fill="var(--lvl-info)"/><rect x="614.87" y="27.78" width="11.37" height="23.36" fill="var(--warn)"/><rect x="614.87" y="13.18" width="11.37" height="14.60" fill="var(--crit)"/><rect x="628.23" y="63.95" width="11.37" height="10.05" fill="var(--lvl-debug)"/><rect x="628.23" y="49.22" width="11.37" height="14.73" fill="var(--lvl-info)"/><rect x="628.23" y="23.89" width="11.37" height="25.33" fill="var(--warn)"/><rect x="628.23" y="8.06" width="11.37" height="15.83" fill="var(--crit)"/><rect x="641.60" y="61.89" width="11.37" height="12.11" fill="var(--lvl-debug)"/><rect x="641.60" y="44.14" width="11.37" height="17.76" fill="var(--lvl-info)"/><rect x="641.60" y="37.68" width="11.37" height="6.46" fill="var(--warn)"/><rect x="641.60" y="33.65" width="11.37" height="4.04" fill="var(--crit)"/><rect x="654.97" y="66.67" width="11.37" height="7.33" fill="var(--lvl-debug)"/><rect x="654.97" y="55.91" width="11.37" height="10.75" fill="var(--lvl-info)"/><rect x="654.97" y="52.00" width="11.37" height="3.91" fill="var(--warn)"/><rect x="654.97" y="49.56" width="11.37" height="2.44" fill="var(--crit)"/><rect x="668.33" y="62.80" width="11.37" height="11.20" fill="var(--lvl-debug)"/><rect x="668.33" y="46.38" width="11.37" height="16.42" fill="var(--lvl-info)"/><rect x="668.33" y="40.41" width="11.37" height="5.97" fill="var(--warn)"/><rect x="668.33" y="36.68" width="11.37" height="3.73" fill="var(--crit)"/><rect x="681.70" y="61.19" width="11.37" height="12.81" fill="var(--lvl-debug)"/><rect x="681.70" y="42.41" width="11.37" height="18.78" fill="var(--lvl-info)"/><rect x="681.70" y="35.58" width="11.37" height="6.83" fill="var(--warn)"/><rect x="681.70" y="31.32" width="11.37" height="4.27" fill="var(--crit)"/><rect x="695.07" y="62.09" width="11.37" height="11.91" fill="var(--lvl-debug)"/><rect x="695.07" y="44.63" width="11.37" height="17.46" fill="var(--lvl-info)"/><rect x="695.07" y="38.28" width="11.37" height="6.35" fill="var(--warn)"/><rect x="695.07" y="34.31" width="11.37" height="3.97" fill="var(--crit)"/><rect x="708.43" y="67.83" width="11.37" height="6.17" fill="var(--lvl-debug)"/><rect x="708.43" y="58.78" width="11.37" height="9.05" fill="var(--lvl-info)"/><rect x="708.43" y="55.49" width="11.37" height="3.29" fill="var(--warn)"/><rect x="708.43" y="53.44" width="11.37" height="2.06" fill="var(--crit)"/><rect x="721.80" y="60.03" width="11.37" height="13.97" fill="var(--lvl-debug)"/><rect x="721.80" y="39.54" width="11.37" height="20.49" fill="var(--lvl-info)"/><rect x="721.80" y="32.09" width="11.37" height="7.45" fill="var(--warn)"/><rect x="721.80" y="27.43" width="11.37" height="4.66" fill="var(--crit)"/><rect x="735.17" y="60.42" width="11.37" height="13.58" fill="var(--lvl-debug)"/><rect x="735.17" y="40.49" width="11.37" height="19.92" fill="var(--lvl-info)"/><rect x="735.17" y="33.25" width="11.37" height="7.24" fill="var(--warn)"/><rect x="735.17" y="28.72" width="11.37" height="4.53" fill="var(--crit)"/><rect x="748.53" y="58.77" width="11.37" height="15.23" fill="var(--lvl-debug)"/><rect x="748.53" y="36.43" width="11.37" height="22.34" fill="var(--lvl-info)"/><rect x="748.53" y="28.31" width="11.37" height="8.12" fill="var(--warn)"/><rect x="748.53" y="23.24" width="11.37" height="5.08" fill="var(--crit)"/><rect x="761.90" y="61.67" width="11.37" height="12.33" fill="var(--lvl-debug)"/><rect x="761.90" y="43.58" width="11.37" height="18.09" fill="var(--lvl-info)"/><rect x="761.90" y="37.00" width="11.37" height="6.58" fill="var(--warn)"/><rect x="761.90" y="32.89" width="11.37" height="4.11" fill="var(--crit)"/><rect x="775.27" y="62.19" width="11.37" height="11.81" fill="var(--lvl-debug)"/><rect x="775.27" y="44.86" width="11.37" height="17.33" fill="var(--lvl-info)"/><rect x="775.27" y="38.56" width="11.37" height="6.30" fill="var(--warn)"/><rect x="775.27" y="34.62" width="11.37" height="3.94" fill="var(--crit)"/><rect x="788.63" y="63.97" width="11.37" height="10.03" fill="var(--lvl-debug)"/><rect x="788.63" y="49.26" width="11.37" height="14.71" fill="var(--lvl-info)"/><rect x="788.63" y="43.92" width="11.37" height="5.35" fill="var(--warn)"/><rect x="788.63" y="40.57" width="11.37" height="3.34" fill="var(--crit)"/></svg></div>
+            <div style="margin-top:2px"><svg width="800" height="6" viewBox="0 0 800 6" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%;height:6px"><line x1="0.50" y1="0" x2="0.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="13.82" y1="0" x2="13.82" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="27.13" y1="0" x2="27.13" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="40.45" y1="0" x2="40.45" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="53.77" y1="0" x2="53.77" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="67.08" y1="0" x2="67.08" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="80.40" y1="0" x2="80.40" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="93.72" y1="0" x2="93.72" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="107.03" y1="0" x2="107.03" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="120.35" y1="0" x2="120.35" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="133.67" y1="0" x2="133.67" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="146.98" y1="0" x2="146.98" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="160.30" y1="0" x2="160.30" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="173.62" y1="0" x2="173.62" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="186.93" y1="0" x2="186.93" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="200.25" y1="0" x2="200.25" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="213.57" y1="0" x2="213.57" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="226.88" y1="0" x2="226.88" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="240.20" y1="0" x2="240.20" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="253.52" y1="0" x2="253.52" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="266.83" y1="0" x2="266.83" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="280.15" y1="0" x2="280.15" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="293.47" y1="0" x2="293.47" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="306.78" y1="0" x2="306.78" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="320.10" y1="0" x2="320.10" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="333.42" y1="0" x2="333.42" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="346.73" y1="0" x2="346.73" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="360.05" y1="0" x2="360.05" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="373.37" y1="0" x2="373.37" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="386.68" y1="0" x2="386.68" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="400.00" y1="0" x2="400.00" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="413.32" y1="0" x2="413.32" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="426.63" y1="0" x2="426.63" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="439.95" y1="0" x2="439.95" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="453.27" y1="0" x2="453.27" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="466.58" y1="0" x2="466.58" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="479.90" y1="0" x2="479.90" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="493.22" y1="0" x2="493.22" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="506.53" y1="0" x2="506.53" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="519.85" y1="0" x2="519.85" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="533.17" y1="0" x2="533.17" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="546.48" y1="0" x2="546.48" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="559.80" y1="0" x2="559.80" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="573.12" y1="0" x2="573.12" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="586.43" y1="0" x2="586.43" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="599.75" y1="0" x2="599.75" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="613.07" y1="0" x2="613.07" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="626.38" y1="0" x2="626.38" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="639.70" y1="0" x2="639.70" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="653.02" y1="0" x2="653.02" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="666.33" y1="0" x2="666.33" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="679.65" y1="0" x2="679.65" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="692.97" y1="0" x2="692.97" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="706.28" y1="0" x2="706.28" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="719.60" y1="0" x2="719.60" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="732.92" y1="0" x2="732.92" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="746.23" y1="0" x2="746.23" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="759.55" y1="0" x2="759.55" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="772.87" y1="0" x2="772.87" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="786.18" y1="0" x2="786.18" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="799.50" y1="0" x2="799.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/></svg></div>
+            <div style="display:flex;justify-content:space-between;margin-top:5px">
+              <span class="mono" style="font-size:9.5px;color:var(--faint)">14:07</span>
+              <span class="mono" style="font-size:9.5px;color:var(--faint)">14:11</span>
+              <span class="mono" style="font-size:9.5px;color:var(--faint)">14:14</span>
+              <span class="mono" style="font-size:9.5px;color:var(--faint)">14:18</span>
+              <span class="mono" style="font-size:9.5px;color:var(--ink-2)">now</span>
+            </div>
+          </div>
+        </section>
+
+        <div style="display:flex;gap:12px;flex:1;min-height:0">
+
+          <aside class="panel" style="width:212px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden">
+            <div class="ph"><h2>Connections</h2></div>
+            <div style="flex:1;min-height:0;padding:6px 0">
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px;background:var(--sunk);border-left:2px solid var(--accent);padding-left:10px"><svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><rect x=".6" y=".6" width="8.8" height="8.8" fill="var(--crit)"/></svg><span class="mono" style="flex:1;font-size:11px;color:var(--ink)">orders-api</span><span class="mono" style="font-size:10px;color:var(--crit)">1,204</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px"><svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><path d="M5 .6 9.5 9.2H.5Z" fill="var(--warn)"/></svg><span class="mono" style="flex:1;font-size:11px;color:var(--ink-2)">payments-db</span><span class="mono" style="font-size:10px;color:var(--warn)">318</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px"><svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><path d="M5 .6 9.5 9.2H.5Z" fill="var(--warn)"/></svg><span class="mono" style="flex:1;font-size:11px;color:var(--ink-2)">search-cluster</span><span class="mono" style="font-size:10px;color:var(--warn)">96</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px"><svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><path d="M5 .6 9.5 9.2H.5Z" fill="var(--warn)"/></svg><span class="mono" style="flex:1;font-size:11px;color:var(--ink-2)">ci-pipeline</span><span class="mono" style="font-size:10px;color:var(--faint)">41</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px"><svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><circle cx="5" cy="5" r="4" fill="var(--ok)"/></svg><span class="mono" style="flex:1;font-size:11px;color:var(--ink-2)">edge-proxy</span><span class="mono" style="font-size:10px;color:var(--faint)">48,102</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px"><svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><circle cx="5" cy="5" r="4" fill="var(--ok)"/></svg><span class="mono" style="flex:1;font-size:11px;color:var(--ink-2)">checkout-web</span><span class="mono" style="font-size:10px;color:var(--faint)">31,880</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px"><svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><circle cx="5" cy="5" r="4" fill="var(--ok)"/></svg><span class="mono" style="flex:1;font-size:11px;color:var(--ink-2)">events-bus</span><span class="mono" style="font-size:10px;color:var(--faint)">27,410</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px"><svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><circle cx="5" cy="5" r="4" fill="var(--ok)"/></svg><span class="mono" style="flex:1;font-size:11px;color:var(--ink-2)">session-cache</span><span class="mono" style="font-size:10px;color:var(--faint)">18,904</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 12px"><svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><circle cx="5" cy="5" r="3.4" fill="none" stroke="var(--faint)" stroke-width="1.9"/></svg><span class="mono" style="flex:1;font-size:11px;color:var(--faint)">queue-broker</span><span class="mono" style="font-size:10px;color:var(--faint)">0</span></div>
+            </div>
+            <div style="padding:10px 12px;border-top:1px solid var(--line)">
+              <p style="margin:0;font-family:var(--mono);font-size:9.5px;line-height:1.5;color:var(--faint)">Build console lives with its build. Slow queries are rows in Active queries, not duplicate lines here.</p>
+            </div>
+          </aside>
+
+          <section class="panel" style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--line)">
+              <div class="field" style="flex:1;min-width:0"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><circle cx="10.8" cy="10.8" r="6.4"/><path d="M15.6 15.6l4.6 4.6"/></svg><span style="color:var(--ink)">code=137</span><span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">2,104 matches</span></div>
+              <div class="seg"><span class="on">Runtime + events</span><span>Runtime</span><span>Events</span><span>Build</span><span>Everything</span></div>
+              <span class="btn btn-g" style="padding:0 7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M3.6 5.6h16.8l-6.5 7.6v6l-3.8 2v-8z"/></svg></span>
+            </div>
+
+            <div class="th" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+              <span class="lbl">Time</span><span class="lbl">Level</span><span class="lbl">Connection</span><span class="lbl">Source</span><span class="lbl">Message</span><span></span>
+            </div>
+
+            <div style="flex:1;min-height:0;overflow:hidden">
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px;border-top:none;background:color-mix(in srgb, var(--crit) 6%, transparent);border-left:2px solid var(--crit);padding-left:10px">
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">14:22:07.412</span><span class="mono" style="font-size:9.5px;color:var(--crit)">ERROR</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">orders-api</span><span class="mono" style="font-size:10.5px;color:var(--faint)">worker-3</span>
+                <span class="mono" style="font-size:11px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">container exited: <span style="background:color-mix(in srgb,var(--warn) 30%,transparent);padding:0 2px">code=137</span> reason=OOMKilled restart_count=9</span>
+              <span class="btn btn-s" style="width:24px;padding:0;justify-content:center;border-color:var(--accent);color:var(--accent)"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M11.8 3.2l1.75 4.9 4.9 1.75-4.9 1.75-1.75 4.9-1.75-4.9-4.9-1.75 4.9-1.75z"/><path d="M18.4 15.4l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/></svg></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:22:06.881</span><span class="mono" style="font-size:9.5px;color:var(--crit)">ERROR</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">orders-api</span><span class="mono" style="font-size:10.5px;color:var(--faint)">worker-1</span>
+                <span class="mono" style="font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">POST /v2/orders 502 in 30012ms upstream=orders-worker-3</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:22:05.204</span><span class="mono" style="font-size:9.5px;color:var(--warn)">WARN</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">payments-db</span><span class="mono" style="font-size:10.5px;color:var(--faint)">replica-2</span>
+                <span class="mono" style="font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">streaming replication lag 42.3s exceeds 30s</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:22:04.997</span><span class="mono" style="font-size:9.5px;color:var(--crit)">ERROR</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">orders-api</span><span class="mono" style="font-size:10.5px;color:var(--faint)">worker-3</span>
+                <span class="mono" style="font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">connection refused: dial tcp 10.4.2.19:5432</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:22:04.310</span><span class="mono" style="font-size:9.5px;color:var(--lvl-info)">INFO</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">orders-api</span><span class="mono" style="font-size:10.5px;color:var(--faint)">daemon</span>
+                <span class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">restarting orders-worker-3 (policy: on-failure)</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:22:03.118</span><span class="mono" style="font-size:9.5px;color:var(--crit)">ERROR</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">orders-api</span><span class="mono" style="font-size:10.5px;color:var(--faint)">worker-7</span>
+                <span class="mono" style="font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">connection pool exhausted after 30s, 0 of 20 free</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:22:01.442</span><span class="mono" style="font-size:9.5px;color:var(--warn)">WARN</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">search-cluster</span><span class="mono" style="font-size:10.5px;color:var(--faint)">es-node-4</span>
+                <span class="mono" style="font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">shard [orders-2026.08][3] unassigned, retry 4</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:21:59.870</span><span class="mono" style="font-size:9.5px;color:var(--lvl-info)">INFO</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">edge-proxy</span><span class="mono" style="font-size:10.5px;color:var(--faint)">access</span>
+                <span class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GET /health 200 in 2ms upstream=checkout-web</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:21:58.201</span><span class="mono" style="font-size:9.5px;color:var(--warn)">WARN</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">orders-api</span><span class="mono" style="font-size:10.5px;color:var(--faint)">worker-5</span>
+                <span class="mono" style="font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">heap 7.1G of 8G limit, gc pause 412ms</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:21:56.664</span><span class="mono" style="font-size:9.5px;color:var(--lvl-debug)">DEBUG</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">session-cache</span><span class="mono" style="font-size:10.5px;color:var(--faint)">replica-1</span>
+                <span class="mono" style="font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">sync full completed, 1.4G in 802ms</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:21:55.023</span><span class="mono" style="font-size:9.5px;color:var(--lvl-info)">INFO</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">ci-pipeline</span><span class="mono" style="font-size:10.5px;color:var(--faint)">orders-release</span>
+                <span class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">build #4821 finished: FAILURE in 14m 02s</span>
+              <span></span>
+              </div>
+              <div class="tr" style="grid-template-columns:78px 40px 104px 96px 1fr 26px;gap:12px">
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">14:21:53.780</span><span class="mono" style="font-size:9.5px;color:var(--lvl-debug)">DEBUG</span>
+                <span class="mono" style="font-size:10.5px;color:var(--muted)">events-bus</span><span class="mono" style="font-size:10.5px;color:var(--faint)">broker-2</span>
+                <span class="mono" style="font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">group orders-consumer rebalanced, 12 partitions</span>
+              <span></span>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:9px;padding:9px 12px;border-top:1px solid var(--line)">
+              <span class="mono" style="font-size:10px;color:var(--faint)">2,104 of 128,412 lines</span>
+              <span class="btn btn-s" style="margin-left:auto"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.2V12l3.2 2"/></svg>Correlate this moment</span>
+              <span class="btn btn-s"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><rect x="8.6" y="8.6" width="11.6" height="11.6" rx="1"/><path d="M15.4 5.4a2 2 0 0 0-2-2H5.8a2 2 0 0 0-2 2V13a2 2 0 0 0 2 2"/></svg>Copy</span>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+      <aside style="width:392px;flex-shrink:0;display:flex;flex-direction:column;border-left:1px solid var(--line);background:var(--panel)">
+        <div style="display:flex;align-items:center;gap:9px;height:52px;flex-shrink:0;padding:0 15px;border-bottom:1px solid var(--line)">
+          <span style="color:var(--accent);display:flex"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M11.8 3.2l1.75 4.9 4.9 1.75-4.9 1.75-1.75 4.9-1.75-4.9-4.9-1.75 4.9-1.75z"/><path d="M18.4 15.4l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/></svg></span>
+          <span class="lbl">Assistant</span>
+          <span class="tag" style="color:var(--ok);border-color:color-mix(in srgb,var(--ok) 30%,transparent);background:color-mix(in srgb,var(--ok) 10%,transparent)">read-only</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--faint)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14.2 3.8h6v6"/><path d="M20.2 3.8 11 13"/><path d="M18 13.8v5.4a1.6 1.6 0 0 1-1.6 1.6H5.4a1.6 1.6 0 0 1-1.6-1.6V8.2a1.6 1.6 0 0 1 1.6-1.6h5.4"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M6 6l12 12M18 6 6 18"/></svg></span>
+        </div>
+
+        <!-- What was clicked travels into the dock, so the operator never has to
+             restate the question or leave the screen the problem is on. -->
+        <div style="flex-shrink:0;padding:11px 15px;border-bottom:1px solid var(--line);background:var(--sunk)">
+          <div class="lbl" style="font-size:9px;margin-bottom:7px">Explaining</div>
+          <div class="mono" style="font-size:10.5px;line-height:1.55;color:var(--ink-2);word-break:break-word">
+            <span style="color:var(--faint)">14:22:07.412</span> orders-api · worker-3<br>
+            container exited: <span style="background:color-mix(in srgb,var(--warn) 30%,transparent);padding:0 2px">code=137</span> reason=OOMKilled
+          </div>
+        </div>
+
+        <div style="flex:1;min-height:0;padding:14px 15px;display:flex;flex-direction:column;gap:13px">
+          <div>
+            <div class="lbl" style="font-size:9px;margin-bottom:7px">What this means</div>
+            <p style="margin:0;font-size:12.5px;line-height:1.55;color:var(--ink-2)">
+              The container did not crash — the kernel killed it. Exit code
+              <span class="mono" style="font-size:11.5px;color:var(--ink)">137</span> is
+              <span class="mono" style="font-size:11.5px;color:var(--ink)">128 + 9</span>, meaning it received
+              <span class="mono" style="font-size:11.5px;color:var(--ink)">SIGKILL</span>, and
+              <span class="mono" style="font-size:11.5px;color:var(--ink)">OOMKilled</span> says why: it asked for more
+              memory than its limit allowed.
+            </p>
+          </div>
+
+          <div>
+            <div class="lbl" style="font-size:9px;margin-bottom:7px">Why it is happening here</div>
+            <p style="margin:0;font-size:12.5px;line-height:1.55;color:var(--ink-2)">
+              This worker is capped at <span class="mono" style="font-size:11.5px;color:var(--ink)">8G</span> and peaked
+              at <span class="mono" style="font-size:11.5px;color:var(--ink)">7.98G</span> before it was killed — the
+              <span class="mono" style="font-size:11.5px;color:var(--crit)">9th time</span> in 18 minutes. Memory does
+              not fall back between restarts.
+            </p>
+            <div class="grat" style="margin-top:10px"><svg width="340" height="62" viewBox="0 0 340 62" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%">
+<defs><linearGradient id="ar33" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--crit)" stop-opacity=".28"/><stop offset="1" stop-color="var(--crit)" stop-opacity=".02"/></linearGradient></defs>
+<polygon points="0,62 0.0,26.5 5.8,25.0 11.5,27.9 17.3,27.7 23.1,24.8 28.8,25.9 34.6,24.6 40.3,21.9 46.1,17.9 51.9,18.5 57.6,15.7 63.4,17.1 69.2,14.1 74.9,10.9 80.7,9.4 86.4,8.2 92.2,10.3 98.0,12.8 103.7,13.8 109.5,10.7 115.3,12.1 121.0,9.8 126.8,8.7 132.5,7.7 138.3,6.2 144.1,5.8 149.8,5.8 155.6,5.8 161.4,5.8 167.1,5.8 172.9,5.8 178.6,6.2 184.4,5.8 190.2,5.8 195.9,5.8 201.7,5.8 207.5,7.9 213.2,7.9 219.0,9.3 224.7,8.5 230.5,5.8 236.3,7.7 242.0,5.8 247.8,5.8 253.6,5.8 259.3,5.8 265.1,5.8 270.8,6.0 276.6,7.0 282.4,9.4 288.1,9.7 293.9,12.2 299.7,10.6 305.4,10.0 311.2,11.0 316.9,11.0 322.7,8.2 328.5,5.8 334.2,5.8 340.0,5.8 340,62" fill="url(#ar33)"/>
+<polyline points="0.0,26.5 5.8,25.0 11.5,27.9 17.3,27.7 23.1,24.8 28.8,25.9 34.6,24.6 40.3,21.9 46.1,17.9 51.9,18.5 57.6,15.7 63.4,17.1 69.2,14.1 74.9,10.9 80.7,9.4 86.4,8.2 92.2,10.3 98.0,12.8 103.7,13.8 109.5,10.7 115.3,12.1 121.0,9.8 126.8,8.7 132.5,7.7 138.3,6.2 144.1,5.8 149.8,5.8 155.6,5.8 161.4,5.8 167.1,5.8 172.9,5.8 178.6,6.2 184.4,5.8 190.2,5.8 195.9,5.8 201.7,5.8 207.5,7.9 213.2,7.9 219.0,9.3 224.7,8.5 230.5,5.8 236.3,7.7 242.0,5.8 247.8,5.8 253.6,5.8 259.3,5.8 265.1,5.8 270.8,6.0 276.6,7.0 282.4,9.4 288.1,9.7 293.9,12.2 299.7,10.6 305.4,10.0 311.2,11.0 316.9,11.0 322.7,8.2 328.5,5.8 334.2,5.8 340.0,5.8" fill="none" stroke="var(--crit)" stroke-width="1.5" stroke-linejoin="round"/><line x1="210.8" y1="0" x2="210.8" y2="62" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/><path d="M207.3 0 L214.3 0 L210.8 5.5 Z" fill="var(--accent)"/></svg></div>
+            <div class="mono" style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:9.5px;color:var(--faint)">
+              <span style="display:flex;align-items:center;gap:5px"><span style="width:9px;height:0;border-top:1px dashed var(--accent)"></span>2.14.3 deployed</span>
+              <span style="margin-left:auto;color:var(--crit)">peak 7.98G / 8G</span>
+            </div>
+          </div>
+
+          <div class="note" style="border-left-color:var(--warn);padding:10px 12px">
+            <p style="margin:0;font-size:12px;line-height:1.5;color:var(--ink-2)">
+              It is not load. Request volume is <em style="color:var(--muted)">down</em> 12% over the same window, so this
+              reads as a memory regression in <span class="mono" style="font-size:11px;color:var(--ink)">2.14.3</span>.
+            </p>
+          </div>
+
+          <div>
+            <div class="lbl" style="font-size:9px;margin-bottom:8px">What to check next</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r)">
+                <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0">01</span>
+                <span style="flex:1;min-width:0;font-size:11.5px;color:var(--ink-2)">Compare memory against 2.14.2</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M9.5 5.2 16.3 12l-6.8 6.8"/></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r)">
+                <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0">02</span>
+                <span style="flex:1;min-width:0;font-size:11.5px;color:var(--ink-2)">Inspect orders-worker-3</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M9.5 5.2 16.3 12l-6.8 6.8"/></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r)">
+                <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0">03</span>
+                <span style="flex:1;min-width:0;font-size:11.5px;color:var(--ink-2)">Correlate 14:04 across the estate</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M9.5 5.2 16.3 12l-6.8 6.8"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex-shrink:0;padding:11px 15px;border-top:1px solid var(--line)">
+          <div class="field" style="height:31px"><span style="color:var(--faint);flex:1">Ask a follow-up…</span><span class="kbd">⌘J</span></div>
+          <p class="mono" style="margin:8px 2px 0;font-size:9.5px;line-height:1.5;color:var(--faint)">Grounded in this workspace's snapshots, metrics and logs. It cannot change anything.</p>
+        </div>
+      </aside>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

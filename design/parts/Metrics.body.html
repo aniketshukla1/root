@@ -1,0 +1,110 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span><span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:1;background:var(--faint)"></span><span style="flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <!--RAIL metrics-->
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:13px;height:52px;flex-shrink:0;padding:0 20px">
+        <h1 class="disp" style="margin:0;font-size:22px;color:var(--ink)">Metrics</h1>
+        <span class="mono" style="font-size:11px;color:var(--faint)">64 series across 12 connections</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <span class="mono" style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--faint)"><span style="width:9px;height:0;border-top:1px dashed var(--accent)"></span>deploys on</span>
+          <div class="seg"><span>15m</span><span class="on">1h</span><span>6h</span><span>24h</span><span>7d</span></div>
+          <!--ASK-->
+          <span class="btn"><!--ICON copy 13 var(--faint)-->Compare</span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;display:flex;padding:0 20px 16px;gap:12px">
+
+        <aside class="panel" style="width:224px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden">
+          <div class="ph"><h2>Series</h2></div>
+          <div style="padding:9px 11px;border-bottom:1px solid var(--line)">
+            <div class="field"><!--ICON search 12 var(--faint)--><span style="color:var(--faint)">Filter series</span></div>
+          </div>
+          <div style="flex:1;min-height:0;padding:7px 0">
+            <div class="lbl" style="padding:6px 13px 5px;font-size:9px">orders-api</div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px;background:var(--sunk);border-left:2px solid var(--accent);padding-left:11px"><span style="width:8px;height:8px;background:var(--warn)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink)">cpu</span><span class="mono" style="font-size:10px;color:var(--warn)">62%</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px;border-left:2px solid var(--crit);padding-left:11px"><span style="width:8px;height:8px;background:var(--crit)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink)">memory</span><span class="mono" style="font-size:10px;color:var(--crit)">7.4G</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s3)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">requests</span><span class="mono" style="font-size:10px;color:var(--muted)">1.8k</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s6)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">error_rate</span><span class="mono" style="font-size:10px;color:var(--crit)">8.1%</span></div>
+            <div class="lbl" style="padding:11px 13px 5px;font-size:9px">payments-db</div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s1)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">replica_lag</span><span class="mono" style="font-size:10px;color:var(--warn)">42s</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s7)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">connections</span><span class="mono" style="font-size:10px;color:var(--muted)">318</span></div>
+            <div class="lbl" style="padding:11px 13px 5px;font-size:9px">edge-proxy</div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s2)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">req_per_sec</span><span class="mono" style="font-size:10px;color:var(--muted)">4.2k</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 13px"><span style="width:8px;height:8px;background:var(--s8)"></span><span class="mono" style="flex:1;font-size:10.5px;color:var(--ink-2)">p99_latency</span><span class="mono" style="font-size:10px;color:var(--muted)">38ms</span></div>
+          </div>
+          <div style="padding:9px 12px;border-top:1px solid var(--line)">
+            <p style="margin:0;font-family:var(--mono);font-size:9.5px;line-height:1.5;color:var(--faint)">Series colour is identity, in fixed order. It never means a state.</p>
+          </div>
+        </aside>
+
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+
+          <section class="panel" style="flex-shrink:0">
+            <div class="ph">
+              <h2>orders-api · memory</h2><span class="sub">last hour · 240 samples</span>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:11px">
+                <span class="mono" style="font-size:10px;color:var(--faint)">limit 8G</span>
+                <span class="mono" style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--faint)">Correlate<!--ICON right 11 currentColor--></span>
+              </div>
+            </div>
+            <div style="padding:14px 16px 12px">
+              <div style="display:flex;align-items:baseline;gap:11px;margin-bottom:12px">
+                <span class="mono" style="font-size:30px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--crit)">7.4G</span>
+                <span class="mono" style="font-size:11px;color:var(--crit)">▲ 3.9G since deploy</span>
+                <div style="margin-left:auto;display:flex;gap:16px">
+                  <div style="text-align:right"><div class="mono" style="font-size:12px;color:var(--ink-2)">3.2G</div><div class="lbl" style="margin-top:3px;font-size:9px">min</div></div>
+                  <div style="text-align:right"><div class="mono" style="font-size:12px;color:var(--ink-2)">5.1G</div><div class="lbl" style="margin-top:3px;font-size:9px">mean</div></div>
+                  <div style="text-align:right"><div class="mono" style="font-size:12px;color:var(--crit)">7.98G</div><div class="lbl" style="margin-top:3px;font-size:9px">peak</div></div>
+                </div>
+              </div>
+              <div class="grat"><!--AREA 900 176 var(--crit) 33 rise 0.62--></div>
+              <div style="margin-top:2px"><!--TICKS 900 60 10--></div>
+              <div style="display:flex;justify-content:space-between;margin-top:5px">
+                <span class="mono" style="font-size:9.5px;color:var(--faint)">13:22</span>
+                <span class="mono" style="font-size:9.5px;color:var(--faint)">13:37</span>
+                <span class="mono" style="font-size:9.5px;color:var(--faint)">13:52</span>
+                <span class="mono" style="font-size:9.5px;color:var(--faint)">14:07</span>
+                <span class="mono" style="font-size:9.5px;color:var(--ink-2)">now</span>
+              </div>
+            </div>
+          </section>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;flex:1;min-height:0">
+            <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+              <div class="ph"><h2>cpu</h2><span class="sub mono">62%</span></div>
+              <div style="padding:12px 14px">
+                <div class="grat"><!--AREA 300 116 var(--warn) 21 spike 0.62--></div>
+                <div style="margin-top:2px"><!--TICKS 300 30 5--></div>
+              </div>
+            </section>
+            <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+              <div class="ph"><h2>error_rate</h2><span class="sub mono">8.1%</span></div>
+              <div style="padding:12px 14px">
+                <div class="grat"><!--AREA 300 116 var(--s6) 66 spike 0.62--></div>
+                <div style="margin-top:2px"><!--TICKS 300 30 5--></div>
+              </div>
+            </section>
+            <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+              <div class="ph"><h2>p99 latency</h2><span class="sub mono">30.0s</span></div>
+              <div style="padding:12px 14px">
+                <div class="grat"><!--FAN 300 116 5--></div>
+                <div style="display:flex;gap:11px;margin-top:8px">
+                  <span class="mono" style="font-size:9.5px;color:var(--faint)">p50 38ms</span>
+                  <span class="mono" style="font-size:9.5px;color:var(--faint)">p90 210ms</span>
+                  <span class="mono" style="font-size:9.5px;color:var(--crit)">p99 30.0s</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

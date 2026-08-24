@@ -1,0 +1,189 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--page);font-family:var(--sans);position:relative">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span>
+    <span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:1;background:var(--unknown)"></span>
+    <span style="flex-grow:7;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <!--RAIL settings-->
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:12px;height:46px;flex-shrink:0;padding:0 18px;border-bottom:1px solid var(--line)">
+        <h1 class="disp" style="margin:0;font-size:16px;font-weight:600;color:var(--ink)">Settings</h1>
+        <span style="font-size:11.5px;color:var(--ink4)">Stored locally in your OS keychain and app data directory</span>
+      </header>
+
+      <div style="flex:1;min-height:0;display:flex">
+        <nav style="width:178px;flex-shrink:0;padding:14px 12px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px">
+          <span class="nav on" style="padding-left:9px">Connections</span>
+          <span class="nav">Assistant</span>
+          <span class="nav">Alerting</span>
+          <span class="nav">Deploy ingest</span>
+          <span class="nav">Appearance</span>
+          <span class="nav">About</span>
+        </nav>
+
+        <div style="flex:1;min-width:0;padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+          <section class="panel" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+            <div class="ph">
+              <h2>Connections</h2><span class="sub">12 configured · 9 production</span>
+              <span class="btn btn-p" style="margin-left:auto"><!--ICON plus 13 currentColor-->Add connection</span>
+            </div>
+            <div class="th" style="grid-template-columns:26px 1.3fr 110px 1.4fr 96px 92px 74px;gap:14px">
+              <span></span><span class="lbl">Name</span><span class="lbl">Type</span><span class="lbl">Endpoint</span>
+              <span class="lbl">Team</span><span class="lbl">Environment</span><span class="lbl" style="text-align:right">Poll</span>
+            </div>
+            <div class="tr" style="grid-template-columns:26px 1.3fr 110px 1.4fr 96px 92px 74px;gap:14px;border-top:none">
+              <!--DOT down 8--><span style="font-size:11.5px;color:var(--ink)">orders-api</span>
+              <span style="display:flex;align-items:center;gap:6px"><!--MARK DK #4C9DF0 15--><span style="font-size:11px;color:var(--ink3)">Docker</span></span>
+              <span class="mono" style="font-size:11px;color:var(--ink4)">unix:///var/run/docker.sock</span>
+              <span style="font-size:11px;color:var(--ink3)">payments</span>
+              <span class="tag">production</span>
+              <span class="mono" style="font-size:11px;color:var(--ink4);text-align:right">10s</span>
+            </div>
+            <div class="tr" style="grid-template-columns:26px 1.3fr 110px 1.4fr 96px 92px 74px;gap:14px">
+              <!--DOT degraded 8--><span style="font-size:11.5px;color:var(--ink)">payments-db</span>
+              <span style="display:flex;align-items:center;gap:6px"><!--MARK PG #7B8EF5 15--><span style="font-size:11px;color:var(--ink3)">Postgres</span></span>
+              <span class="mono" style="font-size:11px;color:var(--ink4)">db-01.internal:5432</span>
+              <span style="font-size:11px;color:var(--ink3)">payments</span>
+              <span class="tag">production</span>
+              <span class="mono" style="font-size:11px;color:var(--ink4);text-align:right">15s</span>
+            </div>
+            <div class="tr" style="grid-template-columns:26px 1.3fr 110px 1.4fr 96px 92px 74px;gap:14px">
+              <!--DOT degraded 8--><span style="font-size:11.5px;color:var(--ink)">search-cluster</span>
+              <span style="display:flex;align-items:center;gap:6px"><!--MARK ES #D1A03A 15--><span style="font-size:11px;color:var(--ink3)">Elasticsearch</span></span>
+              <span class="mono" style="font-size:11px;color:var(--ink4)">https://es.internal:9200</span>
+              <span style="font-size:11px;color:var(--ink3)">search</span>
+              <span class="tag">production</span>
+              <span class="mono" style="font-size:11px;color:var(--ink4);text-align:right">20s</span>
+            </div>
+            <div class="tr" style="grid-template-columns:26px 1.3fr 110px 1.4fr 96px 92px 74px;gap:14px">
+              <!--DOT healthy 8--><span style="font-size:11.5px;color:var(--ink)">edge-proxy</span>
+              <span style="display:flex;align-items:center;gap:6px"><!--MARK NG #2FB08A 15--><span style="font-size:11px;color:var(--ink3)">Nginx</span></span>
+              <span class="mono" style="font-size:11px;color:var(--ink4)">http://edge.internal:8080/status</span>
+              <span style="font-size:11px;color:var(--ink3)">platform</span>
+              <span class="tag">production</span>
+              <span class="mono" style="font-size:11px;color:var(--ink4);text-align:right">10s</span>
+            </div>
+            <div class="tr" style="grid-template-columns:26px 1.3fr 110px 1.4fr 96px 92px 74px;gap:14px">
+              <!--DOT unknown 8--><span style="font-size:11.5px;color:var(--ink2)">queue-broker</span>
+              <span style="display:flex;align-items:center;gap:6px"><!--MARK RB #E07A4C 15--><span style="font-size:11px;color:var(--ink3)">RabbitMQ</span></span>
+              <span class="mono" style="font-size:11px;color:var(--ink4)">https://mq.internal:15672</span>
+              <span style="font-size:11px;color:var(--ink3)">platform</span>
+              <span class="tag">staging</span>
+              <span class="mono" style="font-size:11px;color:var(--ink4);text-align:right">30s</span>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add connection. The picker enumerates nothing: it renders whatever
+       descriptors the backend hands over, including kinds this build has
+       never heard of. -->
+  <div style="position:absolute;inset:0;background:rgba(3,5,8,.68);display:flex;align-items:center;justify-content:center">
+    <div class="panel" style="width:860px;height:566px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06)">
+      <div style="display:flex;align-items:center;gap:9px;height:44px;padding:0 16px;border-bottom:1px solid var(--line)">
+        <h2 class="disp" style="margin:0;font-size:14px;font-weight:600;color:var(--ink)">Add connection</h2>
+        <span style="font-size:11px;color:var(--ink4)">12 service types available from this backend</span>
+        <span style="margin-left:auto;color:var(--ink4)"><!--ICON close 14 currentColor--></span>
+      </div>
+
+      <div style="flex:1;min-height:0;display:flex">
+        <div style="width:286px;flex-shrink:0;border-right:1px solid var(--line);display:flex;flex-direction:column">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--line)">
+            <div class="field"><!--ICON search 13 var(--ink4)--><span style="color:var(--ink4)">Search service types</span></div>
+          </div>
+          <div style="flex:1;min-height:0;padding:8px 0">
+            <div class="lbl" style="padding:6px 14px 5px">Containers &amp; orchestration</div>
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 14px"><!--MARK DK #4C9DF0 20--><span style="font-size:12px;color:var(--ink2)">Docker</span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 14px"><!--MARK K8 #59C2C9 20--><span style="font-size:12px;color:var(--ink2)">Kubernetes</span></div>
+            <div class="lbl" style="padding:10px 14px 5px">Databases</div>
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 14px"><!--MARK PG #7B8EF5 20--><span style="font-size:12px;color:var(--ink2)">Postgres</span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 14px"><!--MARK MY #DD6A9E 20--><span style="font-size:12px;color:var(--ink2)">MySQL</span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 14px"><!--MARK MG #2FB08A 20--><span style="font-size:12px;color:var(--ink2)">MongoDB</span></div>
+            <div class="lbl" style="padding:10px 14px 5px">Web &amp; endpoints</div>
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 14px;background:var(--raised);border-left:2px solid var(--accent);padding-left:12px"><!--MARK HE #4CC2FF 20--><span style="font-size:12px;color:var(--ink)">HTTP endpoint</span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:6px 14px"><!--MARK NG #2FB08A 20--><span style="font-size:12px;color:var(--ink2)">Nginx</span></div>
+          </div>
+        </div>
+
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+          <div style="padding:16px 18px 14px;border-bottom:1px solid var(--line)">
+            <div style="display:flex;align-items:center;gap:11px">
+              <!--MARK HE #4CC2FF 30-->
+              <div>
+                <div class="disp" style="font-size:14px;font-weight:600;color:var(--ink)">HTTP endpoint</div>
+                <div style="font-size:11px;color:var(--ink4);margin-top:2px">Polls a URL and reports status, latency and body assertions.</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex:1;min-height:0;padding:15px 18px;display:flex;flex-direction:column;gap:12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <div class="lbl" style="margin-bottom:6px">Name</div>
+                <div class="field" style="height:29px"><span class="mono" style="color:var(--ink)">status-page</span></div>
+              </div>
+              <div>
+                <div class="lbl" style="margin-bottom:6px">Endpoint</div>
+                <div class="field" style="height:29px;border-color:var(--accent)"><span class="mono" style="color:var(--ink)">https://status.internal/health</span></div>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+              <div>
+                <div class="lbl" style="margin-bottom:6px">Team</div>
+                <div class="field" style="height:29px"><span style="color:var(--ink)">platform</span></div>
+              </div>
+              <div>
+                <div class="lbl" style="margin-bottom:6px">Environment</div>
+                <div class="field" style="height:29px"><span style="color:var(--ink)">production</span><!--ICON down 12 var(--ink4)--></div>
+              </div>
+              <div>
+                <div class="lbl" style="margin-bottom:6px">Poll interval</div>
+                <div class="field" style="height:29px"><span class="mono" style="color:var(--ink)">15s</span></div>
+              </div>
+            </div>
+
+            <div style="height:1px;background:var(--line);margin:2px 0"></div>
+
+            <!-- These four options are declared by the collector, not by the UI.
+                 A new service type gets a working form with no frontend change. -->
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="lbl">Options declared by this collector</span>
+              <span class="tag" style="color:var(--accent);border-color:color-mix(in oklab,var(--accent) 28%,transparent);background:var(--accent-soft)">from the backend catalog</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <div class="lbl" style="margin-bottom:6px">Expect status</div>
+                <div class="field" style="height:29px"><span class="mono" style="color:var(--ink)">200</span></div>
+              </div>
+              <div>
+                <div class="lbl" style="margin-bottom:6px">Method</div>
+                <div class="field" style="height:29px"><span class="mono" style="color:var(--ink)">GET</span><!--ICON down 12 var(--ink4)--></div>
+              </div>
+              <div>
+                <div class="lbl" style="margin-bottom:6px">Expect body contains</div>
+                <div class="field" style="height:29px"><span class="mono" style="color:var(--ink4)">optional</span></div>
+              </div>
+              <div>
+                <div class="lbl" style="margin-bottom:6px">Slow above</div>
+                <div class="field" style="height:29px"><span class="mono" style="color:var(--ink)">800ms</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:12px 18px;border-top:1px solid var(--line)">
+            <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ok)"><!--ICON check 13 currentColor-->Test succeeded — 200 in 42ms</span>
+            <span class="btn" style="margin-left:auto">Test connection</span>
+            <span class="btn btn-p">Add connection</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

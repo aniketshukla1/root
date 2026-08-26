@@ -273,6 +273,13 @@ export interface MetricSeries {
   latest: number;
 }
 
+/** A period a connection spent in one state, as observed by its collector. */
+export interface HealthRun {
+  health: Health;
+  from: string;
+  to: string;
+}
+
 export interface HistogramBucket {
   t: string;
   trace: number;

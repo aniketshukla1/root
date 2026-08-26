@@ -529,6 +529,35 @@ pub async fn get_metric_history(
     Ok(state.history.read().await.series(&profile_id, since))
 }
 
+/// State runs for every connection across one window — the lane view.
+///
+/// Returned for all connections at once because that is how it is read: down a
+/// column, to see what everything was doing at a single moment. A connection
+/// with no samples in the window still gets a run, marked unknown, rather than
+/// being omitted — a lane that is missing and a lane that is silent are
+/// different facts.
+#[tauri::command]
+pub async fn get_health_runs(
+    state: Shared<'_>,
+    minutes: Option<i64>,
+) -> Result<std::collections::HashMap<String, Vec<crate::history::HealthRun>>> {
+    let now = chrono::Utc::now();
+    let since = now - chrono::Duration::minutes(minutes.unwrap_or(60).clamp(1, 1440));
+
+    let profiles = state.config.read().await.profiles.clone();
+    let history = state.history.read().await;
+
+    Ok(profiles
+        .iter()
+        .map(|profile| {
+            (
+                profile.id.clone(),
+                history.health_runs(&profile.id, since, now),
+            )
+        })
+        .collect())
+}
+
 /// Rolling history for one component — a container, a cluster node, a job.
 ///
 /// Empty for sections a collector did not mark `tracked`; those are readable

@@ -13,6 +13,7 @@ import type {
   ConnectionStatusEvent,
   DashboardState,
   HealthSnapshot,
+  HealthRun,
   HistogramBucket,
   LogEvent,
   MetricSeries,
@@ -64,6 +65,7 @@ export default function App() {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [history, setHistory] = useState<Record<string, MetricSeries[]>>({});
   const [buckets, setBuckets] = useState<HistogramBucket[]>([]);
+  const [healthRuns, setHealthRuns] = useState<Record<string, HealthRun[]>>({});
   const [minutes, setMinutes] = useState(60);
   const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [connectionErrors, setConnectionErrors] = useState<ConnectionStatusEvent[]>([]);
@@ -109,6 +111,14 @@ export default function App() {
     }
   }, [minutes]);
 
+  const refreshHealthRuns = useCallback(async () => {
+    try {
+      setHealthRuns(await api.getHealthRuns(minutes));
+    } catch (error) {
+      console.error("health runs load failed:", errorMessage(error));
+    }
+  }, [minutes]);
+
   const refreshHistogram = useCallback(async () => {
     try {
       setBuckets(
@@ -138,20 +148,22 @@ export default function App() {
   // controls on Metrics and Logs actually refetch rather than just re-slice.
   useEffect(() => {
     refreshHistory();
+    refreshHealthRuns();
     refreshHistogram();
-  }, [refreshHistory, refreshHistogram]);
+  }, [refreshHistory, refreshHealthRuns, refreshHistogram]);
 
   useEffect(() => {
     const dashboardTimer = setInterval(refreshDashboard, DASHBOARD_POLL_MS);
     const historyTimer = setInterval(() => {
       refreshHistory();
+    refreshHealthRuns();
       refreshHistogram();
     }, HISTORY_POLL_MS);
     return () => {
       clearInterval(dashboardTimer);
       clearInterval(historyTimer);
     };
-  }, [refreshDashboard, refreshHistory, refreshHistogram]);
+  }, [refreshDashboard, refreshHistory, refreshHealthRuns, refreshHistogram]);
 
   // ⌘K / Ctrl-K anywhere.
   useEffect(() => {
@@ -242,8 +254,9 @@ export default function App() {
   const refreshAll = useCallback(() => {
     refreshDashboard();
     refreshHistory();
+    refreshHealthRuns();
     refreshHistogram();
-  }, [refreshDashboard, refreshHistory, refreshHistogram]);
+  }, [refreshDashboard, refreshHistory, refreshHealthRuns, refreshHistogram]);
 
   const acknowledge = useCallback(
     (alertId: string) => {
@@ -300,6 +313,7 @@ export default function App() {
             catalog={catalog}
             history={history}
             buckets={buckets}
+          healthRuns={healthRuns}
             logs={logs}
             loading={loading}
             minutes={minutes}

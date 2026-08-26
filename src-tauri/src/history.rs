@@ -11,11 +11,21 @@ use std::collections::VecDeque;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::model::{HealthSnapshot, LogEvent, LogLevel, MetricUnit};
+use crate::model::{Health, HealthSnapshot, LogEvent, LogLevel, MetricUnit};
 
 /// Samples retained per metric. At a 15s poll this is roughly three hours;
 /// at Docker's 5s default, about half an hour.
 const MAX_POINTS: usize = 720;
+
+/// Health samples retained per connection. Matched to `MAX_POINTS` so a lane
+/// and a chart of the same connection always cover the same window.
+const MAX_HEALTH: usize = 720;
+
+/// How far apart two samples may sit before the span between them is reported
+/// as unknown rather than assumed to continue. Inferred per connection from
+/// its own cadence, because poll intervals differ by an order of magnitude
+/// between collectors; this multiple only decides how much jitter to forgive.
+const GAP_TOLERANCE: f64 = 2.5;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -89,6 +99,24 @@ struct EntityTrack {
     misses: u32,
 }
 
+/// Median spacing between samples, in milliseconds. The median rather than the
+/// mean so one long stall does not redefine a connection's normal cadence.
+fn median_gap_ms(samples: &[HealthSample]) -> Option<f64> {
+    if samples.len() < 2 {
+        return None;
+    }
+    let mut gaps: Vec<f64> = samples
+        .windows(2)
+        .map(|w| (w[1].t - w[0].t).num_milliseconds() as f64)
+        .filter(|ms| *ms > 0.0)
+        .collect();
+    if gaps.is_empty() {
+        return None;
+    }
+    gaps.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    Some(gaps[gaps.len() / 2])
+}
+
 /// Metric history for every connection.
 #[derive(Default)]
 pub struct HistoryStore {
@@ -97,6 +125,31 @@ pub struct HistoryStore {
     /// profile id → (section, row, column) → track. Only sections a collector
     /// marked `tracked` land here.
     entities: HashMap<String, HashMap<EntityKey, EntityTrack>>,
+    /// profile id → one health sample per poll. Cheap enough to keep for every
+    /// connection: health is a single byte and a timestamp.
+    health: HashMap<String, VecDeque<HealthSample>>,
+}
+
+/// What a connection's health was at one poll.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthSample {
+    pub t: DateTime<Utc>,
+    pub health: Health,
+}
+
+/// A period a connection spent in one state.
+///
+/// Runs are what a lane draws, and they are derived rather than stored: a gap
+/// wider than the connection's own cadence becomes an `Unknown` run instead of
+/// silently extending whatever came before it. That distinction is the whole
+/// point — a collector nobody could reach is not a service that was fine.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthRun {
+    pub health: Health,
+    pub from: DateTime<Utc>,
+    pub to: DateTime<Utc>,
 }
 
 impl HistoryStore {
@@ -136,6 +189,86 @@ impl HistoryStore {
         }
 
         self.record_entities(snapshot);
+        self.record_health(snapshot);
+    }
+
+    /// One sample per poll, so a lane can be drawn from observation rather than
+    /// inferred from whatever happened to raise an alert.
+    fn record_health(&mut self, snapshot: &HealthSnapshot) {
+        let ring = self.health.entry(snapshot.profile_id.clone()).or_default();
+        if ring.len() >= MAX_HEALTH {
+            ring.pop_front();
+        }
+        ring.push_back(HealthSample {
+            t: snapshot.checked_at,
+            health: snapshot.health,
+        });
+    }
+
+    /// Collapse a connection's samples into runs across `[since, now]`.
+    ///
+    /// Three things are deliberate. A window that begins before the first
+    /// sample opens with an `Unknown` run rather than back-filling the earliest
+    /// state, because nothing was observed then. A gap wider than the
+    /// connection's own median cadence becomes `Unknown` for exactly its
+    /// duration. And the final run is closed at `now`, not at the last sample,
+    /// so a connection that stopped reporting shows the silence rather than
+    /// ending tidily.
+    pub fn health_runs(
+        &self,
+        profile_id: &str,
+        since: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Vec<HealthRun> {
+        let Some(ring) = self.health.get(profile_id) else {
+            return vec![HealthRun {
+                health: Health::Unknown,
+                from: since,
+                to: now,
+            }];
+        };
+
+        let samples: Vec<HealthSample> = ring.iter().copied().filter(|s| s.t >= since).collect();
+        if samples.is_empty() {
+            return vec![HealthRun {
+                health: Health::Unknown,
+                from: since,
+                to: now,
+            }];
+        }
+
+        let tolerance = Duration::milliseconds(
+            (median_gap_ms(&samples).unwrap_or(60_000.0) * GAP_TOLERANCE) as i64,
+        );
+
+        let mut runs: Vec<HealthRun> = Vec::new();
+        let push = |health: Health, from: DateTime<Utc>, to: DateTime<Utc>, runs: &mut Vec<HealthRun>| {
+            if to <= from {
+                return;
+            }
+            match runs.last_mut() {
+                Some(last) if last.health == health && last.to >= from => last.to = to,
+                _ => runs.push(HealthRun { health, from, to }),
+            }
+        };
+
+        if samples[0].t > since {
+            push(Health::Unknown, since, samples[0].t, &mut runs);
+        }
+
+        for (i, sample) in samples.iter().enumerate() {
+            let next = samples.get(i + 1).map(|s| s.t).unwrap_or(now);
+            if next - sample.t > tolerance {
+                // Hold the observed state for one cadence, then admit we stopped
+                // knowing rather than extending it across the silence.
+                push(sample.health, sample.t, sample.t + tolerance, &mut runs);
+                push(Health::Unknown, sample.t + tolerance, next, &mut runs);
+            } else {
+                push(sample.health, sample.t, next, &mut runs);
+            }
+        }
+
+        runs
     }
 
     /// Per-row history for sections a collector marked `tracked`.
@@ -337,11 +470,13 @@ impl HistoryStore {
     }
 
     pub fn drop_profile(&mut self, profile_id: &str) {
+        self.health.remove(profile_id);
         self.tracks.remove(profile_id);
         self.entities.remove(profile_id);
     }
 
     pub fn clear(&mut self) {
+        self.health.clear();
         self.tracks.clear();
         self.entities.clear();
     }
@@ -453,6 +588,98 @@ mod tests {
             latency_ms: 1,
             error: None,
         }
+    }
+
+
+    // ------------------------------------------------------------ health runs
+
+    fn health_snapshot(health: Health, at: DateTime<Utc>) -> HealthSnapshot {
+        let mut snap = snapshot(10.0, at);
+        snap.health = health;
+        snap
+    }
+
+    /// A steady poll produces one run per state, not one per sample.
+    #[test]
+    fn health_runs_collapse_steady_polling() {
+        let start = Utc::now() - Duration::minutes(10);
+        let mut store = HistoryStore::default();
+        for i in 0..20 {
+            let health = if i < 12 { Health::Healthy } else { Health::Down };
+            store.record(&health_snapshot(health, start + Duration::seconds(i * 15)));
+        }
+
+        let runs = store.health_runs("p1", start, start + Duration::seconds(20 * 15));
+        assert_eq!(runs.len(), 2, "expected two runs, got {runs:?}");
+        assert_eq!(runs[0].health, Health::Healthy);
+        assert_eq!(runs[1].health, Health::Down);
+    }
+
+    /// A window that opens before the first sample opens as unknown: nothing
+    /// was observed then, and back-filling would invent an observation.
+    #[test]
+    fn health_runs_do_not_backfill_before_the_first_sample() {
+        let start = Utc::now() - Duration::minutes(30);
+        let mut store = HistoryStore::default();
+        for i in 0..10 {
+            store.record(&health_snapshot(
+                Health::Healthy,
+                start + Duration::minutes(20) + Duration::seconds(i * 15),
+            ));
+        }
+
+        let runs = store.health_runs("p1", start, Utc::now());
+        assert_eq!(runs[0].health, Health::Unknown);
+        assert_eq!(runs[0].from, start);
+    }
+
+    /// A collector that stops reporting shows the silence. This is the one that
+    /// matters: extending the last known state across a gap would claim an
+    /// observation nobody made.
+    #[test]
+    fn health_runs_report_a_gap_as_unknown() {
+        let start = Utc::now() - Duration::minutes(60);
+        let mut store = HistoryStore::default();
+        for i in 0..10 {
+            store.record(&health_snapshot(Health::Healthy, start + Duration::seconds(i * 15)));
+        }
+        // then nothing for twenty minutes
+        let now = start + Duration::minutes(20);
+
+        let runs = store.health_runs("p1", start, now);
+        let last = runs.last().expect("a run");
+        assert_eq!(last.health, Health::Unknown, "runs were {runs:?}");
+        assert_eq!(last.to, now, "the final run must close at now, not the last sample");
+        assert!(
+            runs.iter().any(|r| r.health == Health::Healthy),
+            "the observed period should survive: {runs:?}",
+        );
+    }
+
+    /// A connection the store has never seen is unknown for the whole window,
+    /// rather than absent from the result.
+    #[test]
+    fn health_runs_for_an_unseen_profile_are_unknown() {
+        let store = HistoryStore::default();
+        let now = Utc::now();
+        let runs = store.health_runs("nope", now - Duration::minutes(60), now);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].health, Health::Unknown);
+    }
+
+    /// Cadence is per connection: a five-second poll must not be judged against
+    /// a fifteen-second one, or every fast collector looks full of holes.
+    #[test]
+    fn health_runs_infer_cadence_per_connection() {
+        let start = Utc::now() - Duration::minutes(10);
+        let mut store = HistoryStore::default();
+        for i in 0..40 {
+            store.record(&health_snapshot(Health::Healthy, start + Duration::seconds(i * 5)));
+        }
+
+        let runs = store.health_runs("p1", start, start + Duration::seconds(40 * 5));
+        assert_eq!(runs.len(), 1, "a steady 5s poll is not a gap: {runs:?}");
+        assert_eq!(runs[0].health, Health::Healthy);
     }
 
     fn event(level: LogLevel, at: DateTime<Utc>) -> LogEvent {

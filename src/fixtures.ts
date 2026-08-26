@@ -295,3 +295,39 @@ export const CHANGES = [
     reported: false,
   },
 ];
+
+/**
+ * Health runs matching what the collector ring now produces: observed periods,
+ * with a genuine silence on queue-broker rather than a tidy ending.
+ */
+export function healthRuns(): Record<string, import("./types").HealthRun[]> {
+  const windowMs = 60 * 60_000;
+  const at = (frac: number) => iso(windowMs - frac * windowMs);
+  const runs = (
+    spec: [health: string, from: number, to: number][],
+  ): import("./types").HealthRun[] =>
+    spec.map(([health, from, to]) => ({
+      health: health as never,
+      from: at(from),
+      to: at(to),
+    }));
+
+  return {
+    "orders-api": runs([["healthy", 0, 0.7], ["degraded", 0.7, 0.78], ["down", 0.78, 1]]),
+    "payments-db": runs([["healthy", 0, 0.77], ["degraded", 0.77, 1]]),
+    "search-cluster": runs([["healthy", 0, 0.57], ["degraded", 0.57, 1]]),
+    "ci-pipeline": runs([
+      ["healthy", 0, 0.37], ["degraded", 0.37, 0.45],
+      ["healthy", 0.45, 0.87], ["degraded", 0.87, 1],
+    ]),
+    // Reported normally, then stopped. The ring shows the silence.
+    "queue-broker": runs([["healthy", 0, 0.93], ["unknown", 0.93, 1]]),
+    "edge-proxy": runs([["healthy", 0, 1]]),
+    "checkout-web": runs([["healthy", 0, 0.75], ["degraded", 0.75, 0.79], ["healthy", 0.79, 1]]),
+    "events-bus": runs([["healthy", 0, 1]]),
+    "session-cache": runs([["healthy", 0, 1]]),
+    "billing-mongo": runs([["healthy", 0, 1]]),
+    "metrics-store": runs([["healthy", 0, 1]]),
+    "status-page": runs([["healthy", 0, 1]]),
+  };
+}

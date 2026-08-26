@@ -34,6 +34,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_all_metric_history: () =>
     Object.fromEntries(fixtures.SNAPSHOTS.map((s) => [s.profileId, fixtures.seriesFor(s.profileId)])),
   get_component_history: () => [],
+  get_health_runs: () => fixtures.healthRuns(),
   get_change_events: () => fixtures.CHANGES,
   correlate: ({ at }) => ({ at: at ?? new Date().toISOString(), lanes: [] }),
   pending_confirmations: () => [],
@@ -60,6 +61,7 @@ import type {
   ConnectionProfile,
   Correlation,
   DashboardState,
+  HealthRun,
   HealthSnapshot,
   HistogramBucket,
   IngestStatus,
@@ -141,6 +143,10 @@ export const api = {
 
   /** The service registry — what kinds exist and how to render their forms. */
   getServiceCatalog: () => invoke<ServiceDescriptor[]>("get_service_catalog"),
+
+  /** State runs for every connection across the window — the lane view. */
+  getHealthRuns: (minutes?: number) =>
+    invoke<Record<string, HealthRun[]>>("get_health_runs", { minutes: minutes ?? null }),
 
   getConfig: () => invoke<AppConfig>("get_config"),
 

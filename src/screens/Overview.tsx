@@ -7,7 +7,7 @@ import { isBreaching } from "../format";
 import { lanesFor } from "../model";
 import type { EstateModel, Entity, ServiceView } from "../model";
 import type { View } from "../nav";
-import type { Alert, Health, LogEvent, MetricSeries } from "../types";
+import type { Alert, Health, HealthRun, LogEvent, MetricSeries } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { AlertList } from "../ui/AlertList";
 import { LogHistogram, levelColor, Sparkline, type Bucket } from "../ui/charts";
@@ -28,6 +28,7 @@ export function Overview({
   catalog,
   history,
   buckets,
+  healthRuns,
   logs,
   loading,
   minutes,
@@ -40,6 +41,7 @@ export function Overview({
   catalog: Catalog;
   history: Record<string, MetricSeries[]>;
   buckets: Bucket[];
+  healthRuns: Record<string, HealthRun[]>;
   logs: LogEvent[];
   loading: boolean;
   minutes: number;
@@ -112,7 +114,12 @@ export function Overview({
             has been doing for the window. */}
         <section className="grid gap-3 xl:grid-cols-[340px_1fr]" style={{ minHeight: 300 }}>
           <EstatePanel model={model} catalog={catalog} onNavigate={onNavigate} />
-          <LanesPanel model={model} minutes={minutes} onNavigate={onNavigate} />
+          <LanesPanel
+            model={model}
+            minutes={minutes}
+            healthRuns={healthRuns}
+            onNavigate={onNavigate}
+          />
         </section>
 
         <section>
@@ -284,13 +291,18 @@ function EstatePanel({
 function LanesPanel({
   model,
   minutes,
+  healthRuns,
   onNavigate,
 }: {
   model: EstateModel;
   minutes: number;
+  healthRuns: Record<string, HealthRun[]>;
   onNavigate: (view: View) => void;
 }) {
-  const lanes = useMemo(() => lanesFor(model, minutes * 60_000), [model, minutes]);
+  const lanes = useMemo(
+    () => lanesFor(model, healthRuns, minutes * 60_000),
+    [model, healthRuns, minutes],
+  );
   const shown = lanes.slice(0, 9);
   const rest = lanes.length - shown.length;
 

@@ -368,3 +368,100 @@ export function groupServices(
         a.label.localeCompare(b.label),
     );
 }
+
+// -------------------------------------------------------------------- lanes
+
+/**
+ * State per connection across a window, as continuous runs.
+ *
+ * The backend keeps no health history — snapshots are current-value only — so
+ * these runs are DERIVED from the alert set, which does carry `firstSeen` and
+ * `lastSeen` per condition. That is honest but partial: a flap that never
+ * raised an alert leaves no trace here, and a lane is only as granular as the
+ * conditions someone thought to threshold.
+ *
+ * Making it exact needs a health ring in the collector — one sample per poll
+ * per connection, same retention as the metric series. Until then a lane says
+ * "this connection was alerting", which is a narrower claim than "this
+ * connection was unhealthy", and the UI should not pretend otherwise.
+ */
+export interface LaneRun {
+  health: Health;
+  /** Fractions of the window; 0 is its left edge and 1 is now. */
+  from: number;
+  to: number;
+}
+
+export interface LaneView {
+  id: string;
+  name: string;
+  health: Health;
+  runs: LaneRun[];
+}
+
+function severityHealth(severity: Alert["severity"]): Health {
+  return severity === "critical" ? "down" : "degraded";
+}
+
+export function lanesFor(model: EstateModel, windowMs: number, now = Date.now()): LaneView[] {
+  const start = now - windowMs;
+
+  return [...model.services]
+    .sort(
+      (a, b) =>
+        HEALTH_ORDER.indexOf(a.health) - HEALTH_ORDER.indexOf(b.health) ||
+        b.alerts.length - a.alerts.length ||
+        a.snapshot.profileName.localeCompare(b.snapshot.profileName),
+    )
+    .map((service) => {
+      // A connection nobody can reach is unknown for the whole window, not
+      // healthy with a gap at the end — absence is a state.
+      const base: Health = service.health === "unknown" ? "unknown" : "healthy";
+      const marks: { from: number; to: number; health: Health }[] = [];
+
+      for (const alert of service.alerts) {
+        if (!alert.active) continue;
+        const from = Math.max(start, Date.parse(alert.firstSeen));
+        if (Number.isNaN(from)) continue;
+        marks.push({
+          from: (from - start) / windowMs,
+          to: 1,
+          health: severityHealth(alert.severity),
+        });
+      }
+
+      if (marks.length === 0) return laneOf(service, [{ health: base, from: 0, to: 1 }]);
+
+      // Worst state wins wherever windows overlap, so a critical never hides
+      // behind a warning that happens to start earlier.
+      const edges = [0, 1, ...marks.flatMap((m) => [m.from, m.to])]
+        .filter((v) => v >= 0 && v <= 1)
+        .sort((a, b) => a - b);
+
+      const runs: LaneRun[] = [];
+      for (let i = 0; i < edges.length - 1; i += 1) {
+        const [from, to] = [edges[i], edges[i + 1]];
+        if (to - from < 0.001) continue;
+        const mid = (from + to) / 2;
+        const covering = marks.filter((m) => mid >= m.from && mid < m.to);
+        const health = covering.reduce<Health>(
+          (worst, m) =>
+            HEALTH_ORDER.indexOf(m.health) < HEALTH_ORDER.indexOf(worst) ? m.health : worst,
+          base,
+        );
+        const last = runs[runs.length - 1];
+        if (last && last.health === health) last.to = to;
+        else runs.push({ health, from, to });
+      }
+      return laneOf(service, runs);
+    });
+}
+
+function laneOf(service: ServiceView, runs: LaneRun[]): LaneView {
+  return {
+    id: service.snapshot.profileId,
+    name: service.snapshot.profileName,
+    health: service.health,
+    runs,
+  };
+}

@@ -66,9 +66,12 @@
   --color-series-7: #57bcc4;
   --color-series-8: #dd8080;
 
-  /* plotted surfaces: the quiet nominal lane, log severities below warn,
-     the component-matrix ground, and the chart ruling */
-  --color-lane-ok: #1c3329;
+  /* Plotted surfaces: the nominal lane, log severities below warn, the
+     component-matrix ground, and the chart ruling.
+     `lane-ok` is deliberately recessive but must stay ABOVE ~1.9:1 against
+     --color-panel. Quiet is the intent; invisible is a bug, and the first
+     value chosen here sat at 1.39:1 and could not be seen at all. */
+  --color-lane-ok: #2b4c3b;
   --color-cell-todo: #131c26;
   --color-lvl-debug: #2b3846;
   --color-lvl-info: #6f8095;
@@ -133,7 +136,7 @@
   --color-series-7: #2d7f88;
   --color-series-8: #a85252;
 
-  --color-lane-ok: #dde8d4;
+  --color-lane-ok: #b9cdab;
   --color-cell-todo: #ece4d6;
   --color-lvl-debug: #cabda7;
   --color-lvl-info: #9a9081;

@@ -534,9 +534,9 @@ export function Legend({ series }: { series: { key: string; label: string; color
 const LEVEL_COLOR: Record<LogLevel, string> = {
   // Ordinal by alarm: the three quiet levels stay neutral so the bulk of a
   // healthy stream recedes, and only warn upward spends a status hue.
-  trace: "#4a5058",
-  debug: "var(--color-ink-4)",
-  info: "var(--color-ink-3)",
+  trace: "var(--color-line-strong)",
+  debug: "var(--color-lvl-debug)",
+  info: "var(--color-lvl-info)",
   warn: "var(--color-warn)",
   error: "var(--color-serious)",
   fatal: "var(--color-crit)",

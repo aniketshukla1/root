@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MotionConfig } from "motion/react";
+
 import { listen } from "./events";
 
 import { api, errorMessage } from "./api";
@@ -267,6 +269,9 @@ export default function App() {
   }, []);
 
   return (
+    // `reducedMotion="user"` is resolved once here, so no variant has to
+    // re-check the preference and no plot can forget to.
+    <MotionConfig reducedMotion="user">
     <div className="flex h-screen w-screen overflow-hidden bg-page">
       <Sidebar
         view={view}
@@ -426,5 +431,6 @@ export default function App() {
         />
       )}
     </div>
+    </MotionConfig>
   );
 }

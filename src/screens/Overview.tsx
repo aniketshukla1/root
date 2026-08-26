@@ -4,12 +4,14 @@ import { healthColor, healthLabel, isProblem, markColor } from "../catalog";
 import type { Catalog } from "../catalog";
 import { formatMetricValue, formatRelative } from "../format";
 import { isBreaching } from "../format";
+import { lanesFor } from "../model";
 import type { EstateModel, Entity, ServiceView } from "../model";
 import type { View } from "../nav";
-import type { Alert, LogEvent, MetricSeries } from "../types";
+import type { Alert, Health, LogEvent, MetricSeries } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { AlertList } from "../ui/AlertList";
 import { LogHistogram, levelColor, Sparkline, type Bucket } from "../ui/charts";
+import { Lanes, Ticks } from "../ui/plots";
 import {
   Button,
   cx,
@@ -18,7 +20,6 @@ import {
   HealthBadge,
   Panel,
   ServiceMark,
-  Stat,
 } from "../ui/primitives";
 import { ChevronRight } from "../ui/icons";
 
@@ -107,15 +108,21 @@ export function Overview({
       />
 
       <Screen className="flex flex-col gap-3">
-        <StatusStrip model={model} onNavigate={onNavigate} />
+        {/* Hero: what the estate is right now, beside what every connection
+            has been doing for the window. */}
+        <section className="grid gap-3 xl:grid-cols-[340px_1fr]" style={{ minHeight: 300 }}>
+          <EstatePanel model={model} catalog={catalog} onNavigate={onNavigate} />
+          <LanesPanel model={model} minutes={minutes} onNavigate={onNavigate} />
+        </section>
 
         <section>
           <BandTitle
-            title="Connections"
+            title="Needs attention"
             action={{ label: "All services", onClick: () => onNavigate({ name: "services" }) }}
           />
           <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(272px,1fr))]">
             {[...model.services]
+              .filter((s) => s.health !== "healthy" || s.issues.length > 0)
               .sort(
                 (a, b) =>
                   Number(isProblem(b.health)) - Number(isProblem(a.health)) ||
@@ -161,6 +168,199 @@ export function Overview({
   );
 }
 
+// ------------------------------------------------------------------- hero
+
+/**
+ * The estate panel answers only what nothing else on this screen does: how
+ * long this has been going on, what failed first, and what caused it. The
+ * ribbon, the lanes and the alert list already carry the aggregate, so
+ * repeating it here was the old strip's whole problem.
+ */
+function EstatePanel({
+  model,
+  catalog,
+  onNavigate,
+}: {
+  model: EstateModel;
+  catalog: Catalog;
+  onNavigate: (view: View) => void;
+}) {
+  const { counts } = model;
+
+  // The oldest still-firing alert is what "how long" means.
+  const oldest = useMemo(() => {
+    const active = model.alerts.filter((a) => a.active);
+    if (active.length === 0) return undefined;
+    return active.reduce((a, b) => (Date.parse(a.firstSeen) <= Date.parse(b.firstSeen) ? a : b));
+  }, [model.alerts]);
+
+  const state: Health = counts.down > 0 ? "down" : counts.degraded > 0 ? "degraded" : "healthy";
+  const first = oldest
+    ? model.services.find((s) => s.snapshot.profileId === oldest.profileId)
+    : undefined;
+
+  return (
+    <section className="panel flex min-h-0 flex-col p-4">
+      <div className="flex items-center gap-2.5">
+        <span className="label">Estate</span>
+        <span className="num ml-auto text-2xs text-ink-4">{counts.connections} connections</span>
+      </div>
+
+      <div className="mt-3.5 flex items-center gap-2">
+        <Dot health={state} size={11} />
+        <span
+          className="font-mono text-xs tracking-[.16em] uppercase"
+          style={{ color: healthColor(state) }}
+        >
+          {healthLabel(state)}
+        </span>
+        {oldest && (
+          <span className="num text-xs text-ink-4">
+            since {new Date(oldest.firstSeen).toLocaleTimeString([], { hour12: false })}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-1.5 flex items-baseline gap-2.5">
+        <span className="num text-[40px] leading-none font-medium tracking-[-.04em] text-ink">
+          {oldest ? formatRelative(oldest.firstSeen).replace(" ago", "") : "—"}
+        </span>
+        <span className="label tracking-[.14em]">{oldest ? "unresolved" : "all clear"}</span>
+      </div>
+
+      <div className="mt-3.5 flex items-center gap-3.5">
+        {([["down", counts.down], ["degraded", counts.degraded], ["unknown", counts.unknown], ["healthy", counts.healthy]] as const).map(
+          ([health, n]) => (
+            <span key={health} className="flex items-center gap-1.5" title={healthLabel(health)}>
+              <Dot health={health} size={8} />
+              <span className="num text-xs text-ink-2">{n}</span>
+            </span>
+          ),
+        )}
+      </div>
+
+      <div className="my-3.5 h-px bg-line" />
+
+      {first && oldest ? (
+        <>
+          <div className="label mb-2">First failure</div>
+          <div className="flex items-center gap-2">
+            <ServiceMark descriptor={catalog.get(first.snapshot.kind)} size={17} />
+            <span className="text-[12.5px] text-ink">{first.snapshot.profileName}</span>
+            <span className="num truncate text-xs text-ink-4" title={oldest.title}>
+              {oldest.title}
+            </span>
+          </div>
+          <p className="mt-2 text-[11.5px] leading-snug text-ink-3">{oldest.detail}</p>
+        </>
+      ) : (
+        <p className="text-[12.5px] text-ink-3">
+          Nothing is alerting. Every connection reported on its last poll.
+        </p>
+      )}
+
+      <div className="mt-auto flex gap-1.5 pt-3.5">
+        <Button className="flex-1" onClick={() => onNavigate({ name: "alerts" })}>
+          All alerts
+        </Button>
+        {first && (
+          <Button
+            className="flex-1"
+            onClick={() => onNavigate({ name: "service", profileId: first.snapshot.profileId })}
+          >
+            Open {first.snapshot.profileName}
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Every connection's window, time-aligned. Reading across a lane gives one
+ * service's hour; reading down a column gives what everything was doing at a
+ * single moment — which is the whole point of correlation.
+ */
+function LanesPanel({
+  model,
+  minutes,
+  onNavigate,
+}: {
+  model: EstateModel;
+  minutes: number;
+  onNavigate: (view: View) => void;
+}) {
+  const lanes = useMemo(() => lanesFor(model, minutes * 60_000), [model, minutes]);
+  const shown = lanes.slice(0, 9);
+  const rest = lanes.length - shown.length;
+
+  return (
+    <Panel
+      title="Lanes"
+      subtitle={`last ${minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`} · state per connection`}
+      actions={
+        <div className="flex items-center gap-2.5">
+          <LaneKey />
+          <button
+            onClick={() => onNavigate({ name: "correlate", at: new Date().toISOString() })}
+            className="num flex items-center gap-1 text-2xs text-ink-4 transition-colors hover:text-accent"
+          >
+            Correlate
+            <ChevronRight size={11} />
+          </button>
+        </div>
+      }
+      bodyClassName="px-4 pt-3 pb-3"
+    >
+      <Lanes
+        lanes={shown.map((l) => ({ ...l, runs: l.runs }))}
+        labelWidth={132}
+        footer={
+          <>
+            <Ticks count={60} />
+            <div className="mt-1 flex justify-between">
+              <span className="num text-[9.5px] text-ink-4">
+                −{minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`}
+              </span>
+              {rest > 0 && (
+                <span className="num text-[9.5px] text-ink-4">+{rest} more healthy</span>
+              )}
+              <span className="num text-[9.5px] text-ink-2">now</span>
+            </div>
+          </>
+        }
+      />
+    </Panel>
+  );
+}
+
+function LaneKey() {
+  const swatch = (background: string, label: string, extra?: string) => (
+    <span key={label} className="num flex items-center gap-1 text-[9.5px] text-ink-4">
+      <span className={cx("h-2 w-2.5", extra)} style={{ background }} />
+      {label}
+    </span>
+  );
+  return (
+    <div className="flex items-center gap-2">
+      {swatch("var(--color-lane-ok)", "healthy")}
+      {swatch("var(--color-warn)", "degraded")}
+      {swatch("var(--color-crit)", "down")}
+      <span className="num flex items-center gap-1 text-[9.5px] text-ink-4">
+        <span
+          className="h-2 w-2.5"
+          style={{
+            background: "var(--color-cell-todo)",
+            backgroundImage:
+              "repeating-linear-gradient(45deg, var(--color-ink-4) 0 1.6px, transparent 1.6px 5px)",
+          }}
+        />
+        no data
+      </span>
+    </div>
+  );
+}
+
 function BandTitle({
   title,
   action,
@@ -182,100 +382,6 @@ function BandTitle({
       )}
     </div>
   );
-}
-
-// -------------------------------------------------------------- status strip
-
-function StatusStrip({
-  model,
-  onNavigate,
-}: {
-  model: EstateModel;
-  onNavigate: (view: View) => void;
-}) {
-  const { counts } = model;
-  const total = Math.max(1, counts.connections);
-  const coverage = Math.round((counts.assigned / total) * 100);
-
-  // Ordered worst-first so the eye lands on the problem end of the bar.
-  const distribution = [
-    { key: "down", n: counts.down, color: "var(--color-crit)", label: "Down" },
-    { key: "degraded", n: counts.degraded, color: "var(--color-warn)", label: "Degraded" },
-    { key: "unknown", n: counts.unknown, color: "var(--color-unknown)", label: "Unknown" },
-    { key: "healthy", n: counts.healthy, color: "var(--color-ok)", label: "Healthy" },
-  ].filter((d) => d.n > 0);
-
-  return (
-    <div className="panel flex flex-wrap items-center gap-x-7 gap-y-3 px-4 py-3">
-      <Stat label="Connections" value={counts.connections} />
-
-      <div className="min-w-44 flex-1">
-        <div className="flex items-baseline gap-2">
-          {distribution.map((d) => (
-            <span key={d.key} className="num text-[19px] leading-tight" style={{ color: d.color }}>
-              {d.n}
-            </span>
-          ))}
-        </div>
-        {/* A 2px gap between segments in the surface colour, so adjacent
-            counts stay countable without a border darkening the fill. */}
-        <div className="mt-1.5 flex h-1.5 gap-[2px] overflow-hidden">
-          {distribution.map((d) => (
-            <span
-              key={d.key}
-              title={`${d.n} ${d.label.toLowerCase()}`}
-              className="h-full rounded-full first:rounded-l-full last:rounded-r-full"
-              style={{ background: d.color, flexGrow: d.n }}
-            />
-          ))}
-        </div>
-        <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5">
-          {distribution.map((d) => (
-            <span key={d.key} className="flex items-center gap-1 text-2xs text-ink-4">
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ background: d.color }}
-              />
-              {d.label}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <Divider />
-
-      <button
-        onClick={() => onNavigate({ name: "alerts" })}
-        className="text-left transition-opacity hover:opacity-80"
-      >
-        <Stat
-          label="Active alerts"
-          value={counts.alerts}
-          tone={counts.critical > 0 ? "var(--color-crit)" : undefined}
-        />
-      </button>
-      <Stat
-        label="Unacknowledged"
-        value={counts.unacknowledged}
-        tone={counts.unacknowledged > 0 ? "var(--color-warn)" : undefined}
-      />
-
-      <Divider />
-
-      <Stat label="Components" value={counts.entities} />
-      <Stat label="Production" value={counts.production} />
-      <Stat
-        label="Ownership"
-        value={`${coverage}%`}
-        tone={coverage < 100 ? "var(--color-ink-2)" : undefined}
-        hint={`${counts.assigned} of ${counts.connections} connections name a responsible team`}
-      />
-    </div>
-  );
-}
-
-function Divider() {
-  return <span className="hidden h-8 w-px shrink-0 bg-line lg:block" />;
 }
 
 // ---------------------------------------------------------- connection tile

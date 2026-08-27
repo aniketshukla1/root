@@ -44,6 +44,7 @@ export function Metrics({
   syncedAt,
   onNavigate,
   onRefresh,
+  onAsk,
 }: {
   history: Record<string, MetricSeries[]>;
   model: EstateModel;
@@ -53,6 +54,7 @@ export function Metrics({
   syncedAt?: string;
   onNavigate: (view: View) => void;
   onRefresh: () => void;
+  onAsk: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("connection");
   const [query, setQuery] = useState("");
@@ -131,6 +133,7 @@ export function Metrics({
   return (
     <>
       <ScreenHeader
+        onAsk={onAsk}
         title="Metrics"
         meta={
           mode === "connection" ? (

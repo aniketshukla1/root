@@ -32,6 +32,7 @@ import {
   type Annotation,
   type Domain,
 } from "../ui/charts";
+import { Bullet } from "../ui/plots";
 import {
   Button,
   cx,
@@ -381,11 +382,28 @@ export function ServiceDashboard({
                     </span>
                   </div>
                   {metric.warnAbove !== undefined && (
-                    <div className="mt-1 text-2xs text-ink-4">
-                      limit{" "}
-                      <span className={cx("num", over && "text-warn")}>
-                        {formatMetricValue(metric.warnAbove, metric.unit)}
-                      </span>
+                    <div className="mt-2">
+                      {/* The threshold is drawn, not just stated: a number
+                          without its ceiling is a rumour. A percentage has a
+                          real ceiling at 100; everything else only has the
+                          threshold, so the track is scaled to put that tick at
+                          three quarters and a breach visibly runs past it. */}
+                      <Bullet
+                        value={metric.value}
+                        max={
+                          metric.unit === "percent"
+                            ? 100
+                            : Math.max(metric.value, metric.warnAbove / 0.75)
+                        }
+                        warnAbove={metric.warnAbove}
+                        height={5}
+                      />
+                      <div className="mt-1.5 flex items-baseline gap-1 text-2xs text-ink-4">
+                        <span>limit</span>
+                        <span className={cx("num", over && "text-warn")}>
+                          {formatMetricValue(metric.warnAbove, metric.unit)}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>

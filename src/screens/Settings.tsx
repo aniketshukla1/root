@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
 import { applyDensity, readDensity, type Density } from "../density";
+import { applyTheme, readTheme, watchSystemTheme, type Theme } from "../theme";
 import type {
   AgentMode,
   AppConfig,
@@ -39,16 +40,18 @@ export function Settings({
   config,
   catalog,
   onConfigChange,
+  onAsk,
 }: {
   config: AppConfig | null;
   catalog: Catalog;
   onConfigChange: (config: AppConfig) => void;
+  onAsk: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("connections");
 
   return (
     <>
-      <ScreenHeader title="Settings" />
+      <ScreenHeader title="Settings" onAsk={onAsk} />
       <Screen padded={false} className="flex flex-col">
         <Tabs
           value={tab}
@@ -1200,14 +1203,39 @@ function IngestSettings() {
 
 function DisplaySettings() {
   const [density, setDensity] = useState<Density>(readDensity);
+  const [theme, setTheme] = useState<Theme>(readTheme);
 
   const change = (next: Density) => {
     setDensity(next);
     applyDensity(next);
   };
 
+  const changeTheme = (next: Theme) => {
+    setTheme(next);
+    applyTheme(next);
+  };
+
+  // "System" keeps following the OS after it is chosen, rather than resolving
+  // once and then drifting when the machine flips at sunset.
+  useEffect(() => watchSystemTheme(theme, () => setTheme("system")), [theme]);
+
   return (
     <Panel title="Display" className="max-w-xl">
+      <Field
+        label="Theme"
+        help="Light is warm paper rather than white: a dark console inverted onto cold white reads as a mistake, and on paper it reads as printed."
+      >
+        <Segmented
+          value={theme}
+          onChange={changeTheme}
+          options={[
+            { value: "dark", label: "Dark" },
+            { value: "light", label: "Light" },
+            { value: "system", label: "System" },
+          ]}
+        />
+      </Field>
+
       <Field
         label="Density"
         help="Sets row height and type scale across every table and list in the app."
@@ -1246,9 +1274,9 @@ function DisplaySettings() {
       </div>
 
       <p className="mt-3 text-2xs leading-snug text-ink-4">
-        root is a dark-only surface. The palette is tuned for long sessions in a dim room, and both
-        the status and identity colours are validated for colour-vision deficiency against this
-        background.
+        Dark is tuned for long sessions in a dim room; light is warm paper for a bright one. Both
+        carry the full palette, and the status and identity colours are validated for colour-vision
+        deficiency against each ground rather than only against the dark one.
       </p>
     </Panel>
   );

@@ -103,7 +103,7 @@ const ESTATE: Spec[] = [
 ];
 
 const METRICS: Record<string, [string, string, number, string, number?][]> = {
-  "orders-api": [["cpu", "CPU", 62, "percent", 75], ["memory", "Memory", 7.4, "bytes", 8],
+  "orders-api": [["cpu", "CPU", 62, "percent", 75], ["memory", "Memory", 7945689498, "bytes", 8589934592],
     ["running", "Running", 5, "count"], ["error_rate", "Error rate", 8.1, "percent", 2]],
   "payments-db": [["lag", "Lag", 42, "seconds", 30], ["conns", "Connections", 318, "count"]],
   "search-cluster": [["heap", "Heap", 81, "percent", 85], ["nodes", "Nodes", 6, "count"]],
@@ -112,7 +112,7 @@ const METRICS: Record<string, [string, string, number, string, number?][]> = {
   "edge-proxy": [["rps", "Req/s", 4200, "per_second"], ["p99", "p99", 38, "millis"]],
   "checkout-web": [["pods", "Pods ready", 24, "count"], ["cpu", "CPU", 34, "percent", 75]],
   "events-bus": [["lag", "Lag", 1200, "count"], ["brokers", "Brokers", 3, "count"]],
-  "session-cache": [["hit", "Hit rate", 99.1, "percent"], ["memory", "Memory", 1.4, "bytes"]],
+  "session-cache": [["hit", "Hit rate", 99.1, "percent"], ["memory", "Memory", 1503238554, "bytes"]],
   "billing-mongo": [["conns", "Connections", 88, "count"]],
   "metrics-store": [["targets", "Targets up", 42, "count"]],
   "status-page": [["latency", "Latency", 42, "millis", 800]],
@@ -133,7 +133,7 @@ function rowsFor(spec: Spec): HealthSnapshot["sections"] {
       cells: {
         image: { type: "text" as const, value: `${id}:2.14.3` },
         cpu: { type: "number" as const, value: Math.round(r() * 90) },
-        memory: { type: "number" as const, value: Number((r() * 8).toFixed(1)) },
+        memory: { type: "number" as const, value: Math.round(r() * 8 * 1024 ** 3) },
         restarts: { type: "number" as const, value: rowHealth === "healthy" ? 0 : Math.ceil(r() * 9) },
       },
       actions: [],

@@ -349,6 +349,7 @@ export default function App() {
             syncedAt={dashboard?.generatedAt}
             onNavigate={setView}
             onRefresh={refreshAll}
+            onAsk={askAssistant}
           />
         )}
 
@@ -376,6 +377,7 @@ export default function App() {
             syncedAt={dashboard?.generatedAt}
             onNavigate={setView}
             onRefresh={refreshAll}
+            onAsk={askAssistant}
           />
         )}
 
@@ -409,6 +411,7 @@ export default function App() {
             onNavigate={setView}
             onRefresh={refreshAll}
             onAcknowledge={acknowledge}
+            onAsk={askAssistant}
           />
         )}
 
@@ -439,7 +442,12 @@ export default function App() {
         )}
 
         {view.name === "settings" && (
-          <Settings config={config} catalog={catalog} onConfigChange={onConfigChange} />
+          <Settings
+            config={config}
+            catalog={catalog}
+            onConfigChange={onConfigChange}
+            onAsk={askAssistant}
+          />
         )}
       </main>
 

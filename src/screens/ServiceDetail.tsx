@@ -36,6 +36,7 @@ export function ServiceDetail({
   history,
   onNavigate,
   onRefresh,
+  onAsk,
   onAcknowledge,
 }: {
   profileId: string;
@@ -46,6 +47,7 @@ export function ServiceDetail({
   history: MetricSeries[];
   onNavigate: (view: View) => void;
   onRefresh: () => void;
+  onAsk: () => void;
   onAcknowledge: (alertId: string) => void;
 }) {
   const [pending, setPending] = useState<{ action: RowAction; row: Row } | null>(null);
@@ -107,6 +109,7 @@ export function ServiceDetail({
   return (
     <>
       <ScreenHeader
+        onAsk={onAsk}
         title={
           <span className="flex items-center gap-2">
             <button

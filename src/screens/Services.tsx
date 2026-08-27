@@ -36,6 +36,7 @@ export function Services({
   syncedAt,
   onNavigate,
   onRefresh,
+  onAsk,
 }: {
   model: EstateModel;
   catalog: Catalog;
@@ -43,6 +44,7 @@ export function Services({
   syncedAt?: string;
   onNavigate: (view: View) => void;
   onRefresh: () => void;
+  onAsk: () => void;
 }) {
   const [groupBy, setGroupBy] = useState<GroupBy>("category");
   const [query, setQuery] = useState("");
@@ -80,6 +82,7 @@ export function Services({
   return (
     <>
       <ScreenHeader
+        onAsk={onAsk}
         title="Services"
         meta={
           <>

@@ -18,7 +18,7 @@ import {
   ServiceMark,
   Tag,
 } from "../ui/primitives";
-import { SearchIcon } from "../ui/icons";
+import { AssistantIcon, SearchIcon } from "../ui/icons";
 
 type StateFilter = "open" | "acknowledged" | "resolved" | "all";
 
@@ -49,6 +49,8 @@ export function Alerts({
   onNavigate,
   onRefresh,
   onAcknowledge,
+  onAsk,
+  onExplain,
 }: {
   alerts: Alert[];
   model: EstateModel;
@@ -57,6 +59,8 @@ export function Alerts({
   onNavigate: (view: View) => void;
   onRefresh: () => void;
   onAcknowledge: (alertId: string) => void;
+  onAsk: () => void;
+  onExplain: (alert: Alert) => void;
 }) {
   const [state, setState] = useState<StateFilter>("open");
   const [severity, setSeverity] = useState<AlertSeverity | "any">("any");
@@ -176,6 +180,7 @@ export function Alerts({
         syncedAt={syncedAt}
         live
         onRefresh={onRefresh}
+        onAsk={onAsk}
       >
         <div className="relative">
           <SearchIcon
@@ -414,16 +419,26 @@ export function Alerts({
                         </td>
 
                         <td className="px-3">
-                          {alert.active && !alert.acknowledged && (
+                          <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                             <Button
                               variant="ghost"
-                              onClick={() => onAcknowledge(alert.id)}
-                              className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                              title="Acknowledgement is not resolution — the alert stays listed until the collector reports recovery."
+                              onClick={() => onExplain(alert)}
+                              title="Explain this alert"
+                              className="gap-1.5 text-accent"
                             >
-                              Ack
+                              <AssistantIcon size={12} />
+                              Explain
                             </Button>
-                          )}
+                            {alert.active && !alert.acknowledged && (
+                              <Button
+                                variant="ghost"
+                                onClick={() => onAcknowledge(alert.id)}
+                                title="Acknowledgement is not resolution — the alert stays listed until the collector reports recovery."
+                              >
+                                Ack
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

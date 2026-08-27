@@ -331,3 +331,41 @@ export function healthRuns(): Record<string, import("./types").HealthRun[]> {
     "status-page": runs([["healthy", 0, 1]]),
   };
 }
+
+/** A grounded answer, so the dock can be exercised without a model configured. */
+export function agentTurn(conversationId: string, message: string) {
+  const about137 = /137|OOMKilled/i.test(message);
+  return {
+    conversationId,
+    steps: [
+      { tool: "get_snapshot", arguments: {}, ok: true, mutating: false, approved: null,
+        result: "orders-api → down · 5 of 8 containers running", durationMs: 180 },
+      { tool: "search_logs", arguments: {}, ok: true, mutating: false, approved: null,
+        result: "code=137 → 9 lines in 14m, all orders-worker-*", durationMs: 240 },
+      { tool: "get_metric_history", arguments: {}, ok: true, mutating: false, approved: null,
+        result: "memory peaked 7.98G against an 8G limit", durationMs: 130 },
+      { tool: "list_changes", arguments: {}, ok: true, mutating: false, approved: null,
+        result: "orders-api 2.14.2 → 2.14.3 at 14:00, observed", durationMs: 90 },
+    ],
+    usage: { inputTokens: 2140, outputTokens: 380 },
+    truncated: false,
+    text: about137
+      ? [
+          "The container did not crash — the kernel killed it. Exit code 137 is 128 + 9, meaning it received SIGKILL, and OOMKilled says why: it asked for more memory than its limit allowed.",
+          "",
+          "This worker is capped at 8G and peaked at 7.98G before it was killed — the 9th time in 18 minutes. Memory does not fall back between restarts.",
+          "",
+          "It is not load. Request volume is down 12% over the same window, so this reads as a memory regression in 2.14.3, deployed four minutes before the first restart.",
+          "",
+          "What to check next:",
+          "  1. Compare memory against 2.14.2",
+          "  2. Inspect orders-worker-3",
+          "  3. Correlate 14:04 across the estate",
+        ].join("\n")
+      : [
+          "One connection is down: orders-api, owned by payments. Three of its eight containers are exiting on code 137 — the kernel OOM killer, not the application.",
+          "",
+          "Restarts begin at 14:04, four minutes after 2.14.3 was deployed. payments-db is also degraded with 42s replication lag, starting after the first restart storm — most likely downstream of this rather than a second fault.",
+        ].join("\n"),
+  };
+}

@@ -6,6 +6,7 @@ import { listen } from "./events";
 import { api, errorMessage } from "./api";
 import { Catalog, EMPTY_CATALOG } from "./catalog";
 import { buildModel } from "./model";
+import type { ExplainTarget } from "./explain";
 import type { View } from "./nav";
 import type {
   Alert,
@@ -23,6 +24,7 @@ import { GLOBAL_STREAMS } from "./types";
 
 import { CommandPalette } from "./shell/CommandPalette";
 import { ConfirmDialog } from "./shell/ConfirmDialog";
+import { AssistantDock } from "./shell/AssistantDock";
 import { Sidebar } from "./shell/Sidebar";
 import { Toasts, toastFromAlert, type Toast } from "./shell/Toasts";
 
@@ -66,6 +68,11 @@ export default function App() {
   const [history, setHistory] = useState<Record<string, MetricSeries[]>>({});
   const [buckets, setBuckets] = useState<HistogramBucket[]>([]);
   const [healthRuns, setHealthRuns] = useState<Record<string, HealthRun[]>>({});
+  /** The dock is one surface with a subject, not a second chat window. */
+  const [explain, setExplain] = useState<ExplainTarget | null>(null);
+  const askAssistant = useCallback(() => setExplain({ kind: "ask" }), []);
+  const explainAlert = useCallback((alert: Alert) => setExplain({ kind: "alert", alert }), []);
+  const explainLog = useCallback((event: LogEvent) => setExplain({ kind: "log", event }), []);
   const [minutes, setMinutes] = useState(60);
   const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [connectionErrors, setConnectionErrors] = useState<ConnectionStatusEvent[]>([]);
@@ -165,12 +172,20 @@ export default function App() {
     };
   }, [refreshDashboard, refreshHistory, refreshHealthRuns, refreshHistogram]);
 
-  // ⌘K / Ctrl-K anywhere.
+  // ⌘K for the palette, ⌘J for the assistant — the two things you reach for
+  // without deciding to, from anywhere.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === "k") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+      }
+      if (key === "j") {
+        event.preventDefault();
+        // Toggling closed keeps the subject, so reopening returns to it.
+        setExplain((current) => (current ? null : { kind: "ask" }));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -313,7 +328,7 @@ export default function App() {
             catalog={catalog}
             history={history}
             buckets={buckets}
-          healthRuns={healthRuns}
+            healthRuns={healthRuns}
             logs={logs}
             loading={loading}
             minutes={minutes}
@@ -321,6 +336,8 @@ export default function App() {
             onNavigate={setView}
             onRefresh={refreshAll}
             onAcknowledge={acknowledge}
+            onAsk={askAssistant}
+            onExplain={explainAlert}
           />
         )}
 
@@ -344,6 +361,8 @@ export default function App() {
             onNavigate={setView}
             onRefresh={refreshDashboard}
             onAcknowledge={acknowledge}
+            onAsk={askAssistant}
+            onExplain={explainAlert}
           />
         )}
 
@@ -374,6 +393,8 @@ export default function App() {
               refreshHistogram();
             }}
             onNavigate={setView}
+            onAsk={askAssistant}
+            onExplain={explainLog}
           />
         )}
 
@@ -421,6 +442,20 @@ export default function App() {
           <Settings config={config} catalog={catalog} onConfigChange={onConfigChange} />
         )}
       </main>
+
+      {/* Docked, not overlaid: the screen the problem is on stays visible and
+          keeps its alignment while the answer arrives beside it. */}
+      {explain && (
+        <AssistantDock
+          target={explain}
+          configured={Boolean(config?.llm.hasApiKey || config?.llm.provider === "ollama")}
+          onClose={() => setExplain(null)}
+          onExpand={() => {
+            setExplain(null);
+            setView({ name: "assistant" });
+          }}
+        />
+      )}
 
       {paletteOpen && (
         <CommandPalette

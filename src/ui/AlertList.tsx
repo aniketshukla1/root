@@ -6,6 +6,7 @@
 import type { Catalog } from "../catalog";
 import { formatDateTime, formatRelative } from "../format";
 import type { Alert, AlertSeverity } from "../types";
+import { AssistantIcon } from "./icons";
 import { Button, Empty, Tag } from "./primitives";
 
 export const SEVERITY: Record<AlertSeverity, { color: string; label: string; rank: number }> = {
@@ -27,6 +28,7 @@ export function AlertList({
   alerts,
   catalog,
   onAcknowledge,
+  onExplain,
   onOpenService,
   showConnection = true,
   emptyTitle = "No active alerts",
@@ -36,6 +38,8 @@ export function AlertList({
   alerts: Alert[];
   catalog: Catalog;
   onAcknowledge: (alertId: string) => void;
+  /** Hands the alert to the docked assistant without leaving this screen. */
+  onExplain?: (alert: Alert) => void;
   onOpenService?: (profileId: string) => void;
   showConnection?: boolean;
   emptyTitle?: string;
@@ -100,16 +104,28 @@ export function AlertList({
                 </span>
               </div>
             </div>
-            {alert.active && !alert.acknowledged && (
-              <Button
-                variant="ghost"
-                onClick={() => onAcknowledge(alert.id)}
-                className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                title="Acknowledging silences the notification. It stays listed until the collector reports recovery."
-              >
-                Ack
-              </Button>
-            )}
+            <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              {onExplain && (
+                <Button
+                  variant="ghost"
+                  onClick={() => onExplain(alert)}
+                  title="Explain this alert"
+                  className="gap-1.5 text-accent"
+                >
+                  <AssistantIcon size={12} />
+                  Explain
+                </Button>
+              )}
+              {alert.active && !alert.acknowledged && (
+                <Button
+                  variant="ghost"
+                  onClick={() => onAcknowledge(alert.id)}
+                  title="Acknowledging silences the notification. It stays listed until the collector reports recovery."
+                >
+                  Ack
+                </Button>
+              )}
+            </div>
           </li>
         );
       })}

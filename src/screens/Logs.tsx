@@ -19,7 +19,7 @@ import {
   ServiceMark,
   Tag,
 } from "../ui/primitives";
-import { SearchIcon, TimelineIcon } from "../ui/icons";
+import { AssistantIcon, SearchIcon, TimelineIcon } from "../ui/icons";
 
 /** Rendering the whole buffer would jank the scroll; this is well past a screen. */
 const MERGED_CAP = 600;
@@ -54,6 +54,8 @@ export function Logs({
   onMinutesChange,
   onClear,
   onNavigate,
+  onAsk,
+  onExplain,
 }: {
   logs: LogEvent[];
   buckets: Bucket[];
@@ -63,6 +65,8 @@ export function Logs({
   onMinutesChange: (minutes: number) => void;
   onClear: () => void;
   onNavigate: (view: View) => void;
+  onAsk: () => void;
+  onExplain: (event: LogEvent) => void;
 }) {
   const [mode, setMode] = useState<Mode>("merged");
   const [stream, setStream] = useState("default");
@@ -171,6 +175,7 @@ export function Logs({
   return (
     <>
       <ScreenHeader
+        onAsk={onAsk}
         title="Logs"
         meta={
           <>
@@ -305,7 +310,7 @@ export function Logs({
 
             <div
               ref={listRef}
-              className="min-w-0 flex-1 overflow-y-auto"
+              className="min-w-0 flex-1 overflow-x-auto overflow-y-auto"
             >
               {visible.length === 0 ? (
                 <Empty
@@ -321,6 +326,7 @@ export function Logs({
                   events={visible.slice(0, MERGED_CAP)}
                   catalog={catalog}
                   showConnection
+                  onExplain={onExplain}
                   onNavigate={onNavigate}
                 />
               ) : (
@@ -332,6 +338,7 @@ export function Logs({
                       events={events}
                       catalog={catalog}
                       onNavigate={onNavigate}
+                      onExplain={onExplain}
                     />
                   ))}
                 </div>
@@ -461,11 +468,13 @@ function Lane({
   events,
   catalog,
   onNavigate,
+  onExplain,
 }: {
   service: ServiceView;
   events: LogEvent[];
   catalog: Catalog;
   onNavigate: (view: View) => void;
+  onExplain?: (event: LogEvent) => void;
 }) {
   const descriptor = catalog.get(service.snapshot.kind);
   const errors = events.filter((e) => LEVEL_RANK[e.level] >= 4).length;
@@ -490,11 +499,12 @@ function Lane({
         <span className="ml-auto text-2xs text-ink-4">{descriptor.label}</span>
       </header>
 
-      <div className="max-h-60 overflow-y-auto">
+      <div className="max-h-60 overflow-x-auto overflow-y-auto">
         <LineTable
           events={events.slice(0, LANE_CAP)}
           catalog={catalog}
           showConnection={false}
+          onExplain={onExplain}
           onNavigate={onNavigate}
         />
       </div>
@@ -514,15 +524,19 @@ function LineTable({
   events,
   catalog,
   showConnection,
+  onExplain,
   onNavigate,
 }: {
   events: LogEvent[];
   catalog: Catalog;
   showConnection: boolean;
+  onExplain?: (event: LogEvent) => void;
   onNavigate: (view: View) => void;
 }) {
   return (
-    <table className="w-full border-collapse">
+    // `min-w` is what stops the message column collapsing to a ribbon when the
+    // assistant dock takes its width; the pane scrolls instead.
+    <table className="w-full min-w-[640px] border-collapse">
       <tbody>
         {events.map((event) => (
           <tr
@@ -589,6 +603,20 @@ function LineTable({
                 <Tag>{event.stream}</Tag>
               </td>
             )}
+            {/* Its own column: an action inlined next to the message competes
+                with the thing you are trying to read. */}
+            <td className="w-px px-2 py-1">
+              {onExplain && (
+                <Button
+                  variant="ghost"
+                  onClick={() => onExplain(event)}
+                  title="Explain this line"
+                  className="gap-1.5 px-1.5 text-accent opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                >
+                  <AssistantIcon size={11} />
+                </Button>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>

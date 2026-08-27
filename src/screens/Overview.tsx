@@ -36,6 +36,8 @@ export function Overview({
   onNavigate,
   onRefresh,
   onAcknowledge,
+  onAsk,
+  onExplain,
 }: {
   model: EstateModel;
   catalog: Catalog;
@@ -49,6 +51,8 @@ export function Overview({
   onNavigate: (view: View) => void;
   onRefresh: () => void;
   onAcknowledge: (alertId: string) => void;
+  onAsk: () => void;
+  onExplain: (alert: Alert) => void;
 }) {
   const { counts } = model;
 
@@ -107,6 +111,7 @@ export function Overview({
         syncedAt={syncedAt}
         live
         onRefresh={onRefresh}
+        onAsk={onAsk}
       />
 
       <Screen className="flex flex-col gap-3">
@@ -156,6 +161,7 @@ export function Overview({
             catalog={catalog}
             onNavigate={onNavigate}
             onAcknowledge={onAcknowledge}
+            onExplain={onExplain}
           />
           <ActivityPanel
             buckets={buckets}
@@ -505,11 +511,13 @@ function AlertsPanel({
   catalog,
   onNavigate,
   onAcknowledge,
+  onExplain,
 }: {
   alerts: Alert[];
   catalog: Catalog;
   onNavigate: (view: View) => void;
   onAcknowledge: (alertId: string) => void;
+  onExplain: (alert: Alert) => void;
 }) {
   return (
     <Panel
@@ -533,6 +541,7 @@ function AlertsPanel({
         alerts={alerts}
         catalog={catalog}
         onAcknowledge={onAcknowledge}
+        onExplain={onExplain}
         onOpenService={(profileId) => onNavigate({ name: "service", profileId, tab: "alerts" })}
         limit={8}
       />

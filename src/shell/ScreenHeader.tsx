@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 
 import { formatRelative } from "../format";
 import { useTick } from "../ui/charts";
-import { Button, cx } from "../ui/primitives";
-import { RefreshIcon } from "../ui/icons";
+import { Button, cx, Kbd } from "../ui/primitives";
+import { AssistantIcon, RefreshIcon } from "../ui/icons";
 
 /**
  * Every screen opens with the same 44px band: what you are looking at on the
@@ -15,6 +15,7 @@ export function ScreenHeader({
   meta,
   children,
   onRefresh,
+  onAsk,
   syncedAt,
   live,
 }: {
@@ -22,20 +23,31 @@ export function ScreenHeader({
   meta?: ReactNode;
   children?: ReactNode;
   onRefresh?: () => void;
+  /** Present on every screen: the assistant is reachable without leaving one. */
+  onAsk?: () => void;
   syncedAt?: string;
   live?: boolean;
 }) {
   useTick(15000);
 
   return (
-    <header className="sticky top-0 z-10 flex h-11 shrink-0 items-center gap-3 border-b border-line bg-page/95 px-4 backdrop-blur">
-      <h1 className="shrink-0 text-[15px] font-semibold tracking-tight text-ink">{title}</h1>
+    <header className="sticky top-0 z-10 flex h-[52px] shrink-0 items-center gap-3 border-b border-line bg-page/95 px-4 backdrop-blur">
+      <h1 className="shrink-0 text-[22px] font-bold tracking-[-.03em] text-ink">{title}</h1>
       {meta && (
         <div className="flex min-w-0 items-center gap-1.5 truncate text-xs text-ink-4">{meta}</div>
       )}
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {children}
+        {onAsk && (
+          <Button onClick={onAsk} title="Ask the assistant  ⌘J" className="gap-1.5">
+            <span className="flex text-accent">
+              <AssistantIcon size={13} />
+            </span>
+            Ask
+            <Kbd>⌘J</Kbd>
+          </Button>
+        )}
         {syncedAt && (
           <span className="flex items-center gap-1.5 text-xs text-ink-4">
             {live && (

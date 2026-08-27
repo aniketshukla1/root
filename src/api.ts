@@ -42,6 +42,9 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   secret_store_available: () => true,
   list_models: () => ["claude-opus-5", "claude-sonnet-5"],
   test_profile: () => "connected — 8 containers found",
+  send_message: ({ conversationId, message }) =>
+    fixtures.agentTurn(conversationId as string, message as string),
+  clear_conversation: () => undefined,
 };
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

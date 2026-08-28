@@ -358,7 +358,6 @@ export default function App() {
           <Overview
             model={model}
             catalog={catalog}
-            history={history}
             buckets={buckets}
             healthRuns={healthRuns}
             logs={logs}

@@ -1,16 +1,15 @@
 import { useMemo } from "react";
 
-import { healthColor, healthLabel, isProblem, markColor } from "../catalog";
+import { healthColor, healthLabel } from "../catalog";
 import type { Catalog } from "../catalog";
-import { formatMetricValue, formatRelative } from "../format";
-import { isBreaching } from "../format";
+import { formatRelative } from "../format";
 import { lanesFor } from "../model";
-import type { EstateModel, Entity, Issue, ServiceView } from "../model";
+import type { EstateModel, Entity, Issue } from "../model";
 import type { View } from "../nav";
-import type { Alert, Health, HealthRun, LogEvent, MetricSeries } from "../types";
+import type { Alert, Health, HealthRun, LogEvent } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { AlertList } from "../ui/AlertList";
-import { LogHistogram, levelColor, Sparkline, type Bucket } from "../ui/charts";
+import { LogHistogram, levelColor, type Bucket } from "../ui/charts";
 import { Lanes, Ticks } from "../ui/plots";
 import { Heatmap } from "../ui/Heatmap";
 import {
@@ -18,7 +17,6 @@ import {
   cx,
   Dot,
   Empty,
-  HealthBadge,
   Panel,
   ServiceMark,
 } from "../ui/primitives";
@@ -27,7 +25,6 @@ import { ChevronRight } from "../ui/icons";
 export function Overview({
   model,
   catalog,
-  history,
   buckets,
   healthRuns,
   logs,
@@ -43,7 +40,6 @@ export function Overview({
 }: {
   model: EstateModel;
   catalog: Catalog;
-  history: Record<string, MetricSeries[]>;
   buckets: Bucket[];
   healthRuns: Record<string, HealthRun[]>;
   logs: LogEvent[];
@@ -130,33 +126,18 @@ export function Overview({
           />
         </section>
 
-        <section>
-          <BandTitle
-            title="Needs attention"
-            action={{ label: "All services", onClick: () => onNavigate({ name: "services" }) }}
+        <Panel
+          title="Components"
+          subtitle={`${model.counts.entities} across ${model.services.length} connections · hover to name, click to open`}
+          actions={<HealthKey />}
+        >
+          <Heatmap
+            entities={model.entities}
+            issues={model.issues}
+            catalog={catalog}
+            onSelect={onSelectComponent}
           />
-          <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(272px,1fr))]">
-            {[...model.services]
-              .filter((s) => s.health !== "healthy" || s.issues.length > 0)
-              .sort(
-                (a, b) =>
-                  Number(isProblem(b.health)) - Number(isProblem(a.health)) ||
-                  b.issues.length - a.issues.length ||
-                  a.snapshot.profileName.localeCompare(b.snapshot.profileName),
-              )
-              .map((service) => (
-                <ConnectionTile
-                  key={service.snapshot.profileId}
-                  service={service}
-                  catalog={catalog}
-                  series={history[service.snapshot.profileId] ?? []}
-                  onOpen={() =>
-                    onNavigate({ name: "service", profileId: service.snapshot.profileId })
-                  }
-                />
-              ))}
-          </div>
-        </section>
+        </Panel>
 
         <div className="grid gap-3 xl:grid-cols-[3fr_2fr]">
           <AlertsPanel
@@ -174,18 +155,6 @@ export function Overview({
           />
         </div>
 
-        <Panel
-          title="Components"
-          subtitle={`${model.counts.entities} across ${model.services.length} connections · hover to name, click to open`}
-          actions={<HealthKey />}
-        >
-          <Heatmap
-            entities={model.entities}
-            issues={model.issues}
-            catalog={catalog}
-            onSelect={onSelectComponent}
-          />
-        </Panel>
       </Screen>
     </>
   );
@@ -389,130 +358,7 @@ function LaneKey() {
   );
 }
 
-function BandTitle({
-  title,
-  action,
-}: {
-  title: string;
-  action?: { label: string; onClick: () => void };
-}) {
-  return (
-    <div className="mb-1.5 flex h-5 items-center">
-      <h2 className="text-xs font-semibold text-ink-2">{title}</h2>
-      {action && (
-        <button
-          onClick={action.onClick}
-          className="ml-auto flex items-center gap-0.5 text-xs text-ink-4 transition-colors hover:text-accent"
-        >
-          {action.label}
-          <ChevronRight size={12} />
-        </button>
-      )}
-    </div>
-  );
-}
 
-// ---------------------------------------------------------- connection tile
-
-function ConnectionTile({
-  service,
-  catalog,
-  series,
-  onOpen,
-}: {
-  service: ServiceView;
-  catalog: Catalog;
-  series: MetricSeries[];
-  onOpen: () => void;
-}) {
-  const { snapshot } = service;
-  const descriptor = catalog.get(snapshot.kind);
-
-  // Breaching metrics first — the reason this connection is interesting should
-  // be the number you see, not whatever the collector listed first.
-  const metrics = useMemo(
-    () =>
-      [...snapshot.metrics]
-        .sort((a, b) => Number(isBreaching(b)) - Number(isBreaching(a)))
-        .slice(0, 2),
-    [snapshot.metrics],
-  );
-
-  const trend = useMemo(() => {
-    const primary = metrics[0];
-    return primary ? series.find((s) => s.key === primary.key) : undefined;
-  }, [metrics, series]);
-
-  return (
-    <button
-      onClick={onOpen}
-      className={cx(
-        "panel group relative flex flex-col gap-1.5 px-2.5 py-2 text-left transition-colors hover:bg-raised",
-        isProblem(service.health) && "border-l-2",
-      )}
-      style={
-        isProblem(service.health)
-          ? { borderLeftColor: healthColor(service.health) }
-          : undefined
-      }
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        <ServiceMark descriptor={descriptor} size={18} />
-        <span className="truncate text-[13px] font-medium text-ink">{snapshot.profileName}</span>
-        <span className="ml-auto shrink-0">
-          <HealthBadge health={service.health} />
-        </span>
-      </div>
-
-      <p className="line-clamp-1 text-xs text-ink-3" title={snapshot.error ?? snapshot.summary}>
-        {snapshot.error ?? snapshot.summary}
-      </p>
-
-      <div className="flex items-end gap-3">
-        <div className="flex min-w-0 flex-1 gap-3">
-          {metrics.map((metric) => (
-            <div key={metric.key} className="min-w-0">
-              <div
-                className={cx("num text-[13px] leading-none", isBreaching(metric) && "text-warn")}
-              >
-                {formatMetricValue(metric.value, metric.unit)}
-              </div>
-              <div className="mt-0.5 truncate text-2xs text-ink-4" title={metric.label}>
-                {metric.label}
-              </div>
-            </div>
-          ))}
-          {metrics.length === 0 && (
-            <div className="text-2xs text-ink-4">
-              {service.entities.length} component{service.entities.length === 1 ? "" : "s"}
-            </div>
-          )}
-        </div>
-
-        {trend && (
-          <Sparkline
-            points={trend.points}
-            width={72}
-            height={22}
-            color={markColor(descriptor.accent)}
-            warnAbove={trend.warnAbove}
-          />
-        )}
-      </div>
-
-      <div className="flex items-center gap-1.5 text-2xs text-ink-4">
-        <span className="truncate">{service.ownership.team}</span>
-        <span className="text-ink-4/50">·</span>
-        <span className="num shrink-0">{formatRelative(snapshot.checkedAt)}</span>
-        {service.issues.length > 0 && (
-          <span className="num ml-auto shrink-0 text-warn">
-            {service.issues.length} open
-          </span>
-        )}
-      </div>
-    </button>
-  );
-}
 
 // ---------------------------------------------------------------- alerts
 

@@ -118,39 +118,84 @@ const METRICS: Record<string, [string, string, number, string, number?][]> = {
   "status-page": [["latency", "Latency", 42, "millis", 800]],
 };
 
+/**
+ * What each kind of connection is actually made of. The heatmap groups by
+ * connection AND section, so a collector that reports both nodes and indices
+ * shows as two blocks — which is the point: "two of six nodes" and "two of
+ * ninety indices" are very different sentences.
+ */
+const INVENTORY: Record<string, [section: string, label: string, count: number][]> = {
+  docker: [["containers", "Containers", 8]],
+  postgres: [["replicas", "Replicas", 3], ["queries", "Active queries", 6]],
+  elasticsearch: [["nodes", "Nodes", 6], ["indices", "Indices", 42], ["shards", "Shards", 96]],
+  jenkins: [["workers", "Workers", 16], ["jobs", "Jobs", 34]],
+  rabbitmq: [["queues", "Queues", 12]],
+  nginx: [["upstreams", "Upstreams", 12]],
+  kubernetes: [["pods", "Pods", 64], ["nodes", "Nodes", 6]],
+  kafka: [["brokers", "Brokers", 3], ["topics", "Topics", 18]],
+  redis: [["replicas", "Replicas", 3]],
+  mongodb: [["members", "Members", 3]],
+  prometheus: [["targets", "Targets", 42]],
+  http_endpoint: [["endpoint", "Endpoint", 1]],
+};
+
 function rowsFor(spec: Spec): HealthSnapshot["sections"] {
-  const [id, , , health, , , parts] = spec;
-  const r = seeded(id.length * 977);
-  const bad = health === "down" ? 3 : health === "degraded" ? 2 : health === "unknown" ? 0 : 0;
-  const rows = Array.from({ length: Math.min(parts, 24) }, (_, i) => {
-    const rowHealth: HealthSnapshot["health"] =
-      i < bad ? (health === "down" && i < 2 ? "down" : "degraded") : "healthy";
+  const [id, , kind, health] = spec;
+  const sections = INVENTORY[kind] ?? [["components", "Components", 6]];
+  const r = seeded(id.length * 977 + kind.length);
+
+  return sections.map(([sectionId, label, count], si) => {
+    // Only the first section carries the failures, so a degraded connection
+    // reads as "its nodes are unhappy" rather than everything at once.
+    const failing =
+      si > 0 || health === "healthy" || health === "unknown"
+        ? 0
+        : health === "down"
+          ? Math.max(2, Math.round(count * 0.35))
+          : Math.max(1, Math.round(count * 0.12));
+
+    const rows = Array.from({ length: count }, (_, i) => {
+      const rowHealth: HealthSnapshot["health"] =
+        i < failing ? (health === "down" && i < failing / 2 ? "down" : "degraded") : "healthy";
+      return {
+        id: `${sectionId}-${i + 1}`,
+        name: `${label.toLowerCase().replace(/\s+/g, "-")}-${i + 1}`,
+        health: rowHealth,
+        summary:
+          rowHealth === "down"
+            ? "exited 137 · OOMKilled"
+            : rowHealth === "degraded"
+              ? "responding slowly"
+              : "running",
+        cells: {
+          image: { type: "text" as const, value: `${id}:2.14.3` },
+          cpu: { type: "number" as const, value: Math.round(r() * 90) },
+          memory: { type: "number" as const, value: Math.round(r() * 8 * 1024 ** 3) },
+          restarts: {
+            type: "number" as const,
+            value: rowHealth === "healthy" ? 0 : Math.ceil(r() * 9),
+          },
+        },
+        actions: [],
+      };
+    });
+
     return {
-      id: `${id}-${i + 1}`,
-      name: `${id.split("-")[0]}-worker-${i + 1}`,
-      health: rowHealth,
-      summary: rowHealth === "healthy" ? "running" : "exited 137",
-      cells: {
-        image: { type: "text" as const, value: `${id}:2.14.3` },
-        cpu: { type: "number" as const, value: Math.round(r() * 90) },
-        memory: { type: "number" as const, value: Math.round(r() * 8 * 1024 ** 3) },
-        restarts: { type: "number" as const, value: rowHealth === "healthy" ? 0 : Math.ceil(r() * 9) },
-      },
-      actions: [],
+      id: sectionId,
+      label,
+      priority: si + 1,
+      tracked: si === 0,
+      emptyText: `No ${label.toLowerCase()} reported`,
+      columns: [
+        { key: "name", label: "Name", kind: { type: "text" as const }, align: "start" as const, primary: true, sortable: true, secondary: false, revision: false },
+        { key: "image", label: "Image", kind: { type: "code" as const }, align: "start" as const, primary: false, sortable: true, secondary: true, revision: true },
+        { key: "cpu", label: "CPU", kind: { type: "metric" as const, unit: "percent" as const }, align: "end" as const, primary: false, sortable: true, secondary: false, revision: false },
+        { key: "memory", label: "Memory", kind: { type: "metric" as const, unit: "bytes" as const }, align: "end" as const, primary: false, sortable: true, secondary: false, revision: false },
+        { key: "restarts", label: "Restarts", kind: { type: "text" as const }, align: "end" as const, primary: false, sortable: true, secondary: true, revision: false },
+      ],
+      rows,
     };
   });
-  return [{
-    id: "components", label: "Components", priority: 1, tracked: true,
-    emptyText: "No components reported",
-    columns: [
-      { key: "name", label: "Name", kind: { type: "text" }, align: "start", primary: true, sortable: true, secondary: false, revision: false },
-      { key: "image", label: "Image", kind: { type: "code" }, align: "start", primary: false, sortable: true, secondary: true, revision: true },
-      { key: "cpu", label: "CPU", kind: { type: "metric", unit: "percent" }, align: "end", primary: false, sortable: true, secondary: false, revision: false },
-      { key: "memory", label: "Memory", kind: { type: "metric", unit: "bytes" }, align: "end", primary: false, sortable: true, secondary: false, revision: false },
-      { key: "restarts", label: "Restarts", kind: { type: "text" }, align: "end", primary: false, sortable: true, secondary: true, revision: false },
-    ],
-    rows,
-  }];
 }
 
 export const SNAPSHOTS: HealthSnapshot[] = ESTATE.map((spec) => {

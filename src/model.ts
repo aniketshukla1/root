@@ -100,6 +100,9 @@ export function initials(value: string): string {
 export interface Entity {
   id: string;
   profileId: string;
+  /** Route parts, carried rather than parsed back out of `id` at the call site. */
+  sectionId: string;
+  rowId: string;
   profileName: string;
   kind: ServiceKind;
   category: string;
@@ -172,6 +175,8 @@ function entitiesOf(snapshot: HealthSnapshot, category: string, ownership: Owner
       {
         id: snapshot.profileId,
         profileId: snapshot.profileId,
+        sectionId: "",
+        rowId: "",
         profileName: snapshot.profileName,
         kind: snapshot.kind,
         category,
@@ -188,6 +193,8 @@ function entitiesOf(snapshot: HealthSnapshot, category: string, ownership: Owner
     section.rows.map((row) => ({
       id: `${snapshot.profileId}:${section.id}:${row.id}`,
       profileId: snapshot.profileId,
+      sectionId: section.id,
+      rowId: row.id,
       profileName: snapshot.profileName,
       kind: snapshot.kind,
       category,
@@ -259,6 +266,8 @@ export function buildModel(
       issues.push({
         id: `alert:${alert.id}`,
         profileId: snapshot.profileId,
+        sectionId: "",
+        rowId: "",
         profileName: snapshot.profileName,
         kind: snapshot.kind,
         category,

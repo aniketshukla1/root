@@ -5,13 +5,14 @@ import type { Catalog } from "../catalog";
 import { formatMetricValue, formatRelative } from "../format";
 import { isBreaching } from "../format";
 import { lanesFor } from "../model";
-import type { EstateModel, Entity, ServiceView } from "../model";
+import type { EstateModel, Entity, Issue, ServiceView } from "../model";
 import type { View } from "../nav";
 import type { Alert, Health, HealthRun, LogEvent, MetricSeries } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { AlertList } from "../ui/AlertList";
 import { LogHistogram, levelColor, Sparkline, type Bucket } from "../ui/charts";
 import { Lanes, Ticks } from "../ui/plots";
+import { Heatmap } from "../ui/Heatmap";
 import {
   Button,
   cx,
@@ -38,6 +39,7 @@ export function Overview({
   onAcknowledge,
   onAsk,
   onExplain,
+  onSelectComponent,
 }: {
   model: EstateModel;
   catalog: Catalog;
@@ -53,6 +55,7 @@ export function Overview({
   onAcknowledge: (alertId: string) => void;
   onAsk: () => void;
   onExplain: (alert: Alert) => void;
+  onSelectComponent: (entity: Entity, issue?: Issue) => void;
 }) {
   const { counts } = model;
 
@@ -114,7 +117,7 @@ export function Overview({
         onAsk={onAsk}
       />
 
-      <Screen className="flex flex-col gap-3">
+      <Screen className="stack flex flex-col gap-3">
         {/* Hero: what the estate is right now, beside what every connection
             has been doing for the window. */}
         <section className="grid gap-3 xl:grid-cols-[340px_1fr]" style={{ minHeight: 300 }}>
@@ -171,11 +174,18 @@ export function Overview({
           />
         </div>
 
-        <ComponentMatrix
-          model={model}
-          catalog={catalog}
-          onNavigate={onNavigate}
-        />
+        <Panel
+          title="Components"
+          subtitle={`${model.counts.entities} across ${model.services.length} connections · hover to name, click to open`}
+          actions={<HealthKey />}
+        >
+          <Heatmap
+            entities={model.entities}
+            issues={model.issues}
+            catalog={catalog}
+            onSelect={onSelectComponent}
+          />
+        </Panel>
       </Screen>
     </>
   );
@@ -628,92 +638,26 @@ function ActivityPanel({
   );
 }
 
-// ------------------------------------------------------------ component grid
 
-/**
- * Every monitored component in the estate, grouped by connection. At this size
- * colour alone would not be readable, so each cell carries the health shape as
- * well, and the title attribute names the state in words.
- */
-function ComponentMatrix({
-  model,
-  catalog,
-  onNavigate,
-}: {
-  model: EstateModel;
-  catalog: Catalog;
-  onNavigate: (view: View) => void;
-}) {
-  const groups = useMemo(() => {
-    const byService = new Map<string, Entity[]>();
-    for (const entity of model.entities) {
-      byService.set(entity.profileId, [...(byService.get(entity.profileId) ?? []), entity]);
-    }
-    return model.services
-      .map((service) => ({
-        service,
-        entities: (byService.get(service.snapshot.profileId) ?? []).sort(
-          (a, b) =>
-            Number(isProblem(b.health)) - Number(isProblem(a.health)) ||
-            a.name.localeCompare(b.name),
-        ),
-      }))
-      .filter((g) => g.entities.length > 0)
-      .sort(
-        (a, b) =>
-          Number(isProblem(b.service.health)) - Number(isProblem(a.service.health)) ||
-          b.entities.length - a.entities.length,
-      );
-  }, [model]);
-
-  if (groups.length === 0) return null;
-
+function HealthKey() {
   return (
-    <Panel
-      title="Components"
-      subtitle={`${model.counts.entities} across ${groups.length} connections`}
-      actions={
-        <div className="flex items-center gap-2.5">
-          {(["down", "degraded", "unknown", "healthy"] as const).map((health) => (
-            <span key={health} className="flex items-center gap-1 text-2xs text-ink-4">
-              <Dot health={health} size={7} />
-              {healthLabel(health)}
-            </span>
-          ))}
-        </div>
-      }
-    >
-      <div className="flex flex-wrap gap-x-6 gap-y-3">
-        {groups.map(({ service, entities }) => (
-          <div key={service.snapshot.profileId} className="min-w-0">
-            <button
-              onClick={() =>
-                onNavigate({ name: "service", profileId: service.snapshot.profileId })
-              }
-              className="mb-1 flex items-center gap-1.5 text-xs text-ink-3 transition-colors hover:text-accent"
-            >
-              <ServiceMark descriptor={catalog.get(service.snapshot.kind)} size={14} />
-              <span className="truncate">{service.snapshot.profileName}</span>
-              <span className="num text-2xs text-ink-4">{entities.length}</span>
-            </button>
-            <div className="flex flex-wrap gap-[3px]">
-              {entities.map((entity) => (
-                <button
-                  key={entity.id}
-                  title={`${entity.name} — ${healthLabel(entity.health)}\n${entity.section}: ${entity.summary}`}
-                  onClick={() => onNavigate({ name: "service", profileId: entity.profileId })}
-                  className="grid h-4 w-4 place-items-center rounded-[3px] transition-transform hover:scale-125"
-                  style={{
-                    background: `color-mix(in oklab, ${healthColor(entity.health)} 22%, transparent)`,
-                  }}
-                >
-                  <Dot health={entity.health} size={7} />
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </Panel>
+    <div className="flex items-center gap-2.5">
+      {(["down", "degraded", "unknown", "healthy"] as const).map((health) => (
+        <span key={health} className="num flex items-center gap-1 text-2xs text-ink-4">
+          <span
+            className="h-2.5 w-2.5 rounded-[1px]"
+            style={
+              health === "healthy"
+                ? {
+                    background: `color-mix(in srgb, ${healthColor(health)} 26%, var(--color-panel))`,
+                    boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${healthColor(health)} 55%, transparent)`,
+                  }
+                : { background: healthColor(health) }
+            }
+          />
+          {healthLabel(health)}
+        </span>
+      ))}
+    </div>
   );
 }

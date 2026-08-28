@@ -6,6 +6,7 @@ import { listen } from "./events";
 import { api, errorMessage } from "./api";
 import { Catalog, EMPTY_CATALOG } from "./catalog";
 import { buildModel } from "./model";
+import type { Entity, Issue } from "./model";
 import type { ExplainTarget } from "./explain";
 import type { View } from "./nav";
 import type {
@@ -25,6 +26,7 @@ import { GLOBAL_STREAMS } from "./types";
 import { CommandPalette } from "./shell/CommandPalette";
 import { ConfirmDialog } from "./shell/ConfirmDialog";
 import { AssistantDock } from "./shell/AssistantDock";
+import { ComponentDialog } from "./shell/ComponentDialog";
 import { Sidebar } from "./shell/Sidebar";
 import { Toasts, toastFromAlert, type Toast } from "./shell/Toasts";
 
@@ -73,6 +75,36 @@ export default function App() {
   const askAssistant = useCallback(() => setExplain({ kind: "ask" }), []);
   const explainAlert = useCallback((alert: Alert) => setExplain({ kind: "alert", alert }), []);
   const explainLog = useCallback((event: LogEvent) => setExplain({ kind: "log", event }), []);
+
+  /** What a cell in the heatmap does when you click it. */
+  const [inspecting, setInspecting] = useState<{ entity: Entity; issue?: Issue } | null>(null);
+
+  const openComponent = useCallback((entity: Entity) => {
+    setInspecting(null);
+    // A component with no section or row of its own — a connection that failed
+    // to collect at all — has nothing deeper to open, so it lands on its
+    // connection instead of a route that cannot resolve.
+    setView(
+      entity.sectionId && entity.rowId
+        ? {
+            name: "component",
+            profileId: entity.profileId,
+            sectionId: entity.sectionId,
+            rowId: entity.rowId,
+          }
+        : { name: "service", profileId: entity.profileId },
+    );
+  }, []);
+
+  const selectComponent = useCallback(
+    (entity: Entity, issue?: Issue) => {
+      // Healthy things go straight through. Opening a dialog to say "this is
+      // fine" would spend the click that was meant to be fast.
+      if (entity.health === "healthy") openComponent(entity);
+      else setInspecting({ entity, issue });
+    },
+    [openComponent],
+  );
   const [minutes, setMinutes] = useState(60);
   const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [connectionErrors, setConnectionErrors] = useState<ConnectionStatusEvent[]>([]);
@@ -338,6 +370,7 @@ export default function App() {
             onAcknowledge={acknowledge}
             onAsk={askAssistant}
             onExplain={explainAlert}
+            onSelectComponent={selectComponent}
           />
         )}
 
@@ -462,6 +495,23 @@ export default function App() {
             setExplain(null);
             setView({ name: "assistant" });
           }}
+        />
+      )}
+
+      {inspecting && (
+        <ComponentDialog
+          entity={inspecting.entity}
+          issue={inspecting.issue}
+          catalog={catalog}
+          onClose={() => setInspecting(null)}
+          onOpenComponent={() => openComponent(inspecting.entity)}
+          onExplain={() => {
+            const alert = inspecting.issue?.alert;
+            setInspecting(null);
+            if (alert) setExplain({ kind: "alert", alert });
+            else setExplain({ kind: "ask" });
+          }}
+          onAcknowledge={acknowledge}
         />
       )}
 

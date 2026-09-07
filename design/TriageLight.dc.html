@@ -1,0 +1,490 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+/* root — design tokens.
+ *
+ * Surfaces, ink and radii follow the field-guide HUD: a blue-black ground,
+ * borders doing the work instead of shadows, 3px corners, and mono as the
+ * chrome typeface — labels, buttons and panel titles are all mono with wide
+ * tracking, which is what makes the whole thing read as an instrument.
+ *
+ * Two rules from the existing app survive untouched, because in a monitoring
+ * tool they are load-bearing:
+ *   Status hues are reserved. Nothing that is not a state may wear one.
+ *   Series hues carry identity only, in fixed order, never sorted by value.
+ * That is also why the accent is azure and not the reference's mint: green
+ * already means healthy here, and an accent you can click must never be
+ * mistakable for a state. */
+:root {
+  --bg:#0a0e14; --panel:#0c1219; --sunk:#111a24; --raised:#141e29;
+  --line:#1c2530; --line-soft:#18222e; --line-strong:#2b3846;
+  --ink:#f0f5fa; --ink-2:#a9b8ca; --muted:#8496ad; --faint:#6f8095;
+
+  --accent:#4cc2ff; --accent-soft:color-mix(in srgb, var(--accent) 11%, var(--bg));
+  --on-accent:#04121c;
+
+  /* status — reserved */
+  --ok:#5fc48c;      --ok-soft:#0d1a14;
+  --warn:#d9a84e;    --warn-soft:#191408;
+  --serious:#dd8a52;
+  --crit:#e0705a;    --crit-soft:#1a1116;
+  --unknown:#6f8095;
+
+  /* categorical identity — fixed order */
+  --s1:#5a9ee0; --s2:#d98a5a; --s3:#4db89a; --s4:#c9a44e;
+  --s5:#d47fa8; --s6:#8d92e8; --s7:#57bcc4; --s8:#dd8080;
+
+  /* cells — the component matrix */
+  --cell-todo:#131c26; --cell-line:#22303e;
+
+  /* plotted surfaces: nominal lane, log severities below warn, chart ruling */
+  --lane-ok:#1c3329;
+  --lvl-debug:#2b3846; --lvl-info:#6f8095;
+  --grat:rgba(255,255,255,.045);
+
+  --r:3px;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+  --sans:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--bg); color:var(--ink-2);
+  font-family:var(--sans); font-size:13px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+a { color:var(--accent); text-decoration:none; }
+a:hover { color:#8ad6ff; }
+
+/* Mono is the chrome typeface: every label, button and panel title. */
+.lbl {
+  font-family:var(--mono); font-size:10px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--muted);
+}
+.mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+.disp { font-family:var(--sans); font-weight:700; letter-spacing:-.03em; }
+
+/* An eyebrow always announces itself with the same sigil. */
+.eyebrow {
+  font-family:var(--mono); font-size:10px; letter-spacing:.2em;
+  text-transform:uppercase; color:var(--accent);
+}
+.eyebrow::before { content:"\25B8\00a0\00a0"; }
+
+.panel, .plate {
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--r);
+}
+
+.ph {
+  display:flex; align-items:center; gap:10px; height:33px; padding:0 12px;
+  border-bottom:1px solid var(--line);
+}
+.ph h2 {
+  margin:0; font-family:var(--mono); font-size:10px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--muted); font-weight:400; white-space:nowrap;
+}
+.ph .sub { font-family:var(--mono); font-size:10px; color:var(--faint); }
+
+.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  min-height:27px; padding:0 10px; border:1px solid var(--line); border-radius:var(--r);
+  background:var(--panel); color:var(--ink-2);
+  font-family:var(--mono); font-size:11px; letter-spacing:.04em; cursor:pointer;
+}
+.btn-p { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+.btn-g { border-color:transparent; background:transparent; color:var(--faint); }
+.btn-s { min-height:22px; padding:0 8px; font-size:10px; }
+
+.field {
+  display:flex; align-items:center; gap:7px; height:27px; padding:0 9px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--sunk);
+  color:var(--ink-2); font-family:var(--mono); font-size:11px;
+}
+
+.seg {
+  display:inline-flex; align-items:center; gap:2px; padding:3px;
+  border:1px solid var(--line); border-radius:var(--r); background:var(--panel);
+}
+.seg > span {
+  display:inline-flex; align-items:center; height:21px; padding:0 9px; border-radius:2px;
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; color:var(--muted);
+}
+.seg > span.on { background:var(--accent); color:var(--on-accent); }
+
+.tag {
+  display:inline-flex; align-items:center; height:18px; padding:0 6px;
+  border:1px solid var(--line); border-radius:2px; background:var(--panel);
+  font-family:var(--mono); font-size:10px; letter-spacing:.05em;
+  color:var(--muted); white-space:nowrap;
+}
+
+.kbd {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:17px; height:17px; padding:0 4px;
+  border:1px solid var(--line); border-radius:2px; background:var(--sunk);
+  font-family:var(--mono); font-size:10px; color:var(--faint);
+}
+
+.nav {
+  display:flex; align-items:center; gap:10px; height:30px; padding:0 9px;
+  border-radius:var(--r); color:var(--ink-2); font-size:12.5px; position:relative;
+}
+.nav.on { background:var(--sunk); color:var(--ink); }
+.nav.on::before {
+  content:""; position:absolute; left:-9px; top:8px; width:2px; height:14px;
+  background:var(--accent);
+}
+
+.tr { display:grid; align-items:center; height:29px; padding:0 12px; border-top:1px solid var(--line-soft); }
+.th { display:grid; align-items:center; height:26px; padding:0 12px; border-bottom:1px solid var(--line); }
+
+/* Graticule — instrument ruling behind plotted data. */
+.grat { background-image:repeating-linear-gradient(to top, var(--grat) 0 1px, transparent 1px 25%); }
+
+/* A note that carries a state wears it on its leading edge. */
+.note { border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:var(--r); background:var(--panel); }
+
+/* ──────────────────────────────────────────────────────────── motion
+ * One rule: motion explains where a value came from, it never decorates.
+ * A line draws along its own time axis, a bar grows from its baseline, a
+ * series staggers in reading order. Everything is intro-only — nothing
+ * loops, because a console that pulses forever is a console you stop
+ * looking at. All of it stops under prefers-reduced-motion. */
+@keyframes draw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
+@keyframes rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes reach { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes wash { from { opacity: 0; } to { opacity: var(--op, 1); } }
+@keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: var(--op, 1); } }
+
+.a-draw { stroke-dasharray: var(--len); animation: draw 1.15s cubic-bezier(.22,.8,.3,1) both; }
+.a-rise { transform-origin: bottom; animation: rise .5s cubic-bezier(.22,.9,.3,1) both; }
+.a-reach { transform-origin: left; animation: reach .55s cubic-bezier(.22,.9,.3,1) both; }
+.a-wash { animation: wash .7s ease-out both; }
+/* Sweep is draw's sibling for arcs: it animates the offset only, so the
+   element keeps the dash pattern that encodes its value. */
+.a-sweep { animation: draw 1.15s cubic-bezier(.22,.8,.3,1) both; }
+.a-pop  { transform-box: fill-box; transform-origin: center; animation: pop .34s cubic-bezier(.3,1.4,.5,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .a-draw, .a-sweep, .a-rise, .a-reach, .a-wash, .a-pop { animation: none; stroke-dashoffset: 0; transform: none; opacity: 1; }
+}
+
+/* ─────────────────────────────────────────────────────────────── light mode
+ *
+ * Warm paper, not white. A dark HUD inverted onto cold white reads as a
+ * mistake; on paper it reads as printed — which is also what a console looks
+ * like when someone exports a page of it or works next to a window.
+ *
+ * Two things change meaning rather than just value:
+ *   The accent cannot be the field guide's brown. Brown sits on top of the
+ *   warn hue, and an accent must never be mistakable for a state — so the
+ *   azure deepens instead of inverting.
+ *   Nominal inverts direction. In the dark it is a near-black green that
+ *   stays quiet; on paper quiet means a pale tint, with faults holding all
+ *   the saturation. */
+.light {
+  --bg:#f7f3ec; --panel:#fdfbf7; --sunk:#efe8dc; --raised:#f2ebdf;
+  --line:#ddd3c4; --line-soft:#e8dfd0; --line-strong:#c4b7a1;
+  --ink:#2a2622; --ink-2:#4a443d; --muted:#6e6659; --faint:#8c8375;
+
+  --accent:#1d6a9c; --accent-soft:color-mix(in srgb, var(--accent) 10%, var(--bg));
+  --on-accent:#f9f6f0;
+
+  --ok:#4a7a3f; --warn:#96661a; --serious:#b35f24; --crit:#a8443a; --unknown:#8c8375;
+
+  --s1:#2f6fae; --s2:#b0602f; --s3:#2e7f66; --s4:#8f7020;
+  --s5:#a3517a; --s6:#5a5fae; --s7:#2d7f88; --s8:#a85252;
+
+  --cell-todo:#ece4d6; --cell-line:#d3c6b1;
+  --lane-ok:#dde8d4;
+  --lvl-debug:#cabda7; --lvl-info:#9a9081;
+  --grat:rgba(60,46,28,.10);
+  --shadow:0 1px 2px rgba(60,46,28,.05);
+
+  color:var(--ink-2);
+}
+
+  </style>
+</helmet>
+<div class="light" style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span>
+    <span style="flex-grow:3;background:var(--warn)"></span>
+    <span style="flex-grow:8;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <nav style="width:214px;flex-shrink:0;display:flex;flex-direction:column;gap:2px;padding:14px 12px;border-right:1px solid var(--line);background:var(--panel)">
+      <div style="display:flex;align-items:center;gap:9px;height:28px;padding:0 5px;margin-bottom:13px">
+        <span style="display:grid;place-items:center;width:26px;height:26px;border-radius:2px;background:var(--accent);color:var(--on-accent);flex-shrink:0"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><circle cx="5.6" cy="3.7" r="2" fill="currentColor" stroke="none"/><path d="M5.6 5.7V19.2"/><path d="M5.6 9.7h9.3"/><path d="M5.6 14.45h9.3"/><path d="M5.6 19.2h9.3"/><circle cx="17.4" cy="9.7" r="1.7" stroke-width="1.35"/><circle cx="17.4" cy="14.45" r="1.7" stroke-width="1.35"/><circle cx="17.4" cy="19.2" r="1.7" stroke-width="1.35"/></svg></span>
+        <span class="mono" style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink)">root</span>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:7px">
+          <span style="width:6px;height:6px;background:var(--warn)"></span>
+          <span style="color:var(--faint);display:flex"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14.5 5.2 7.7 12l6.8 6.8"/></svg></span>
+        </span>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><circle cx="10.8" cy="10.8" r="6.4"/><path d="M15.6 15.6l4.6 4.6"/></svg><span style="color:var(--faint)">Search</span>
+        <span class="kbd" style="margin-left:auto">⌘K</span>
+      </div>
+      <div class="nav on"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><rect x="3" y="3" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1"/></svg><span>Overview</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M12 2.8 21 7.4 12 12 3 7.4z"/><path d="M3 12.2 12 16.8l9-4.6"/><path d="M3 16.6 12 21.2l9-4.6"/></svg><span>Services</span><span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">12</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M12 3.4a5.4 5.4 0 0 0-5.4 5.4v3.4L5 15.8h14l-1.6-3.6V8.8A5.4 5.4 0 0 0 12 3.4z"/><path d="M9.9 18.8a2.2 2.2 0 0 0 4.2 0"/></svg><span>Alerts</span><span class="mono" style="margin-left:auto;font-size:10px;color:var(--warn)">4</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M3.5 20.2h17"/><path d="M6 16.2l3.9-5 3 3 4.8-7.2"/></svg><span>Metrics</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M4 6.2h16M4 10.4h11M4 14.6h16M4 18.8h8"/></svg><span>Logs</span></div>
+      <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M11.8 3.2l1.75 4.9 4.9 1.75-4.9 1.75-1.75 4.9-1.75-4.9-4.9-1.75 4.9-1.75z"/><path d="M18.4 15.4l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/></svg><span>Assistant</span></div>
+      <div style="margin-top:auto;display:flex;flex-direction:column;gap:2px">
+        <div class="nav"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M3.6 7.6h9.2M17.4 7.6h3M3.6 16.4h3.4M11.6 16.4h8.8"/><circle cx="15.1" cy="7.6" r="2.3"/><circle cx="9.3" cy="16.4" r="2.3"/></svg><span>Settings</span></div>
+        <div style="display:flex;align-items:center;gap:9px;margin-top:10px;padding:8px 7px;border-top:1px solid var(--line)">
+          <span style="display:grid;place-items:center;width:24px;height:24px;border-radius:2px;flex-shrink:0;color:var(--s6);box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--s6) 45%, transparent);background:color-mix(in srgb, var(--s6) 15%, transparent)"><span class="mono" style="font-size:9.5px;font-weight:600;line-height:1">AC</span></span>
+          <span style="flex:1;min-width:0">
+            <span style="display:block;font-size:11.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Acme Platform</span>
+            <span class="mono" style="display:block;font-size:9.5px;color:var(--faint)">aniket · admin</span>
+          </span>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M5.2 9.2 12 16l6.8-6.8"/></svg>
+        </div>
+      </div>
+    </nav>
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:13px;height:52px;flex-shrink:0;padding:0 20px">
+        <h1 class="disp" style="margin:0;font-size:22px;color:var(--ink)">Overview</h1>
+        <span class="mono" style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--crit)">
+          <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><rect x=".6" y=".6" width="8.8" height="8.8" fill="var(--crit)"/></svg>3 incidents · 11 alerts grouped
+        </span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <span class="btn" style="gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M11.8 3.2l1.75 4.9 4.9 1.75-4.9 1.75-1.75 4.9-1.75-4.9-4.9-1.75 4.9-1.75z"/><path d="M18.4 15.4l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/></svg>Ask<span class="kbd" style="margin-left:2px">⌘J</span></span>
+          <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--faint)">
+            <span style="width:6px;height:6px;border-radius:6px;background:var(--ok)"></span><span class="mono">live</span>
+          </span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;overflow:hidden;padding:0 20px 16px;display:flex;flex-direction:column;gap:12px">
+
+        <!-- ══ Several incidents do not stack into several heroes — that is a
+             dashboard again. One is the one you should work on; the rest are a
+             ranked list you can decide from without opening. -->
+        <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:12px;flex:1;min-height:0">
+
+          <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+            <div class="ph">
+              <h2>Incidents</h2><span class="sub">3 open · ranked</span>
+              <span class="mono" style="margin-left:auto;font-size:10px;color:var(--faint)">unacknowledged first, then blast radius</span>
+            </div>
+
+            <!-- selected -->
+            <div style="border-left:2px solid var(--crit);background:color-mix(in srgb, var(--crit) 5%, transparent);padding:13px 16px 14px">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span class="mono" style="font-size:10px;color:var(--faint)">01</span>
+                <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><rect x=".6" y=".6" width="8.8" height="8.8" fill="var(--crit)"/></svg>
+                <span class="mono" style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--crit)">Down</span>
+                <span class="mono" style="font-size:10px;color:var(--faint)">38m · started 14:04</span>
+                <span class="tag" style="margin-left:auto;color:var(--crit);border-color:color-mix(in srgb,var(--crit) 30%,transparent);background:color-mix(in srgb,var(--crit) 10%,transparent)">UNACKNOWLEDGED</span>
+              </div>
+              <h3 class="disp" style="margin:9px 0 0;font-size:19px;line-height:1.2;color:var(--ink);letter-spacing:-.02em">
+                orders-api is down — memory regression in 2.14.3
+              </h3>
+              <p style="margin:8px 0 0;font-size:12px;line-height:1.55;color:var(--ink-2)">
+                Three of eight containers killed by the OOM killer. Memory climbs to 7.98G against an
+                8G limit and never falls back. Request volume is down 12%, so this is the image, not load.
+              </p>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap">
+                <span class="tag">3 connections</span>
+                <span class="tag">6 components</span>
+                <span class="tag">payments</span>
+                <span class="tag" style="color:var(--accent);border-color:color-mix(in srgb,var(--accent) 28%,transparent);background:var(--accent-soft)">grouped from 4 alerts</span>
+              </div>
+              <!-- Why these were grouped is part of the claim, not a footnote —
+                   and the operator can overrule it. -->
+              <div style="display:flex;align-items:center;gap:9px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line)">
+                <span class="mono" style="font-size:10px;color:var(--faint)">grouped by deploy adjacency + 6-minute onset window</span>
+                <span class="btn btn-s btn-g" style="margin-left:auto">Not related?</span>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:11px;padding:13px 16px">
+              <div style="display:flex;align-items:flex-start;gap:11px;opacity:.82">
+                <span class="mono" style="font-size:10px;color:var(--faint);padding-top:2px">02</span>
+                <span style="padding-top:2px"><svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><path d="M5 .6 9.5 9.2H.5Z" fill="var(--warn)"/></svg></span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:9px">
+                    <span style="font-size:13px;color:var(--ink)">search-cluster degraded — 2 shards unassigned</span>
+                  </div>
+                  <div class="mono" style="display:flex;align-items:center;gap:9px;margin-top:6px;font-size:10px;color:var(--faint)">
+                    <span>26m</span><span style="opacity:.4">·</span><span>1 connection · 2 components</span>
+                    <span style="opacity:.4">·</span><span>search</span>
+                    <span style="opacity:.4">·</span><span>grouped from 2 alerts</span>
+                  </div>
+                  <div class="mono" style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:10px;color:var(--muted)">
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--ok)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M4.6 12.6 9.4 17.4 19.4 6.8"/></svg>acknowledged by ann 20m ago · no change in window
+                  </div>
+                </div>
+                <span class="mono" style="font-size:10px;color:var(--faint);flex-shrink:0">Open</span>
+              </div>
+
+              <div style="height:1px;background:var(--line-soft)"></div>
+
+              <div style="display:flex;align-items:flex-start;gap:11px;opacity:.82">
+                <span class="mono" style="font-size:10px;color:var(--faint);padding-top:2px">03</span>
+                <span style="padding-top:2px"><svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><path d="M5 .6 9.5 9.2H.5Z" fill="var(--warn)"/></svg></span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:9px">
+                    <span style="font-size:13px;color:var(--ink)">ci-pipeline degraded — build queue backing up</span>
+                    <span class="tag" style="color:var(--warn);border-color:color-mix(in srgb,var(--warn) 30%,transparent);background:color-mix(in srgb,var(--warn) 10%,transparent)">UNACKNOWLEDGED</span>
+                  </div>
+                  <div class="mono" style="display:flex;align-items:center;gap:9px;margin-top:6px;font-size:10px;color:var(--faint)">
+                    <span>52m</span><span style="opacity:.4">·</span><span>1 connection · 7 components</span>
+                    <span style="opacity:.4">·</span><span>platform</span>
+                    <span style="opacity:.4">·</span><span>grouped from 5 alerts</span>
+                  </div>
+                  <div class="mono" style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:10px;color:var(--warn)">
+                    checkout-web 4.2.0 deployed 8 minutes before onset — possible cause
+                  </div>
+                </div>
+                <span class="mono" style="font-size:10px;color:var(--faint);flex-shrink:0">Open</span>
+              </div>
+            </div>
+
+            <!-- The ordering rule is stated, because an operator who cannot see
+                 why this is first will not trust that it is. -->
+            <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:11px 16px;border-top:1px solid var(--line)">
+              <span class="mono" style="font-size:10px;line-height:1.55;color:var(--faint)">
+                Ranked by whether anyone has it, then blast radius, then severity, then age.
+                An unacknowledged warning outranks a critical someone is already on.
+              </span>
+            </div>
+          </section>
+
+          <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+            <div class="ph">
+              <h2>Incident 01</h2><span class="sub">orders-api · the selected one</span>
+              <span class="mono" style="margin-left:auto;display:flex;align-items:center;gap:3px;font-size:10px;color:var(--accent)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M11.8 3.2l1.75 4.9 4.9 1.75-4.9 1.75-1.75 4.9-1.75-4.9-4.9-1.75 4.9-1.75z"/><path d="M18.4 15.4l.75 2.05 2.05.75-2.05.75-.75 2.05-.75-2.05-2.05-.75 2.05-.75z"/></svg>Ask</span>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-bottom:1px solid var(--line)">
+              <div style="background:var(--panel);padding:12px 14px">
+                <div class="lbl" style="margin-bottom:9px">What changed</div>
+                <div class="mono" style="font-size:11.5px;color:var(--muted)"><span style="color:var(--faint)">2.14.2</span> → <span style="color:var(--accent)">2.14.3</span></div>
+                <div class="mono" style="margin-top:7px;font-size:10px;line-height:1.5;color:var(--faint)">observed 14:00, four minutes before onset</div>
+              </div>
+              <div style="background:var(--panel);padding:12px 14px">
+                <div class="lbl" style="margin-bottom:9px">Confidence</div>
+                <div style="display:flex;align-items:center;gap:9px">
+                  <span class="mono" style="font-size:16px;font-weight:500;line-height:1;color:var(--ink)">High</span>
+                  <span style="flex:1;display:flex;height:4px;gap:2px">
+                    <span style="flex-grow:3;background:var(--ok);border-radius:1px"></span>
+                    <span style="flex-grow:1;background:var(--sunk);border-radius:1px"></span>
+                  </span>
+                </div>
+                <div class="mono" style="margin-top:7px;font-size:10px;line-height:1.5;color:var(--faint)">one change, signature matches</div>
+              </div>
+            </div>
+
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:3px 0">
+              <div class="lbl" style="padding:9px 14px 6px">Evidence</div>
+              <div style="display:flex;align-items:flex-start;gap:9px;padding:6px 14px">
+                <span class="mono" style="font-size:10px;color:var(--accent);width:16px;flex-shrink:0">01</span>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">container exited: code=137 reason=OOMKilled</div>
+                  <div class="mono" style="margin-top:3px;font-size:9.5px;color:var(--faint)">log · orders-worker-3 · 9 occurrences</div>
+                </div>
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14.2 3.8h6v6"/><path d="M20.2 3.8 11 13"/><path d="M18 13.8v5.4a1.6 1.6 0 0 1-1.6 1.6H5.4a1.6 1.6 0 0 1-1.6-1.6V8.2a1.6 1.6 0 0 1 1.6-1.6h5.4"/></svg>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:9px;padding:6px 14px">
+                <span class="mono" style="font-size:10px;color:var(--accent);width:16px;flex-shrink:0">02</span>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">memory peaked 7.98G of 8G limit</div>
+                  <div class="mono" style="margin-top:3px;font-size:9.5px;color:var(--faint)">metric · orders-api/memory</div>
+                </div>
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14.2 3.8h6v6"/><path d="M20.2 3.8 11 13"/><path d="M18 13.8v5.4a1.6 1.6 0 0 1-1.6 1.6H5.4a1.6 1.6 0 0 1-1.6-1.6V8.2a1.6 1.6 0 0 1 1.6-1.6h5.4"/></svg>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:9px;padding:6px 14px">
+                <span class="mono" style="font-size:10px;color:var(--accent);width:16px;flex-shrink:0">03</span>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">request volume −12% vs prior hour</div>
+                  <div class="mono" style="margin-top:3px;font-size:9.5px;color:var(--faint)">metric · rules out load</div>
+                </div>
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M14.2 3.8h6v6"/><path d="M20.2 3.8 11 13"/><path d="M18 13.8v5.4a1.6 1.6 0 0 1-1.6 1.6H5.4a1.6 1.6 0 0 1-1.6-1.6V8.2a1.6 1.6 0 0 1 1.6-1.6h5.4"/></svg>
+              </div>
+
+              <div class="lbl" style="padding:13px 14px 7px;color:var(--warn)">Could not see</div>
+              <p class="mono" style="margin:0;padding:0 14px;font-size:10px;line-height:1.6;color:var(--faint)">
+                No dependency graph. Incident 03 shares no component with this one, but both follow a
+                deploy — if they turn out to be the same rollout, they should be merged.
+              </p>
+            </div>
+
+            <div style="border-top:1px solid var(--line);padding:11px 14px;display:flex;gap:7px">
+              <span class="btn btn-p" style="flex:1;justify-content:center">Open orders-api</span>
+              <span class="btn" style="flex:1;justify-content:center">Acknowledge</span>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel" style="flex-shrink:0">
+          <div class="ph">
+            <h2>How they overlap</h2><span class="sub">all three incidents · last hour</span>
+            <span class="mono" style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10px;color:var(--faint)"><span style="width:9px;height:0;border-top:1px dashed var(--accent)"></span>deploys</span>
+          </div>
+          <div style="padding:12px 16px 13px;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:150px;flex-shrink:0;display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:9.5px;color:var(--faint)">01</span><svg width="7" height="7" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><rect x=".6" y=".6" width="8.8" height="8.8" fill="var(--crit)"/></svg><span class="mono" style="font-size:10.5px;color:var(--ink)">orders-api</span></span>
+              <span style="flex:1"><svg width="900" height="13" viewBox="0 0 900 13" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%;height:13px"><rect x="0.00" y="0" width="628.80" height="13" fill="var(--lane-ok)"/><rect x="630.00" y="0" width="73.80" height="13" fill="var(--warn)"/><rect x="705.00" y="0" width="193.80" height="13" fill="var(--crit)"/></svg></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:150px;flex-shrink:0;display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:9.5px;color:var(--faint)">02</span><svg width="7" height="7" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><path d="M5 .6 9.5 9.2H.5Z" fill="var(--warn)"/></svg><span class="mono" style="font-size:10.5px;color:var(--ink-2)">search-cluster</span></span>
+              <span style="flex:1"><svg width="900" height="13" viewBox="0 0 900 13" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%;height:13px"><rect x="0.00" y="0" width="508.80" height="13" fill="var(--lane-ok)"/><rect x="510.00" y="0" width="388.80" height="13" fill="var(--warn)"/></svg></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:150px;flex-shrink:0;display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:9.5px;color:var(--faint)">03</span><svg width="7" height="7" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><path d="M5 .6 9.5 9.2H.5Z" fill="var(--warn)"/></svg><span class="mono" style="font-size:10.5px;color:var(--ink-2)">ci-pipeline</span></span>
+              <span style="flex:1"><svg width="900" height="13" viewBox="0 0 900 13" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%;height:13px"><rect x="0.00" y="0" width="118.80" height="13" fill="var(--lane-ok)"/><rect x="120.00" y="0" width="73.80" height="13" fill="var(--warn)"/><rect x="195.00" y="0" width="583.80" height="13" fill="var(--lane-ok)"/><rect x="780.00" y="0" width="118.80" height="13" fill="var(--warn)"/></svg></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;opacity:.45">
+              <span style="width:150px;flex-shrink:0;display:flex;align-items:center;gap:6px"><span class="mono" style="font-size:9.5px;color:transparent">00</span><svg width="7" height="7" viewBox="0 0 10 10" aria-hidden="true" style="flex-shrink:0;display:block"><circle cx="5" cy="5" r="4" fill="var(--ok)"/></svg><span class="mono" style="font-size:10.5px;color:var(--faint)">9 unaffected</span></span>
+              <span style="flex:1"><svg width="900" height="13" viewBox="0 0 900 13" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%;height:13px"><rect x="0.00" y="0" width="898.80" height="13" fill="var(--lane-ok)"/></svg></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+              <span style="width:150px;flex-shrink:0"></span>
+              <span style="flex:1">
+                <svg width="900" height="6" viewBox="0 0 900 6" preserveAspectRatio="none" aria-hidden="true" style="display:block;width:100%;height:6px"><line x1="0.50" y1="0" x2="0.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="15.48" y1="0" x2="15.48" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="30.47" y1="0" x2="30.47" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="45.45" y1="0" x2="45.45" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="60.43" y1="0" x2="60.43" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="75.42" y1="0" x2="75.42" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="90.40" y1="0" x2="90.40" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="105.38" y1="0" x2="105.38" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="120.37" y1="0" x2="120.37" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="135.35" y1="0" x2="135.35" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="150.33" y1="0" x2="150.33" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="165.32" y1="0" x2="165.32" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="180.30" y1="0" x2="180.30" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="195.28" y1="0" x2="195.28" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="210.27" y1="0" x2="210.27" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="225.25" y1="0" x2="225.25" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="240.23" y1="0" x2="240.23" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="255.22" y1="0" x2="255.22" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="270.20" y1="0" x2="270.20" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="285.18" y1="0" x2="285.18" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="300.17" y1="0" x2="300.17" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="315.15" y1="0" x2="315.15" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="330.13" y1="0" x2="330.13" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="345.12" y1="0" x2="345.12" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="360.10" y1="0" x2="360.10" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="375.08" y1="0" x2="375.08" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="390.07" y1="0" x2="390.07" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="405.05" y1="0" x2="405.05" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="420.03" y1="0" x2="420.03" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="435.02" y1="0" x2="435.02" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="450.00" y1="0" x2="450.00" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="464.98" y1="0" x2="464.98" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="479.97" y1="0" x2="479.97" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="494.95" y1="0" x2="494.95" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="509.93" y1="0" x2="509.93" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="524.92" y1="0" x2="524.92" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="539.90" y1="0" x2="539.90" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="554.88" y1="0" x2="554.88" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="569.87" y1="0" x2="569.87" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="584.85" y1="0" x2="584.85" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="599.83" y1="0" x2="599.83" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="614.82" y1="0" x2="614.82" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="629.80" y1="0" x2="629.80" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="644.78" y1="0" x2="644.78" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="659.77" y1="0" x2="659.77" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="674.75" y1="0" x2="674.75" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="689.73" y1="0" x2="689.73" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="704.72" y1="0" x2="704.72" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="719.70" y1="0" x2="719.70" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="734.68" y1="0" x2="734.68" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="749.67" y1="0" x2="749.67" y2="6" stroke="var(--line-strong)" stroke-width="1"/><line x1="764.65" y1="0" x2="764.65" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="779.63" y1="0" x2="779.63" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="794.62" y1="0" x2="794.62" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="809.60" y1="0" x2="809.60" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="824.58" y1="0" x2="824.58" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="839.57" y1="0" x2="839.57" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="854.55" y1="0" x2="854.55" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="869.53" y1="0" x2="869.53" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="884.52" y1="0" x2="884.52" y2="3" stroke="var(--line)" stroke-width="1"/><line x1="899.50" y1="0" x2="899.50" y2="6" stroke="var(--line-strong)" stroke-width="1"/></svg>
+                <div style="display:flex;justify-content:space-between;margin-top:4px">
+                  <span class="mono" style="font-size:9.5px;color:var(--faint)">−1h</span>
+                  <span class="mono" style="font-size:9.5px;color:var(--faint)">separate onsets, 26 minutes apart</span>
+                  <span class="mono" style="font-size:9.5px;color:var(--ink-2)">now</span>
+                </div>
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" style="display:flex;align-items:center;gap:14px;padding:10px 16px;flex-shrink:0">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--ok)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0"><path d="M4.6 12.6 9.4 17.4 19.4 6.8"/></svg>
+          <span class="mono" style="font-size:11px;color:var(--ink-2)">9 other connections nominal</span>
+          <span class="mono" style="font-size:10.5px;color:var(--faint)">349 of 364 components healthy</span>
+          <span style="flex:1;display:flex;flex-wrap:wrap;gap:2px;justify-content:flex-end;max-width:470px"><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span><span title="Healthy" style="width:14px;height:14px;flex-shrink:0;background:color-mix(in srgb, var(--ok) 26%, var(--panel));box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent)"></span></span>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

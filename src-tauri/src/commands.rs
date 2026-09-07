@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::agent::{self, AgentTurn};
@@ -9,7 +10,7 @@ use crate::config::{ConnectionProfile, LlmSettings};
 use crate::error::{AppError, Result};
 use crate::history::{self, HistogramBucket, MetricSeries};
 use crate::llm::{build_provider, ChatMessage};
-use crate::model::{Alert, DashboardState, HealthSnapshot, LogEvent};
+use crate::model::{Alert, DashboardState, Health, HealthSnapshot, LogEvent};
 use crate::registry::{self, ServiceDescriptor};
 use crate::secrets;
 use crate::state::{AppState, LogFilter, PendingConfirmation};
@@ -527,6 +528,64 @@ pub async fn get_metric_history(
     let since = minutes
         .map(|m| chrono::Utc::now() - chrono::Duration::minutes(m.clamp(1, 1440)));
     Ok(state.history.read().await.series(&profile_id, since))
+}
+
+/// The declared dependency graph, resolved both ways.
+///
+/// `roots` answers the question the graph exists for: of everything currently
+/// failing, which failures are not explained by another failure. It is a
+/// narrowing, never a verdict — an undeclared edge is invisible here, so a
+/// root may just be a connection nobody finished configuring.
+#[tauri::command]
+pub async fn get_topology(state: Shared<'_>) -> Result<TopologyView> {
+    let profiles = state.config.read().await.profiles.clone();
+    let graph = crate::topology::Topology::build(&profiles);
+
+    let dashboard = state.dashboard().await;
+
+    // Onset comes from the oldest still-firing alert on a connection, falling
+    // back to the moment it was last checked. Without it the graph would
+    // credit a dependency with a failure that started after its own.
+    let failing: Vec<(&str, chrono::DateTime<chrono::Utc>)> = dashboard
+        .snapshots
+        .iter()
+        .filter(|s| matches!(s.health, Health::Down | Health::Degraded | Health::Unknown))
+        .map(|s| {
+            let onset = dashboard
+                .alerts
+                .iter()
+                .filter(|a| a.active && a.profile_id == s.profile_id)
+                .map(|a| a.first_seen)
+                .min()
+                .unwrap_or(s.checked_at);
+            (s.profile_id.as_str(), onset)
+        })
+        .collect();
+
+    Ok(TopologyView {
+        depends_on: profiles
+            .iter()
+            .map(|p| (p.id.clone(), graph.depends_on(&p.id).to_vec()))
+            .collect(),
+        dependents: profiles
+            .iter()
+            .map(|p| (p.id.clone(), graph.dependents(&p.id).to_vec()))
+            .collect(),
+        roots: graph
+            .roots_with_onset(&failing, chrono::Duration::seconds(30))
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopologyView {
+    pub depends_on: std::collections::HashMap<String, Vec<String>>,
+    pub dependents: std::collections::HashMap<String, Vec<String>>,
+    /// Failing connections not explained by another failing connection.
+    pub roots: Vec<String>,
 }
 
 /// State runs for every connection across one window — the lane view.

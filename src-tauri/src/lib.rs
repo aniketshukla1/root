@@ -19,6 +19,7 @@ pub mod patterns;
 pub mod registry;
 pub mod secrets;
 pub mod state;
+pub mod topology;
 pub mod supervisor;
 
 use std::sync::Arc;
@@ -104,6 +105,7 @@ pub fn run() {
             commands::get_build_console,
             commands::get_metric_history,
             commands::get_health_runs,
+            commands::get_topology,
             commands::get_change_events,
             commands::get_component_history,
             commands::get_ingest_settings,

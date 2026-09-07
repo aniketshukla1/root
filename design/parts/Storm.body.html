@@ -1,0 +1,175 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:9;background:var(--faint)"></span>
+    <span style="flex-grow:3;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <!--RAIL overview-->
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:13px;height:52px;flex-shrink:0;padding:0 20px">
+        <h1 class="disp" style="margin:0;font-size:22px;color:var(--ink)">Overview</h1>
+        <span class="mono" style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--warn)">
+          <!--DOT unknown 8-->41 alerts in 90 seconds · grouping uncertain
+        </span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <!--ASK-->
+          <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--faint)">
+            <span style="width:6px;height:6px;border-radius:6px;background:var(--ok)"></span><span class="mono">live</span>
+          </span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;overflow:hidden;padding:0 20px 16px;display:flex;flex-direction:column;gap:12px">
+
+        <!-- ══ The dangerous case. Naive correlation reports eleven incidents
+             here; a credulous one reports a confident single cause. Neither is
+             honest. The screen leads with the shape of the event, offers the
+             hypothesis as a hypothesis, and hands the operator the two ways to
+             overrule it. -->
+        <section class="panel" style="flex-shrink:0;border-left:2px solid var(--warn);overflow:hidden">
+          <div style="display:flex;align-items:flex-start;gap:14px;padding:15px 18px 13px">
+            <span style="margin-top:4px"><!--DOT unknown 13--></span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span class="mono" style="font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--warn)">Possible single event</span>
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">first alert 03:12:04 · window 90s</span>
+              </div>
+              <h2 class="disp" style="margin:9px 0 0;font-size:25px;line-height:1.15;color:var(--ink);letter-spacing:-.025em">
+                11 connections stopped reporting within 90 seconds
+              </h2>
+              <p style="margin:10px 0 0;max-width:96ch;font-size:13px;line-height:1.6;color:var(--ink-2)">
+                This is being shown as <strong style="color:var(--ink);font-weight:500">one event, not eleven</strong>.
+                Every affected collector reaches its target across <span class="mono" style="font-size:12px;color:var(--ink)">10.4.0.0/16</span>,
+                the one connection that did not stop is the only one that does not, and nothing was
+                deployed in the window. That is a shared-path failure, not eleven services failing at once.
+              </p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px;flex-shrink:0;width:186px">
+              <span class="btn btn-p" style="justify-content:center">Correlate 03:12</span>
+              <span class="btn" style="justify-content:center"><!--ICON assistant 13 var(--accent)-->Ask what else is shared</span>
+              <span class="btn btn-g" style="justify-content:center">Treat as 11 separate</span>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line);border-top:1px solid var(--line)">
+            <div style="background:var(--panel);padding:12px 16px">
+              <div class="lbl" style="margin-bottom:10px">What they share</div>
+              <div class="mono" style="display:flex;flex-direction:column;gap:6px;font-size:10.5px;color:var(--muted)">
+                <div style="display:flex;gap:8px"><span style="color:var(--ok);flex-shrink:0">11/11</span><span>reach targets on 10.4.0.0/16</span></div>
+                <div style="display:flex;gap:8px"><span style="color:var(--ok);flex-shrink:0">11/11</span><span>stopped, none reported unhealthy first</span></div>
+                <div style="display:flex;gap:8px"><span style="color:var(--faint);flex-shrink:0">0/11</span><span>share a team or environment</span></div>
+                <div style="display:flex;gap:8px"><span style="color:var(--faint);flex-shrink:0">0/11</span><span>had a change in the window</span></div>
+              </div>
+            </div>
+
+            <div style="background:var(--panel);padding:12px 16px">
+              <div class="lbl" style="margin-bottom:10px">Confidence</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="mono" style="font-size:22px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--warn)">Medium</span>
+                <span style="flex:1;display:flex;height:5px;gap:2px">
+                  <span style="flex-grow:2;background:var(--warn);border-radius:1px"></span>
+                  <span style="flex-grow:2;background:var(--sunk);border-radius:1px"></span>
+                </span>
+              </div>
+              <p class="mono" style="margin:10px 0 0;font-size:10.5px;line-height:1.6;color:var(--muted)">
+                The timing is unambiguous. The shared cause is inferred from endpoint addresses, which
+                is circumstantial.
+              </p>
+            </div>
+
+            <div style="background:var(--panel);padding:12px 16px">
+              <div class="lbl" style="margin-bottom:10px;color:var(--warn)">Could not see</div>
+              <p class="mono" style="margin:0;font-size:10.5px;line-height:1.6;color:var(--faint)">
+                root monitors these connections, not the network between them. Nothing here can
+                confirm a partition — only that every collector on one subnet went silent together
+                and the one off it did not. Check the network before accepting this.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:12px;flex:1;min-height:0">
+
+          <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+            <div class="ph">
+              <h2>All eleven, aligned</h2><span class="sub">the shape is the argument</span>
+              <span class="mono" style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10px;color:var(--faint)">
+                <span style="width:9px;height:8px;background:var(--cell-todo);background-image:repeating-linear-gradient(45deg,var(--faint) 0 1.6px,transparent 1.6px 5px)"></span>no data
+              </span>
+            </div>
+            <div style="flex:1;min-height:0;padding:12px 16px 13px;display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT unknown 7--><span class="mono" style="font-size:10px;color:var(--ink-2)">orders-api</span></span><span style="flex:1"><!--LANE 520 60 healthy:0-44,unknown:44-60--></span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT unknown 7--><span class="mono" style="font-size:10px;color:var(--ink-2)">payments-db</span></span><span style="flex:1"><!--LANE 520 60 healthy:0-44,unknown:44-60--></span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT unknown 7--><span class="mono" style="font-size:10px;color:var(--ink-2)">search-cluster</span></span><span style="flex:1"><!--LANE 520 60 healthy:0-45,unknown:45-60--></span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT unknown 7--><span class="mono" style="font-size:10px;color:var(--ink-2)">checkout-web</span></span><span style="flex:1"><!--LANE 520 60 healthy:0-45,unknown:45-60--></span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT unknown 7--><span class="mono" style="font-size:10px;color:var(--ink-2)">events-bus</span></span><span style="flex:1"><!--LANE 520 60 healthy:0-45,unknown:45-60--></span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT unknown 7--><span class="mono" style="font-size:10px;color:var(--ink-2)">session-cache</span></span><span style="flex:1"><!--LANE 520 60 healthy:0-45,unknown:45-60--></span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT unknown 7--><span class="mono" style="font-size:10px;color:var(--ink-2)">ci-pipeline</span></span><span style="flex:1"><!--LANE 520 60 healthy:0-46,unknown:46-60--></span></div>
+              <div style="display:flex;align-items:center;gap:10px;opacity:.6"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT unknown 7--><span class="mono" style="font-size:10px;color:var(--faint)">+4 more</span></span><span style="flex:1"><!--LANE 520 60 healthy:0-46,unknown:46-60--></span></div>
+
+              <div style="height:1px;background:var(--line);margin:6px 0"></div>
+
+              <!-- The exception carries the argument as much as the rule does. -->
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:118px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT healthy 7--><span class="mono" style="font-size:10px;color:var(--ok)">status-page</span></span><span style="flex:1"><!--LANE 520 60 healthy:0-60--></span></div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:118px;flex-shrink:0"></span>
+                <span class="mono" style="flex:1;font-size:9.5px;color:var(--ok)">the only connection not on 10.4.0.0/16 — and the only one still reporting</span>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:10px;margin-top:auto">
+                <span style="width:118px;flex-shrink:0"></span>
+                <span style="flex:1">
+                  <!--TICKS 520 60 10-->
+                  <div style="display:flex;justify-content:space-between;margin-top:4px">
+                    <span class="mono" style="font-size:9.5px;color:var(--faint)">−1h</span>
+                    <span class="mono" style="font-size:9.5px;color:var(--warn)">03:12 · all within 90s</span>
+                    <span class="mono" style="font-size:9.5px;color:var(--ink-2)">now</span>
+                  </div>
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+            <div class="ph"><h2>If this is wrong</h2><span class="sub">how to overrule it</span></div>
+            <div style="flex:1;min-height:0;padding:14px 16px;display:flex;flex-direction:column;gap:13px">
+              <p style="margin:0;font-size:12px;line-height:1.6;color:var(--ink-2)">
+                Grouping eleven failures into one story is the most useful thing this screen can do and
+                the most damaging thing it can get wrong. Both ways out are one click.
+              </p>
+
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r)">
+                  <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0;padding-top:1px">01</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:11.5px;color:var(--ink-2)">Treat as 11 separate incidents</div>
+                    <div class="mono" style="margin-top:4px;font-size:9.5px;line-height:1.5;color:var(--faint)">if the timing is coincidence, each gets its own card and owner</div>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r)">
+                  <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0;padding-top:1px">02</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:11.5px;color:var(--ink-2)">Split one connection out</div>
+                    <div class="mono" style="margin-top:4px;font-size:9.5px;line-height:1.5;color:var(--faint)">when one of the eleven turns out to have failed for its own reason</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="margin-top:auto;padding-top:12px;border-top:1px solid var(--line)">
+                <div class="lbl" style="margin-bottom:8px">What this is not</div>
+                <p class="mono" style="margin:0;font-size:10px;line-height:1.65;color:var(--faint)">
+                  Eleven connections being unreachable is not eleven connections being unhealthy. None
+                  of them reported a fault — they stopped answering. Everything behind them may be
+                  fine, and the heatmap deliberately shows those components as no-data rather than
+                  down.
+                </p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

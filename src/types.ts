@@ -273,6 +273,14 @@ export interface MetricSeries {
   latest: number;
 }
 
+/** The declared dependency graph, resolved both ways. */
+export interface TopologyView {
+  dependsOn: Record<string, string[]>;
+  dependents: Record<string, string[]>;
+  /** Failing connections not explained by another failing connection. */
+  roots: string[];
+}
+
 /** A period a connection spent in one state, as observed by its collector. */
 export interface HealthRun {
   health: Health;
@@ -353,6 +361,15 @@ export interface ProfileMetadata extends Record<string, unknown> {
 
 export interface ConnectionProfile {
   id: string;
+  /**
+   * What this connection needs in order to work, as profile ids.
+   *
+   * Declared, never discovered — root watches connections, not the network
+   * between them. Only this direction is stored; dependents are derived,
+   * because "what does this need?" is answerable and "what needs this?"
+   * usually is not.
+   */
+  dependsOn: string[];
   name: string;
   kind: ServiceKind;
   endpoint: string;

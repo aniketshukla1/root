@@ -1,13 +1,85 @@
 {
   "artboards": [
     {
+      "file": "Quiet.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "1 \u00b7 Quiet",
+      "page": "page-1"
+    },
+    {
+      "file": "Incident.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "2 \u00b7 One incident",
+      "page": "page-1"
+    },
+    {
+      "file": "Triage.dc.html",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "3 \u00b7 Several incidents",
+      "page": "page-1"
+    },
+    {
+      "file": "Storm.dc.html",
+      "x": 4680,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "4 \u00b7 Several that are one",
+      "page": "page-1"
+    },
+    {
+      "file": "QuietLight.dc.html",
+      "x": 0,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "1 \u00b7 Quiet \u00b7 light",
+      "page": "page-1"
+    },
+    {
+      "file": "IncidentLight.dc.html",
+      "x": 1560,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "2 \u00b7 One incident \u00b7 light",
+      "page": "page-1"
+    },
+    {
+      "file": "TriageLight.dc.html",
+      "x": 3120,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "3 \u00b7 Several \u00b7 light",
+      "page": "page-1"
+    },
+    {
+      "file": "StormLight.dc.html",
+      "x": 4680,
+      "y": 1000,
+      "w": 1440,
+      "h": 900,
+      "title": "4 \u00b7 Several that are one \u00b7 light",
+      "page": "page-1"
+    },
+    {
       "file": "Main.dc.html",
       "x": 0,
       "y": 0,
       "w": 1440,
       "h": 900,
       "title": "Overview",
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "Services.dc.html",
@@ -16,7 +88,7 @@
       "w": 1440,
       "h": 900,
       "title": "Services",
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "ServiceDetail.dc.html",
@@ -25,7 +97,7 @@
       "w": 1440,
       "h": 900,
       "title": "Service detail",
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "Metrics.dc.html",
@@ -34,7 +106,7 @@
       "w": 1440,
       "h": 900,
       "title": "Metrics",
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "Logs.dc.html",
@@ -43,7 +115,7 @@
       "w": 1440,
       "h": 900,
       "title": "Logs",
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "Explain.dc.html",
@@ -52,7 +124,7 @@
       "w": 1440,
       "h": 900,
       "title": "Assistant dock",
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "Alerts.dc.html",
@@ -61,7 +133,7 @@
       "w": 1440,
       "h": 900,
       "title": "Alerts",
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "Assistant.dc.html",
@@ -70,7 +142,7 @@
       "w": 1440,
       "h": 900,
       "title": "Assistant",
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "Settings.dc.html",
@@ -79,7 +151,7 @@
       "w": 1440,
       "h": 900,
       "title": "Settings",
-      "page": "page-1"
+      "page": "page-2"
     },
     {
       "file": "Splash.dc.html",
@@ -88,7 +160,7 @@
       "w": 1440,
       "h": 900,
       "title": "Splash",
-      "page": "page-2"
+      "page": "page-3"
     },
     {
       "file": "SignIn.dc.html",
@@ -97,7 +169,7 @@
       "w": 1440,
       "h": 900,
       "title": "Sign in",
-      "page": "page-2"
+      "page": "page-3"
     },
     {
       "file": "Onboarding.dc.html",
@@ -106,7 +178,7 @@
       "w": 1440,
       "h": 900,
       "title": "Onboarding",
-      "page": "page-2"
+      "page": "page-3"
     },
     {
       "file": "Team.dc.html",
@@ -115,7 +187,7 @@
       "w": 1440,
       "h": 900,
       "title": "Members & roles",
-      "page": "page-2"
+      "page": "page-3"
     },
     {
       "file": "Billing.dc.html",
@@ -124,7 +196,7 @@
       "w": 1440,
       "h": 900,
       "title": "Billing",
-      "page": "page-2"
+      "page": "page-3"
     },
     {
       "file": "MainLight.dc.html",
@@ -133,7 +205,7 @@
       "w": 1440,
       "h": 900,
       "title": "Overview",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "ServicesLight.dc.html",
@@ -142,7 +214,7 @@
       "w": 1440,
       "h": 900,
       "title": "Services",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "ServiceDetailLight.dc.html",
@@ -151,7 +223,7 @@
       "w": 1440,
       "h": 900,
       "title": "Service detail",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "MetricsLight.dc.html",
@@ -160,7 +232,7 @@
       "w": 1440,
       "h": 900,
       "title": "Metrics",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "LogsLight.dc.html",
@@ -169,7 +241,7 @@
       "w": 1440,
       "h": 900,
       "title": "Logs",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "ExplainLight.dc.html",
@@ -178,7 +250,7 @@
       "w": 1440,
       "h": 900,
       "title": "Assistant dock",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "AlertsLight.dc.html",
@@ -187,7 +259,7 @@
       "w": 1440,
       "h": 900,
       "title": "Alerts",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "AssistantLight.dc.html",
@@ -196,7 +268,7 @@
       "w": 1440,
       "h": 900,
       "title": "Assistant",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "SettingsLight.dc.html",
@@ -205,7 +277,7 @@
       "w": 1440,
       "h": 900,
       "title": "Settings",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "SplashLight.dc.html",
@@ -214,7 +286,7 @@
       "w": 1440,
       "h": 900,
       "title": "Splash",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "SignInLight.dc.html",
@@ -223,7 +295,7 @@
       "w": 1440,
       "h": 900,
       "title": "Sign in",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "OnboardingLight.dc.html",
@@ -232,7 +304,7 @@
       "w": 1440,
       "h": 900,
       "title": "Onboarding",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "TeamLight.dc.html",
@@ -241,7 +313,7 @@
       "w": 1440,
       "h": 900,
       "title": "Members & roles",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "BillingLight.dc.html",
@@ -250,7 +322,7 @@
       "w": 1440,
       "h": 900,
       "title": "Billing",
-      "page": "page-3"
+      "page": "page-4"
     },
     {
       "file": "Charts.dc.html",
@@ -259,7 +331,7 @@
       "w": 1440,
       "h": 1980,
       "title": "Chart system \u2014 dark",
-      "page": "page-4"
+      "page": "page-5"
     },
     {
       "file": "ChartsLight.dc.html",
@@ -268,7 +340,7 @@
       "w": 1440,
       "h": 1980,
       "title": "Chart system \u2014 light",
-      "page": "page-4"
+      "page": "page-5"
     },
     {
       "file": "Brand.dc.html",
@@ -277,75 +349,63 @@
       "w": 1440,
       "h": 1700,
       "title": "Identity & tokens",
-      "page": "page-5"
+      "page": "page-6"
     }
   ],
   "pages": [
     {
       "id": "page-1",
-      "name": "Product"
+      "name": "Home \u00b7 four states"
     },
     {
       "id": "page-2",
-      "name": "Get started & account"
+      "name": "Product"
     },
     {
       "id": "page-3",
-      "name": "Light"
+      "name": "Get started & account"
     },
     {
       "id": "page-4",
-      "name": "Charts"
+      "name": "Light"
     },
     {
       "id": "page-5",
+      "name": "Charts"
+    },
+    {
+      "id": "page-6",
       "name": "Identity"
     }
   ],
   "annotations": [
     {
-      "id": "note-product",
+      "id": "note-states",
       "x": 0,
-      "y": -230,
+      "y": -330,
+      "w": 640,
+      "page": "page-1",
+      "text": "ONE SCREEN, FOUR STATES. Most tools show the same dense screen whether you are on fire or not; this one changes shape with the situation.\n\n1 QUIET \u2014 small and boring. Nothing is alerting, here is what changed in the last day, here is the inventory. No charts, because there is nothing to scan for.\n\n2 ONE INCIDENT \u2014 the screen becomes one thing, in the order an operator needs it: what is wrong, what changed, how far it reaches, what proves it, what to do.\n\n3 SEVERAL \u2014 heroes do not stack; that is a dashboard again. The one you should work on is expanded, the rest are a ranked list you can decide from without opening. The ordering rule is printed on the screen, because an operator who cannot see why this is first will not trust that it is: unacknowledged first, then blast radius, then severity, then age. An unacknowledged warning outranks a critical someone is already on.\n\n4 SEVERAL THAT ARE ONE \u2014 the dangerous case."
+    },
+    {
+      "id": "note-grouping",
+      "x": 680,
+      "y": -330,
       "w": 620,
       "page": "page-1",
-      "text": "NINE APP SCREENS. Every one is a real 1440x900 window \u2014 nothing scrolls off.\n\nASSISTANT DOCK: every header carries an Ask handle, and any row representing a problem carries an Explain action in its own trailing column so it can never crowd the message. Clicking it opens the dock with that line already loaded \u2014 what the error means, why it is happening here with the evidence plotted, and what to check next. The operator never leaves the screen the problem is on."
+      "text": "GROUPING IS THE RISKIEST THING THIS SCREEN DOES.\n\nThree ways it goes wrong. Genuinely separate incidents shown as one, and you chase a cause that explains half of it. One incident split in two, and you fix a symptom while the cause keeps running. Or forty alerts from a network partition shown as forty incidents.\n\nSo grouping is never silent. Every incident states WHY its alerts were grouped \u2014 'deploy adjacency + 6-minute onset window' \u2014 and carries a one-click 'Not related?' to split it. State 4 is the same idea at its limit: eleven connections went quiet in 90 seconds, and the screen leads with the shape rather than a confident cause. Its evidence is what they share and what they do not, its confidence is Medium not High, and it says plainly that root monitors connections and not the network between them, so it cannot confirm a partition \u2014 only that every collector on one subnet stopped together and the one off it did not.\n\nThe exception carries as much of the argument as the rule: status-page is the only connection not on that subnet and the only one still reporting."
     },
     {
-      "id": "note-acct",
+      "id": "note-current",
       "x": 0,
-      "y": -280,
-      "w": 640,
+      "y": -150,
+      "w": 540,
       "page": "page-2",
-      "text": "GET STARTED & ACCOUNT \u2014 the five screens the product needed once it stopped being local.\n\nSPLASH is the brand moment: the mark draws itself \u2014 one root, then branches reaching out to what they find. That is the product's own gesture rather than a spinner. Underneath it, named steps with a real count (9 of 12 collectors reached), not a fake progress bar. Absence is a state here too.\n\nBILLING reuses the chart vocabulary rather than inventing a second one: plan usage is a measure against a limit, so it is drawn with the same bullet bars as service headroom, and spend uses the same stacked bars as availability.\n\nROLES are four, and the assistant stays read-only for Viewers."
-    },
-    {
-      "id": "note-light",
-      "x": 0,
-      "y": -180,
-      "w": 600,
-      "page": "page-3",
-      "text": "ALL FOURTEEN, on warm paper. Identical markup with one class, so the palettes cannot drift.\n\nTwo things change meaning rather than value: the accent deepens rather than inverting to brown (brown sits on top of the warn hue), and nominal inverts direction \u2014 a near-black green becomes a pale tint, with faults keeping all the saturation."
-    },
-    {
-      "id": "note-charts",
-      "x": 0,
-      "y": -220,
-      "w": 620,
-      "page": "page-4",
-      "text": "CHART SYSTEM \u2014 twelve charts, three readers: developer, maintainer, management.\n\nMotion is intro-only and explains provenance: a line draws along its own time axis, a bar grows from its baseline, a series staggers in reading order. Nothing loops. All of it stops under reduced-motion.\n\nThese rules map onto Framer Motion directly \u2014 pathLength for the draw, variants with staggerChildren for series, useReducedMotion for the opt-out \u2014 so this is buildable as written."
-    },
-    {
-      "id": "note-brand",
-      "x": 0,
-      "y": -200,
-      "w": 580,
-      "page": "page-5",
-      "text": "IDENTITY \u2014 two faces, IBM Plex Sans and IBM Plex Mono.\n\nThe mark is a filesystem tree: one solid root, three branches, three open leaves. Root node, root cause, tree root. On the splash it draws itself in that order.\n\nThe mint accent still could not carry across from swe-prep: green already means healthy here, so an accent you can click would be mistakable for a state."
+      "text": "WHAT IS BUILT TODAY \u2014 the screens as implemented and running, for comparison with the proposal on the first page. The Overview here is the one under discussion: it answers 'what' well and 'why' not at all."
     }
   ],
   "launch": {
     "view": "canvas",
-    "page": "page-2"
+    "page": "page-1"
   }
 }

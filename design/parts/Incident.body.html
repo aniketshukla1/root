@@ -1,0 +1,265 @@
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font-family:var(--sans)">
+  <div style="display:flex;height:3px;flex-shrink:0;gap:1px">
+    <span style="flex-grow:1;background:var(--crit)"></span>
+    <span style="flex-grow:2;background:var(--warn)"></span>
+    <span style="flex-grow:9;background:var(--ok)"></span>
+  </div>
+
+  <div style="display:flex;flex:1;min-height:0">
+    <!--RAIL overview-->
+
+    <main style="display:flex;flex-direction:column;flex:1;min-width:0">
+      <header style="display:flex;align-items:center;gap:13px;height:52px;flex-shrink:0;padding:0 20px">
+        <h1 class="disp" style="margin:0;font-size:22px;color:var(--ink)">Overview</h1>
+        <span class="mono" style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--crit)">
+          <!--DOT down 8-->1 incident · 4 alerts grouped
+        </span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <!--ASK-->
+          <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--faint)">
+            <span style="width:6px;height:6px;border-radius:6px;background:var(--ok)"></span>
+            <span class="mono">live</span>
+          </span>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;overflow:hidden;padding:0 20px 16px;display:flex;flex-direction:column;gap:12px">
+
+        <!-- ══ The incident, not the estate. Four alerts are one story, told in
+             the order an operator actually needs it: what is wrong, what
+             changed, how far it reaches, what proves it, what to do. -->
+        <section class="panel" style="flex-shrink:0;border-left:2px solid var(--crit);overflow:hidden">
+          <div style="display:flex;align-items:flex-start;gap:14px;padding:14px 18px 12px">
+            <span style="margin-top:4px"><!--DOT down 13--></span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span class="mono" style="font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--crit)">Incident</span>
+                <span class="mono" style="font-size:10.5px;color:var(--faint)">started 14:04 · 38m · escalating</span>
+                <span class="tag" style="color:var(--crit);border-color:color-mix(in srgb,var(--crit) 30%,transparent);background:color-mix(in srgb,var(--crit) 10%,transparent)">4 ALERTS GROUPED</span>
+              </div>
+              <h2 class="disp" style="margin:9px 0 0;font-size:25px;line-height:1.15;color:var(--ink);letter-spacing:-.025em">
+                orders-api is down — memory regression in 2.14.3
+              </h2>
+              <p style="margin:10px 0 0;max-width:96ch;font-size:13px;line-height:1.6;color:var(--ink-2)">
+                Three of eight containers are being killed by the kernel OOM killer, not by the
+                application. Memory climbs to 7.98G against an 8G limit and never falls back between
+                restarts. Request volume is <em style="color:var(--muted)">down</em> 12% over the same
+                window, so this is a regression in the new image rather than load.
+              </p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px;flex-shrink:0;width:168px">
+              <span class="btn btn-p" style="justify-content:center">Open orders-api</span>
+              <span class="btn" style="justify-content:center"><!--ICON assistant 13 var(--accent)-->Ask a follow-up</span>
+              <span class="btn btn-g" style="justify-content:center">Acknowledge all</span>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line);border-top:1px solid var(--line)">
+
+            <div style="background:var(--panel);padding:12px 16px">
+              <div class="lbl" style="margin-bottom:10px">What changed</div>
+              <div style="display:flex;align-items:center;gap:9px">
+                <!--MARK DK var(--s1) 18-->
+                <span class="mono" style="font-size:11.5px;color:var(--ink)">orders-api · worker</span>
+              </div>
+              <div class="mono" style="margin-top:9px;font-size:12px;color:var(--muted)">
+                <span style="color:var(--faint)">2.14.2</span> → <span style="color:var(--accent)">2.14.3</span>
+              </div>
+              <div class="mono" style="margin-top:8px;font-size:10.5px;line-height:1.55;color:var(--faint)">
+                deployed 14:00, four minutes before the first restart
+              </div>
+              <div style="display:flex;gap:6px;margin-top:10px">
+                <span class="tag">observed</span>
+                <span class="tag" style="color:var(--accent);border-color:color-mix(in srgb,var(--accent) 28%,transparent);background:var(--accent-soft)">only change in window</span>
+              </div>
+            </div>
+
+            <div style="background:var(--panel);padding:12px 16px">
+              <div class="lbl" style="margin-bottom:10px">Blast radius</div>
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span class="mono" style="font-size:22px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--ink)">3</span>
+                <span class="mono" style="font-size:11px;color:var(--muted)">connections</span>
+                <span class="mono" style="font-size:22px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--ink);margin-left:8px">6</span>
+                <span class="mono" style="font-size:11px;color:var(--muted)">components</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="mono" style="width:104px;font-size:10.5px;color:var(--ink-2)">orders-api</span>
+                  <span style="display:flex;gap:3px"><!--CELLS 8 3 3--></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="mono" style="width:104px;font-size:10.5px;color:var(--ink-2)">payments-db</span>
+                  <span style="display:flex;gap:3px"><!--CELLS 3 91 1--></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="mono" style="width:104px;font-size:10.5px;color:var(--ink-2)">search-cluster</span>
+                  <span style="display:flex;gap:3px"><!--CELLS 6 55 1--></span>
+                </div>
+              </div>
+              <div class="mono" style="margin-top:11px;font-size:10.5px;line-height:1.55;color:var(--faint)">
+                358 of 364 components elsewhere are unaffected.
+              </div>
+            </div>
+
+            <div style="background:var(--panel);padding:12px 16px">
+              <div class="lbl" style="margin-bottom:10px">Confidence</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="mono" style="font-size:22px;font-weight:500;line-height:1;letter-spacing:-.03em;color:var(--ink)">High</span>
+                <span style="flex:1;display:flex;height:5px;gap:2px">
+                  <span style="flex-grow:3;background:var(--ok);border-radius:1px"></span>
+                  <span style="flex-grow:1;background:var(--sunk);border-radius:1px"></span>
+                </span>
+              </div>
+              <p class="mono" style="margin:10px 0 0;font-size:10.5px;line-height:1.6;color:var(--muted)">
+                One change in the window, and the failure signature matches it exactly.
+              </p>
+              <!-- Saying what it could not see is the difference between a
+                   finding and a guess. -->
+              <div style="margin-top:11px;padding-top:10px;border-top:1px solid var(--line)">
+                <div class="lbl" style="margin-bottom:7px;color:var(--warn)">Could not see</div>
+                <p class="mono" style="margin:0;font-size:10.5px;line-height:1.6;color:var(--faint)">
+                  No service dependency graph, so ordering below is inferred from timing alone.
+                  No APM traces for the 502s.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:12px;flex:1;min-height:0">
+
+          <!-- ── The propagation, scoped to the incident rather than the estate.
+               Read down the column at 14:04 and the order is the argument. -->
+          <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+            <div class="ph">
+              <h2>How it spread</h2><span class="sub">affected connections · 14:00 – now</span>
+              <span class="mono" style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10px;color:var(--faint)">
+                <span style="width:9px;height:0;border-top:1px dashed var(--accent)"></span>deploy
+              </span>
+            </div>
+            <div style="padding:14px 16px 12px;position:relative">
+              <div style="position:absolute;left:calc(16px + 124px + 10px);right:16px;top:14px;bottom:34px;pointer-events:none;z-index:2">
+                <div style="position:absolute;left:8%;top:0;bottom:0;border-left:1px dashed var(--accent);opacity:.6"></div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="width:124px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT down 7--><span class="mono" style="font-size:10.5px;color:var(--ink)">orders-api</span></span>
+                  <span style="flex:1"><!--LANE 560 60 healthy:0-13,degraded:13-19,down:19-60--></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="width:124px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT degraded 7--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">payments-db</span></span>
+                  <span style="flex:1"><!--LANE 560 60 healthy:0-26,degraded:26-60--></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="width:124px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT degraded 7--><span class="mono" style="font-size:10.5px;color:var(--ink-2)">search-cluster</span></span>
+                  <span style="flex:1"><!--LANE 560 60 healthy:0-38,degraded:38-60--></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;opacity:.45">
+                  <span style="width:124px;flex-shrink:0;display:flex;align-items:center;gap:6px"><!--DOT healthy 7--><span class="mono" style="font-size:10.5px;color:var(--faint)">9 unaffected</span></span>
+                  <span style="flex:1"><!--LANE 560 60 healthy:0-60--></span>
+                </div>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+                <span style="width:124px;flex-shrink:0"></span>
+                <span style="flex:1">
+                  <!--TICKS 560 40 10-->
+                  <div style="display:flex;justify-content:space-between;margin-top:4px">
+                    <span class="mono" style="font-size:9.5px;color:var(--faint)">14:00</span>
+                    <span class="mono" style="font-size:9.5px;color:var(--accent)">14:04 first restart</span>
+                    <span class="mono" style="font-size:9.5px;color:var(--faint)">14:20</span>
+                    <span class="mono" style="font-size:9.5px;color:var(--ink-2)">now</span>
+                  </div>
+                </span>
+              </div>
+
+              <p class="mono" style="margin:14px 0 0;font-size:10.5px;line-height:1.6;color:var(--muted)">
+                orders-api turned first, then payments-db 6 minutes later, then search-cluster.
+                Nothing turned before the deploy.
+              </p>
+            </div>
+          </section>
+
+          <!-- ── Every claim above traces to a line you can open. This is what
+               separates a finding from a plausible sentence. -->
+          <section class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+            <div class="ph"><h2>Evidence</h2><span class="sub">5 sources · each opens where it came from</span></div>
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:4px 0">
+              <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 13px;border-bottom:1px solid var(--line-soft)">
+                <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0;width:16px">01</span>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">container exited: code=137 reason=OOMKilled</div>
+                  <div class="mono" style="margin-top:3px;font-size:9.5px;color:var(--faint)">log · orders-worker-3 · 14:22:07 · 9 occurrences</div>
+                </div>
+                <!--ICON open 11 var(--faint)-->
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 13px;border-bottom:1px solid var(--line-soft)">
+                <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0;width:16px">02</span>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">memory peaked 7.98G of 8G limit</div>
+                  <div class="mono" style="margin-top:3px;font-size:9.5px;color:var(--faint)">metric · orders-api/memory · since 14:04</div>
+                </div>
+                <!--ICON open 11 var(--faint)-->
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 13px;border-bottom:1px solid var(--line-soft)">
+                <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0;width:16px">03</span>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">revision 2.14.2 → 2.14.3</div>
+                  <div class="mono" style="margin-top:3px;font-size:9.5px;color:var(--faint)">change · observed 14:00:12</div>
+                </div>
+                <!--ICON open 11 var(--faint)-->
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 13px;border-bottom:1px solid var(--line-soft)">
+                <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0;width:16px">04</span>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">request volume −12% vs prior hour</div>
+                  <div class="mono" style="margin-top:3px;font-size:9.5px;color:var(--faint)">metric · orders-api/requests · rules out load</div>
+                </div>
+                <!--ICON open 11 var(--faint)-->
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:9px;padding:7px 13px">
+                <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0;width:16px">05</span>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:10.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">replication lag began 14:06, after first restart</div>
+                  <div class="mono" style="margin-top:3px;font-size:9.5px;color:var(--faint)">alert · payments-db/replica-2 · downstream</div>
+                </div>
+                <!--ICON open 11 var(--faint)-->
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--line);padding:12px 13px">
+              <div class="lbl" style="margin-bottom:9px">What to check next</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;align-items:center;gap:9px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r)">
+                  <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0">01</span>
+                  <span style="flex:1;min-width:0;font-size:11.5px;color:var(--ink-2)">Compare memory against 2.14.2</span>
+                  <!--ICON right 11 var(--faint)-->
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r)">
+                  <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0">02</span>
+                  <span style="flex:1;min-width:0;font-size:11.5px;color:var(--ink-2)">Inspect orders-worker-3</span>
+                  <!--ICON right 11 var(--faint)-->
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r)">
+                  <span class="mono" style="font-size:10px;color:var(--accent);flex-shrink:0">03</span>
+                  <span style="flex:1;min-width:0;font-size:11.5px;color:var(--ink-2)">Correlate 14:04 across the estate</span>
+                  <!--ICON right 11 var(--faint)-->
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ── The rest of the estate collapses to one line. It is not the story. -->
+        <section class="panel" style="display:flex;align-items:center;gap:14px;padding:11px 16px;flex-shrink:0">
+          <!--ICON check 14 var(--ok)-->
+          <span class="mono" style="font-size:11px;color:var(--ink-2)">9 other connections nominal</span>
+          <span class="mono" style="font-size:10.5px;color:var(--faint)">358 of 364 components healthy</span>
+          <span style="flex:1;display:flex;flex-wrap:wrap;gap:2px;justify-content:flex-end;max-width:520px"><!--CELLS 96 61 0--></span>
+          <span class="mono" style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--faint);flex-shrink:0">Show all<!--ICON right 11 currentColor--></span>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>

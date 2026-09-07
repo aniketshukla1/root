@@ -305,10 +305,21 @@ export function histogram(buckets: number): HistogramBucket[] {
   });
 }
 
+const DEPENDS_ON: Record<string, string[]> = {
+  "orders-api": ["payments-db", "session-cache", "events-bus"],
+  "checkout-web": ["orders-api", "edge-proxy"],
+  "payments-db": ["edge-proxy"],
+  "search-cluster": ["events-bus"],
+  "ci-pipeline": [],
+  "billing-mongo": [],
+  "status-page": ["edge-proxy"],
+};
+
 export const CONFIG: AppConfig = {
   profiles: ESTATE.map(([id, name, kind, , , team]) => ({
     id, name, kind, endpoint: `${kind}://${id}.internal`,
     hasSecret: true, enabled: true, pollIntervalSecs: 15, options: {},
+    dependsOn: DEPENDS_ON[id] ?? [],
     metadata: {
       operations: {
         team,
@@ -413,4 +424,45 @@ export function agentTurn(conversationId: string, message: string) {
           "Restarts begin at 14:04, four minutes after 2.14.3 was deployed. payments-db is also degraded with 42s replication lag, starting after the first restart storm — most likely downstream of this rather than a second fault.",
         ].join("\n"),
   };
+}
+
+/**
+ * The graph as the backend resolves it: declared dependencies, derived
+ * dependents, and the failing connections that nothing else explains.
+ */
+export function topology(): import("./types").TopologyView {
+  const dependsOn: Record<string, string[]> = {};
+  const dependents: Record<string, string[]> = {};
+  const ids = new Set(ESTATE.map(([id]) => id));
+
+  for (const [id] of ESTATE) {
+    dependsOn[id] = (DEPENDS_ON[id] ?? []).filter((d) => d !== id && ids.has(d));
+    dependents[id] ??= [];
+  }
+  for (const [id, deps] of Object.entries(dependsOn)) {
+    for (const dep of deps) (dependents[dep] ??= []).push(id);
+  }
+
+  // Onset from the oldest still-firing alert, as the backend does — a
+  // dependency only explains a dependent when it failed FIRST. orders-api
+  // turns at 14:04 and payments-db at 14:06, so the database does not get
+  // credited with a failure that predates it.
+  const failing = ESTATE.filter(([, , , health]) => health !== "healthy").map(([id]) => id);
+  const onset = new Map<string, number>();
+  for (const id of failing) {
+    const times = ALERTS.filter((a) => a.active && a.profileId === id).map((a) =>
+      Date.parse(a.firstSeen),
+    );
+    onset.set(id, times.length > 0 ? Math.min(...times) : NOW);
+  }
+  const TOLERANCE = 30_000;
+  const roots = failing.filter(
+    (id) =>
+      !dependsOn[id].some((dep) => {
+        const depAt = onset.get(dep);
+        return depAt !== undefined && depAt <= (onset.get(id) ?? NOW) + TOLERANCE;
+      }),
+  );
+
+  return { dependsOn, dependents, roots: roots.length > 0 ? roots : failing };
 }

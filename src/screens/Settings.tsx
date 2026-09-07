@@ -260,6 +260,7 @@ function Connections({
         <ProfileForm
           profile={editing}
           descriptor={catalog.get(editing.kind)}
+          siblings={profiles.filter((p) => p.id !== editing.id)}
           onClose={() => setEditing(null)}
           onSaved={(next) => {
             onConfigChange(next);
@@ -285,6 +286,7 @@ function blankProfile(descriptor: ServiceDescriptor): ConnectionProfile {
     hasSecret: false,
     enabled: true,
     pollIntervalSecs: descriptor.defaultPollSecs,
+    dependsOn: [],
     options,
     metadata: {},
   };
@@ -339,11 +341,14 @@ const TIERS: Criticality[] = ["tier_0", "tier_1", "tier_2", "tier_3"];
 function ProfileForm({
   profile,
   descriptor,
+  siblings,
   onClose,
   onSaved,
 }: {
   profile: ConnectionProfile;
   descriptor: ServiceDescriptor;
+  /** Everything else configured — the only things this can depend on. */
+  siblings: ConnectionProfile[];
   onClose: () => void;
   onSaved: (config: AppConfig) => void;
 }) {
@@ -504,6 +509,46 @@ function ProfileForm({
               />
               <span className="text-xs text-ink-4">seconds</span>
             </div>
+          </Field>
+
+          <Field
+            label="Depends on"
+            help="What this connection needs in order to work. Declared, not discovered — root watches connections, not the network between them. Used to tell which failure explains the others; what depends on this is derived, so only declare one direction."
+          >
+            {siblings.length === 0 ? (
+              <p className="text-xs text-ink-4">
+                Nothing else is configured yet. Dependencies can be added once there is more than
+                one connection.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {siblings.map((sibling) => {
+                  const on = draft.dependsOn.includes(sibling.id);
+                  return (
+                    <button
+                      key={sibling.id}
+                      type="button"
+                      onClick={() =>
+                        setDraft((d) => ({
+                          ...d,
+                          dependsOn: on
+                            ? d.dependsOn.filter((id) => id !== sibling.id)
+                            : [...d.dependsOn, sibling.id],
+                        }))
+                      }
+                      className={cx(
+                        "inline-flex h-[22px] items-center rounded-sm border px-2 font-mono text-2xs tracking-[.04em] transition-colors",
+                        on
+                          ? "border-accent bg-accent text-on-accent"
+                          : "border-line bg-panel text-ink-3 hover:border-accent hover:text-accent",
+                      )}
+                    >
+                      {sibling.name || sibling.id}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </Field>
         </Fieldset>
 

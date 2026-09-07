@@ -95,6 +95,19 @@ pub struct ConnectionProfile {
     pub poll_interval_secs: u64,
     #[serde(default)]
     pub options: ProfileOptions,
+    /// What this connection needs in order to work, as profile ids.
+    ///
+    /// DECLARED, never discovered: root watches connections, not the network
+    /// between them, so it cannot infer this and does not try. An edge here is
+    /// an assertion by whoever configured it — the same standing as a reported
+    /// deploy — and may be stale.
+    ///
+    /// Only this direction is stored. Dependents are derived, because
+    /// "what does this need?" is a question an operator can answer and "what
+    /// needs this?" is one they usually cannot. Unknown ids are ignored rather
+    /// than rejected, so deleting a profile cannot invalidate another's config.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
     /// Open, non-collector metadata for ownership, environment, runbooks, and
     /// future platform integrations. Keeping this separate from `options`
     /// means collectors never become coupled to the operating model.

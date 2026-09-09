@@ -12,6 +12,7 @@ pub mod commands;
 pub mod config;
 pub mod error;
 pub mod history;
+pub mod incidents;
 pub mod ingest;
 pub mod llm;
 pub mod model;

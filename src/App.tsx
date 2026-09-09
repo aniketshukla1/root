@@ -475,6 +475,7 @@ export default function App() {
         {view.name === "alerts" && (
           <Alerts
             alerts={dashboard?.alerts ?? []}
+            incidents={incidents}
             model={model}
             catalog={catalog}
             syncedAt={dashboard?.generatedAt}

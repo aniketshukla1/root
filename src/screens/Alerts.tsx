@@ -3,9 +3,10 @@ import { useMemo, useState } from "react";
 import type { Catalog } from "../catalog";
 import { markColor } from "../catalog";
 import { formatDateTime, formatRelative } from "../format";
+import { confidenceMeaning } from "../incident";
 import type { EstateModel } from "../model";
 import type { View } from "../nav";
-import type { Alert, AlertSeverity } from "../types";
+import type { Alert, AlertSeverity, Incident } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { compareAlerts, SEVERITY } from "../ui/AlertList";
 import {
@@ -22,10 +23,16 @@ import { AssistantIcon, SearchIcon } from "../ui/icons";
 
 type StateFilter = "open" | "acknowledged" | "resolved" | "all";
 
-/** Connection first, because "what is wrong with X" is the usual question. */
-type GroupBy = "connection" | "severity" | "team" | "none";
+/**
+ * Incident first, because it is the only grouping that answers "how many
+ * things are actually happening". Four rows on one connection are one problem;
+ * four rows across four connections may also be one problem. Connection,
+ * severity and team all answer narrower questions and stay available for them.
+ */
+type GroupBy = "incident" | "connection" | "severity" | "team" | "none";
 
 const GROUP_LABELS: Record<GroupBy, string> = {
+  incident: "Incident",
   connection: "Connection",
   severity: "Severity",
   team: "Team",
@@ -36,6 +43,8 @@ interface AlertGroup {
   key: string;
   label: string;
   kind?: string;
+  /** Present only when grouping by incident — drives the confidence tag. */
+  incident?: Incident;
   alerts: Alert[];
   unacknowledged: number;
   worst: AlertSeverity;
@@ -43,6 +52,7 @@ interface AlertGroup {
 
 export function Alerts({
   alerts,
+  incidents,
   model,
   catalog,
   syncedAt,
@@ -53,6 +63,7 @@ export function Alerts({
   onExplain,
 }: {
   alerts: Alert[];
+  incidents: Incident[];
   model: EstateModel;
   catalog: Catalog;
   syncedAt?: string;
@@ -64,8 +75,17 @@ export function Alerts({
 }) {
   const [state, setState] = useState<StateFilter>("open");
   const [severity, setSeverity] = useState<AlertSeverity | "any">("any");
-  const [groupBy, setGroupBy] = useState<GroupBy>("connection");
+  const [groupBy, setGroupBy] = useState<GroupBy>("incident");
   const [query, setQuery] = useState("");
+
+  /** Which incident an alert belongs to, from the backend's own grouping. */
+  const incidentOf = useMemo(() => {
+    const map = new Map<string, Incident>();
+    for (const incident of incidents) {
+      for (const alertId of incident.alertIds) map.set(alertId, incident);
+    }
+    return map;
+  }, [incidents]);
 
   const teamOf = useMemo(() => {
     const map = new Map<string, string>();
@@ -107,23 +127,35 @@ export function Alerts({
       ];
     }
 
-    const buckets = new Map<string, { label: string; kind?: string; alerts: Alert[] }>();
+    const buckets = new Map<
+      string,
+      { label: string; kind?: string; incident?: Incident; alerts: Alert[] }
+    >();
     for (const alert of visible) {
+      const incident = incidentOf.get(alert.id);
+      // An alert with no incident is not an error: incidents cover the ACTIVE
+      // set, so a resolved alert being read in the history has none. It gets
+      // its own bucket rather than being dropped or silently folded in.
       const key =
-        groupBy === "connection"
-          ? alert.profileId
-          : groupBy === "severity"
-            ? alert.severity
-            : (teamOf.get(alert.profileId) ?? "Unassigned");
+        groupBy === "incident"
+          ? (incident?.id ?? `unattached:${alert.profileId}`)
+          : groupBy === "connection"
+            ? alert.profileId
+            : groupBy === "severity"
+              ? alert.severity
+              : (teamOf.get(alert.profileId) ?? "Unassigned");
       const label =
-        groupBy === "connection"
-          ? alert.profileName
-          : groupBy === "severity"
-            ? SEVERITY[alert.severity].label
-            : key;
+        groupBy === "incident"
+          ? (incident?.title ?? `${alert.profileName} — no longer firing`)
+          : groupBy === "connection"
+            ? alert.profileName
+            : groupBy === "severity"
+              ? SEVERITY[alert.severity].label
+              : key;
       const bucket = buckets.get(key) ?? {
         label,
-        kind: groupBy === "connection" ? alert.kind : undefined,
+        kind: groupBy === "connection" || groupBy === "incident" ? alert.kind : undefined,
+        incident: groupBy === "incident" ? incident : undefined,
         alerts: [],
       };
       bucket.alerts.push(alert);
@@ -135,6 +167,7 @@ export function Alerts({
         key,
         label: bucket.label,
         kind: bucket.kind,
+        incident: bucket.incident,
         alerts: bucket.alerts,
         unacknowledged: bucket.alerts.filter((a) => !a.acknowledged).length,
         worst: bucket.alerts.reduce<AlertSeverity>(
@@ -151,7 +184,7 @@ export function Alerts({
           b.alerts.length - a.alerts.length ||
           a.label.localeCompare(b.label),
       );
-  }, [visible, groupBy, teamOf]);
+  }, [visible, groupBy, teamOf, incidentOf]);
 
   const tally = useMemo(
     () => ({
@@ -306,6 +339,14 @@ export function Alerts({
                             >
                               {group.label}
                             </button>
+                          ) : groupBy === "incident" && group.incident ? (
+                            <button
+                              onClick={() => onNavigate({ name: "overview" })}
+                              className="truncate text-xs font-semibold text-ink transition-colors hover:text-accent"
+                              title={group.label}
+                            >
+                              {group.label}
+                            </button>
                           ) : (
                             <h2 className="text-xs font-semibold text-ink">{group.label}</h2>
                           )}
@@ -313,6 +354,38 @@ export function Alerts({
                           {group.unacknowledged > 0 && (
                             <Tag color="var(--color-warn)">
                               {group.unacknowledged} unacknowledged
+                            </Tag>
+                          )}
+                          {/* Grouping is a claim, so it carries its own
+                              caveat wherever it is shown. A merged row an
+                              operator cannot argue with is one they cannot
+                              correct. */}
+                          {group.incident && group.incident.profileIds.length > 1 && (
+                            <span className="num text-2xs text-ink-4">
+                              across {group.incident.profileIds.length} connections
+                            </span>
+                          )}
+                          {/* The filter can hide part of an incident, and a
+                              group that shows three of five rows without
+                              saying so lets an operator believe they have
+                              seen the whole thing. */}
+                          {group.incident &&
+                            group.incident.alertIds.length > group.alerts.length && (
+                              <span className="num text-2xs text-ink-4">
+                                {group.incident.alertIds.length - group.alerts.length} more hidden
+                                by the filter
+                              </span>
+                            )}
+                          {group.incident && group.incident.confidence !== "high" && (
+                            <Tag
+                              color={
+                                group.incident.confidence === "low"
+                                  ? "var(--color-serious)"
+                                  : "var(--color-warn)"
+                              }
+                              title={confidenceMeaning(group.incident)}
+                            >
+                              {group.incident.confidence.toUpperCase()} CONFIDENCE
                             </Tag>
                           )}
                           {groupBy === "connection" && group.kind && (

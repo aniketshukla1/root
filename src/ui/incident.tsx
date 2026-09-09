@@ -105,18 +105,20 @@ export function IncidentHero({
       className="panel flex shrink-0 flex-col overflow-hidden"
       style={{ borderLeft: `2px solid ${severityColor(incident)}` }}
     >
-      <div className="flex items-start gap-3.5 px-4 pt-3.5 pb-3">
-        <span className="mt-1">
-          <Dot health={incident.health} size={13} />
-        </span>
-
+      <div className="flex flex-col items-start gap-3.5 px-4 pt-3.5 pb-3 @2xl:flex-row">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
-            <span
-              className="font-mono text-2xs tracking-[.16em] uppercase"
-              style={{ color: severityColor(incident) }}
-            >
-              Incident
+            {/* The dot rides with the label rather than sitting in a column of
+                its own: when the dock narrows this panel and the row stacks, a
+                lone dot on its own line reads as a bullet for nothing. */}
+            <span className="flex items-center gap-2">
+              <Dot health={incident.health} size={11} />
+              <span
+                className="font-mono text-2xs tracking-[.16em] uppercase"
+                style={{ color: severityColor(incident) }}
+              >
+                Incident
+              </span>
             </span>
             <span className="num text-2xs text-ink-4">
               started {clock(incident.started)} · {formatRelative(incident.started).replace(" ago", "")}
@@ -132,7 +134,7 @@ export function IncidentHero({
           <h2
             className={cx(
               "mt-2 leading-[1.15] font-medium tracking-[-.025em] text-ink",
-              compact ? "text-[17px]" : "text-[25px]",
+              compact ? "text-[17px]" : "text-[19px] @2xl:text-[25px]",
             )}
           >
             {incident.title}
@@ -143,7 +145,7 @@ export function IncidentHero({
           </p>
         </div>
 
-        <div className="flex w-[168px] shrink-0 flex-col gap-1.5">
+        <div className="flex w-full shrink-0 flex-col gap-1.5 @2xl:w-[168px]">
           <Button variant="primary" onClick={() => actions.onOpenService(root)}>
             Open {rootService?.snapshot.profileName ?? root}
           </Button>
@@ -159,7 +161,7 @@ export function IncidentHero({
         </div>
       </div>
 
-      <div className="grid gap-px border-t border-line bg-line md:grid-cols-3">
+      <div className="grid gap-px border-t border-line bg-line @4xl:grid-cols-3">
         <ChangeCell change={change} catalog={context.catalog} incident={incident} />
         <RadiusCell radius={radius} onOpen={actions.onOpenService} />
         <ConfidenceCell incident={incident} spots={spots} />
@@ -709,7 +711,7 @@ export function StormBanner({
 
   return (
     <section
-      className="panel flex shrink-0 items-start gap-3.5 px-4 py-3"
+      className="panel flex shrink-0 flex-col items-start gap-3.5 px-4 py-3 @2xl:flex-row"
       style={{ borderLeft: "2px solid var(--color-serious)" }}
     >
       <div className="min-w-0 flex-1">
@@ -730,7 +732,7 @@ export function StormBanner({
           split.
         </p>
       </div>
-      <div className="flex w-[168px] shrink-0 flex-col gap-1.5">
+      <div className="flex w-full shrink-0 flex-col gap-1.5 @2xl:w-[168px]">
         <Button variant="primary" onClick={() => onCorrelate(incident.started)}>
           Correlate the moment
         </Button>

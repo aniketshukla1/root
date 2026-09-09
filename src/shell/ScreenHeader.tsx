@@ -90,7 +90,12 @@ export function Screen({
   return (
     <div
       className={cx(
-        "min-h-0 flex-1",
+        // A container, not just a box. The assistant dock takes real width off
+        // this column, and viewport breakpoints cannot see that — they kept
+        // reporting a wide window while the content had 300px to live in, and
+        // headings wrapped one word per line. Everything inside sizes itself
+        // with @ variants against THIS element instead.
+        "@container min-h-0 flex-1",
         scroll ? "overflow-y-auto" : "overflow-hidden",
         padded && "p-4",
         className,

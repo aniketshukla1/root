@@ -143,7 +143,7 @@ export function Overview({
         <Screen>
           <div className="flex flex-col gap-3">
             <div className="panel h-[240px] animate-pulse opacity-40" />
-            <div className="grid gap-3 xl:grid-cols-2">
+            <div className="grid gap-3 @4xl:grid-cols-2">
               <div className="panel h-[200px] animate-pulse opacity-30" />
               <div className="panel h-[200px] animate-pulse opacity-30" />
             </div>
@@ -206,7 +206,7 @@ export function Overview({
             )}
 
             {state === "triage" && shown.length > 1 && (
-              <div className="grid gap-3 xl:grid-cols-[340px_1fr]">
+              <div className="grid gap-3 @5xl:grid-cols-[340px_1fr]">
                 <Panel
                   title={`${shown.length} incidents`}
                   subtitle={queueSubtitle(shown)}
@@ -236,7 +236,7 @@ export function Overview({
             )}
 
             {selected && (
-              <div className="grid min-h-[280px] gap-3 xl:grid-cols-[1.35fr_1fr]">
+              <div className="grid min-h-[280px] gap-3 @5xl:grid-cols-[1.35fr_1fr]">
                 <PropagationPanel
                   incident={selected}
                   context={context}
@@ -269,7 +269,7 @@ export function Overview({
           />
         </Panel>
 
-        <div className="grid gap-3 xl:grid-cols-[3fr_2fr]">
+        <div className="grid gap-3 @5xl:grid-cols-[3fr_2fr]">
           <AlertsPanel
             alerts={model.alerts}
             catalog={catalog}
@@ -385,7 +385,7 @@ function QuietState({
 
   return (
     <>
-      <section className="panel flex shrink-0 items-start gap-4 px-4 py-4">
+      <section className="panel flex shrink-0 flex-col items-start gap-4 px-4 py-4 @2xl:flex-row">
         <span className="mt-1" style={{ color: "var(--color-ok)" }}>
           <CheckIcon size={20} />
         </span>
@@ -403,13 +403,13 @@ function QuietState({
             two things that decide whether this lasts.
           </p>
         </div>
-        <div className="flex w-[168px] shrink-0 flex-col gap-1.5">
+        <div className="flex w-full shrink-0 flex-col gap-1.5 @2xl:w-[168px]">
           <Button onClick={() => onNavigate({ name: "metrics" })}>Open metrics</Button>
           <Button onClick={() => onNavigate({ name: "logs" })}>Open logs</Button>
         </div>
       </section>
 
-      <div className="grid min-h-[240px] gap-3 xl:grid-cols-[1fr_340px]">
+      <div className="grid min-h-[240px] gap-3 @4xl:grid-cols-[1fr_340px]">
         <Panel
           title="Closest to a limit"
           subtitle={

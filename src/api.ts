@@ -38,7 +38,8 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_topology: () => fixtures.topology(),
   get_incidents: () => fixtures.incidents(),
   get_change_events: () => fixtures.CHANGES,
-  correlate: ({ at }) => ({ at: at ?? new Date().toISOString(), lanes: [] }),
+  correlate: ({ at, windowSecs }) =>
+    fixtures.correlation((at as string) ?? new Date().toISOString(), (windowSecs as number) ?? 120),
   pending_confirmations: () => [],
   get_ingest_settings: () => ({ enabled: false, port: 7717, hasToken: false }),
   secret_store_available: () => true,

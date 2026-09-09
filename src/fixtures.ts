@@ -15,10 +15,11 @@
 
 import type {
   Alert,
-  ChangeEvent,
   AlertSeverity,
   AppConfig,
+  ChangeEvent,
   Confidence,
+  Correlation,
   DashboardState,
   GroupingReason,
   Health,
@@ -66,6 +67,17 @@ function series(
     if (shape === "spike" && i > n * 0.72) v += base * 0.06;
     v = Math.max(base * 0.1, v);
     out.push({ t: iso((n - i) * 15_000), v: Number(v.toFixed(2)) });
+  }
+
+  // The walk starts at `base` and drifts, which left the LAST point — the one
+  // labelled "now" — well away from the value the snapshot reports for now.
+  // Memory read 7.4 GB on the card and 14.8 GB in the same metric's series.
+  // A history is a history OF the current value, so it is rescaled to land on
+  // it; the shape survives, the endpoint stops disagreeing with the estate.
+  const last = out[out.length - 1]?.v ?? base;
+  if (last > 0 && Math.abs(last - base) > base * 0.001) {
+    const factor = base / last;
+    for (const point of out) point.v = Number((point.v * factor).toFixed(2));
   }
   return out;
 }
@@ -380,7 +392,9 @@ export const DASHBOARD: DashboardState = {
 };
 
 export function seriesFor(profileId: string): MetricSeries[] {
-  return (METRICS[profileId] ?? []).map(([key, label, value, unit, warnAbove], i) => {
+  // scenarioMetrics, not METRICS: a connection the scenario made healthy must
+  // not still be plotting a series that breaches its own threshold.
+  return scenarioMetrics(profileId).map(([key, label, value, unit, warnAbove], i) => {
     const shape = key === "memory" || key === "lag" || key === "heap" ? "rise"
       : key === "error_rate" ? "spike" : key === "running" ? "fall" : "flat";
     const points = series(60, profileId.length * 31 + i * 7, value, shape);
@@ -830,4 +844,65 @@ export function incidents(): Incident[] {
       b.profileIds.length - a.profileIds.length ||
       Date.parse(a.started) - Date.parse(b.started),
   );
+}
+
+/**
+ * What every connection was doing around one moment.
+ *
+ * The previous fixture returned `{ at, lanes: [] }` — not a `Correlation` at
+ * all, and untyped, so the Correlate screen read `data.alerts.length` on
+ * undefined and the app went white. It is typed now, for the same reason
+ * `CHANGES` is: a fixture that lies about its shape does not fail loudly, it
+ * fails on whichever screen happens to read the missing field.
+ *
+ * Lanes carry only connections with something to say in the window. A
+ * connection that was quiet is not a lane with zeroes in it — it is absent,
+ * and the screen reports how many were absent rather than padding the list.
+ */
+export function correlation(at: string, windowSecs = 120): Correlation {
+  const center = Date.parse(at);
+  const half = (windowSecs * 1000) / 2;
+  const from = center - half;
+  const to = center + half;
+
+  const lanes = SNAPSHOTS.map((snapshot) => {
+    const events = LOGS.filter(
+      (log) =>
+        log.profileId === snapshot.profileId &&
+        Date.parse(log.timestamp) >= from &&
+        Date.parse(log.timestamp) <= to,
+    );
+
+    // Only metrics that actually moved. A movement of nought per cent is not
+    // evidence, and listing it would bury the ones that are.
+    const movements = seriesFor(snapshot.profileId)
+      .filter((s) => s.changePct !== undefined && Math.abs(s.changePct) >= 5)
+      .map((s) => ({
+        key: s.key,
+        label: s.label,
+        unit: s.unit,
+        from: s.points[0]?.v ?? s.latest,
+        to: s.latest,
+        changePct: s.changePct ?? 0,
+      }))
+      .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+
+    return {
+      profileId: snapshot.profileId,
+      profileName: snapshot.profileName,
+      kind: snapshot.kind,
+      total: events.length,
+      errorCount: events.filter((e) => e.level === "error" || e.level === "fatal").length,
+      events: events.slice(0, 12),
+      movements: movements.slice(0, 4),
+    };
+  }).filter((lane) => lane.total > 0 || lane.movements.length > 0);
+
+  return {
+    center: new Date(center).toISOString(),
+    from: new Date(from).toISOString(),
+    to: new Date(to).toISOString(),
+    lanes,
+    alerts: ALERTS.filter((a) => Date.parse(a.firstSeen) <= to),
+  };
 }

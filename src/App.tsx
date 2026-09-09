@@ -6,20 +6,25 @@ import { listen } from "./events";
 import { api, errorMessage } from "./api";
 import { Catalog, EMPTY_CATALOG } from "./catalog";
 import { buildModel } from "./model";
+import { leadIncident } from "./incident";
 import type { Entity, Issue } from "./model";
 import type { ExplainTarget } from "./explain";
 import type { View } from "./nav";
 import type {
   Alert,
   AppConfig,
+  ChangeEvent,
   ConnectionStatusEvent,
+  Correlation,
   DashboardState,
   HealthSnapshot,
   HealthRun,
   HistogramBucket,
+  Incident,
   LogEvent,
   MetricSeries,
   PendingConfirmation,
+  TopologyView,
 } from "./types";
 import { GLOBAL_STREAMS } from "./types";
 
@@ -53,6 +58,9 @@ const HISTORY_POLL_MS = 15000;
 const HISTOGRAM_BUCKETS = 64;
 const CONVERSATION_ID = "main";
 
+/** Until the first fetch lands, an estate with no declared edges — not a lie. */
+const EMPTY_TOPOLOGY: TopologyView = { dependsOn: {}, dependents: {}, roots: [] };
+
 export default function App() {
   const [view, setView] = useState<View>({ name: "overview" });
   const [collapsed, setCollapsed] = useState(() => {
@@ -70,11 +78,19 @@ export default function App() {
   const [history, setHistory] = useState<Record<string, MetricSeries[]>>({});
   const [buckets, setBuckets] = useState<HistogramBucket[]>([]);
   const [healthRuns, setHealthRuns] = useState<Record<string, HealthRun[]>>({});
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [changes, setChanges] = useState<ChangeEvent[]>([]);
+  const [topology, setTopology] = useState<TopologyView>(EMPTY_TOPOLOGY);
+  const [onsetCorrelation, setOnsetCorrelation] = useState<Correlation | undefined>();
   /** The dock is one surface with a subject, not a second chat window. */
   const [explain, setExplain] = useState<ExplainTarget | null>(null);
   const askAssistant = useCallback(() => setExplain({ kind: "ask" }), []);
   const explainAlert = useCallback((alert: Alert) => setExplain({ kind: "alert", alert }), []);
   const explainLog = useCallback((event: LogEvent) => setExplain({ kind: "log", event }), []);
+  const explainIncident = useCallback(
+    (incident: Incident) => setExplain({ kind: "incident", incident }),
+    [],
+  );
 
   /** What a cell in the heatmap does when you click it. */
   const [inspecting, setInspecting] = useState<{ entity: Entity; issue?: Issue } | null>(null);
@@ -158,6 +174,34 @@ export default function App() {
     }
   }, [minutes]);
 
+  /**
+   * Incidents are derived by the backend on every call rather than stored, so
+   * this is a read of the present rather than a sync — there is nothing to
+   * reconcile and nothing to go stale. It rides the dashboard cadence because
+   * an incident IS the alert set, and the two disagreeing on screen for five
+   * seconds is exactly the kind of flicker that costs trust.
+   */
+  const refreshIncidents = useCallback(async () => {
+    try {
+      setIncidents(await api.getIncidents());
+    } catch (error) {
+      console.error("incident load failed:", errorMessage(error));
+    }
+  }, []);
+
+  const refreshContext = useCallback(async () => {
+    try {
+      const [nextChanges, nextTopology] = await Promise.all([
+        api.getChangeEvents(undefined, Math.max(minutes, 180)),
+        api.getTopology(),
+      ]);
+      setChanges(nextChanges);
+      setTopology(nextTopology);
+    } catch (error) {
+      console.error("incident context load failed:", errorMessage(error));
+    }
+  }, [minutes]);
+
   const refreshHistogram = useCallback(async () => {
     try {
       setBuckets(
@@ -172,6 +216,7 @@ export default function App() {
   useEffect(() => {
     refreshDashboard();
     refreshConfig();
+    refreshIncidents();
     api
       .getServiceCatalog()
       .then((descriptors) => setCatalog(new Catalog(descriptors)))
@@ -181,7 +226,7 @@ export default function App() {
       .then(setLogs)
       .catch((e) => console.error("log load failed:", errorMessage(e)));
     api.pendingConfirmations().then(setConfirmations).catch(() => undefined);
-  }, [refreshDashboard, refreshConfig]);
+  }, [refreshDashboard, refreshConfig, refreshIncidents]);
 
   // Re-runs whenever the window changes, which is what makes the range
   // controls on Metrics and Logs actually refetch rather than just re-slice.
@@ -189,20 +234,56 @@ export default function App() {
     refreshHistory();
     refreshHealthRuns();
     refreshHistogram();
-  }, [refreshHistory, refreshHealthRuns, refreshHistogram]);
+    refreshContext();
+  }, [refreshHistory, refreshHealthRuns, refreshHistogram, refreshContext]);
 
   useEffect(() => {
-    const dashboardTimer = setInterval(refreshDashboard, DASHBOARD_POLL_MS);
+    const dashboardTimer = setInterval(() => {
+      refreshDashboard();
+      refreshIncidents();
+    }, DASHBOARD_POLL_MS);
     const historyTimer = setInterval(() => {
       refreshHistory();
-    refreshHealthRuns();
+      refreshHealthRuns();
       refreshHistogram();
+      refreshContext();
     }, HISTORY_POLL_MS);
     return () => {
       clearInterval(dashboardTimer);
       clearInterval(historyTimer);
     };
-  }, [refreshDashboard, refreshHistory, refreshHealthRuns, refreshHistogram]);
+  }, [
+    refreshDashboard,
+    refreshIncidents,
+    refreshHistory,
+    refreshHealthRuns,
+    refreshHistogram,
+    refreshContext,
+  ]);
+
+  /**
+   * What moved when the incident started, from the same correlation the
+   * Correlate screen uses. Keyed on the onset rather than the incident id so
+   * it is fetched once per actual event: members joining an incident do not
+   * change what happened at 14:04.
+   */
+  const onsetAt = leadIncident(incidents)?.started;
+  useEffect(() => {
+    if (!onsetAt) {
+      setOnsetCorrelation(undefined);
+      return;
+    }
+    let live = true;
+    api
+      .correlate(onsetAt)
+      .then((result) => {
+        if (live) setOnsetCorrelation(result);
+      })
+      .catch((e) => console.error("onset correlation failed:", errorMessage(e)));
+    return () => {
+      live = false;
+    };
+  }, [onsetAt]);
 
   // ⌘K for the palette, ⌘J for the assistant — the two things you reach for
   // without deciding to, from anywhere.
@@ -358,8 +439,13 @@ export default function App() {
           <Overview
             model={model}
             catalog={catalog}
+            incidents={incidents}
+            changes={changes}
+            topology={topology}
+            correlation={onsetCorrelation}
             buckets={buckets}
             healthRuns={healthRuns}
+            history={history}
             logs={logs}
             loading={loading}
             minutes={minutes}
@@ -368,6 +454,7 @@ export default function App() {
             onRefresh={refreshAll}
             onAcknowledge={acknowledge}
             onAsk={askAssistant}
+            onAskIncident={explainIncident}
             onExplain={explainAlert}
             onSelectComponent={selectComponent}
           />

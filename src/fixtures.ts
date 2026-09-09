@@ -15,6 +15,7 @@
 
 import type {
   Alert,
+  ChangeEvent,
   AlertSeverity,
   AppConfig,
   Confidence,
@@ -92,7 +93,30 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
 type Spec = [id: string, name: string, kind: string, health: HealthSnapshot["health"],
   summary: string, team: string, parts: number];
 
-const ESTATE: Spec[] = [
+/**
+ * Which estate the dev fixtures serve, from `?estate=` in the URL.
+ *
+ * The home screen has four states and only one of them is reachable from a
+ * single hard-coded estate, which means three of them could never be looked at
+ * while being designed. This exists so all four can be. It lives entirely in
+ * the fixture layer: the packaged app has `__TAURI_INTERNALS__` and never
+ * reaches any of this code, so there is no way to put the real product into a
+ * state the real estate is not in.
+ *
+ *   ?estate=quiet     nothing alerting
+ *   ?estate=incident  one story, several connections
+ *   ?estate=triage    several unrelated incidents (the default)
+ *   ?estate=storm     many connections turning at once
+ */
+export type Scenario = "quiet" | "incident" | "triage" | "storm";
+
+export const SCENARIO: Scenario = (() => {
+  if (typeof window === "undefined") return "triage";
+  const asked = new URLSearchParams(window.location.search).get("estate");
+  return asked === "quiet" || asked === "incident" || asked === "storm" ? asked : "triage";
+})();
+
+const BASE_ESTATE: Spec[] = [
   ["orders-api", "orders-api", "docker", "down", "3 of 8 containers exited", "payments", 8],
   ["payments-db", "payments-db", "postgres", "degraded", "replication lag 42s on replica-2", "payments", 6],
   ["search-cluster", "search-cluster", "elasticsearch", "degraded", "yellow · 2 unassigned shards", "search", 18],
@@ -106,6 +130,47 @@ const ESTATE: Spec[] = [
   ["metrics-store", "metrics-store", "prometheus", "healthy", "42 targets up · 0 down", "platform", 42],
   ["status-page", "status-page", "http_endpoint", "healthy", "200 in 42ms · body matched", "platform", 1],
 ];
+
+/** Health overrides per scenario; anything unnamed keeps its base health. */
+const SCENARIO_HEALTH: Record<Scenario, Record<string, HealthSnapshot["health"]>> = {
+  quiet: {
+    "orders-api": "healthy",
+    "payments-db": "healthy",
+    "search-cluster": "healthy",
+    "ci-pipeline": "healthy",
+    "queue-broker": "healthy",
+  },
+  incident: { "search-cluster": "healthy", "ci-pipeline": "healthy" },
+  triage: {},
+  storm: {
+    "edge-proxy": "down",
+    "checkout-web": "down",
+    "events-bus": "degraded",
+    "session-cache": "down",
+    "billing-mongo": "degraded",
+  },
+};
+
+const SCENARIO_SUMMARY: Record<string, string> = {
+  healthy: "reporting normally on its last poll",
+};
+
+/**
+ * The ids this scenario moved. Everything downstream — health runs, metric
+ * values — follows from this one set rather than from a per-scenario table
+ * per fixture, so a scenario cannot say "nothing is wrong" in the header while
+ * a metric two panels down sits at four times its declared limit.
+ */
+const OVERRIDDEN = new Set(Object.keys(SCENARIO_HEALTH[SCENARIO]));
+
+const ESTATE: Spec[] = BASE_ESTATE.map((spec) => {
+  const override = SCENARIO_HEALTH[SCENARIO][spec[0]];
+  if (!override || override === spec[3]) return spec;
+  const next: Spec = [...spec];
+  next[3] = override;
+  next[4] = SCENARIO_SUMMARY[override] ?? spec[4];
+  return next;
+});
 
 const METRICS: Record<string, [string, string, number, string, number?][]> = {
   "orders-api": [["cpu", "CPU", 62, "percent", 75], ["memory", "Memory", 7945689498, "bytes", 8589934592],
@@ -203,6 +268,22 @@ function rowsFor(spec: Spec): HealthSnapshot["sections"] {
   });
 }
 
+/**
+ * A connection the scenario made healthy must not still be reporting a metric
+ * over its own threshold — that is the header and the panel disagreeing, which
+ * is exactly the kind of quiet lie a monitoring tool cannot afford. Brought to
+ * sixty per cent of the limit: comfortably inside, not suspiciously zero.
+ */
+function scenarioMetrics(id: string): [string, string, number, string, number?][] {
+  const base = METRICS[id] ?? [];
+  if (SCENARIO_HEALTH[SCENARIO][id] !== "healthy") return base;
+  return base.map((metric) => {
+    const [key, label, value, unit, warnAbove] = metric;
+    if (warnAbove === undefined || value <= warnAbove) return metric;
+    return [key, label, Number((warnAbove * 0.6).toFixed(2)), unit, warnAbove];
+  });
+}
+
 export const SNAPSHOTS: HealthSnapshot[] = ESTATE.map((spec) => {
   const [id, name, kind, health, summary] = spec;
   return {
@@ -211,7 +292,7 @@ export const SNAPSHOTS: HealthSnapshot[] = ESTATE.map((spec) => {
     kind,
     health,
     summary,
-    metrics: (METRICS[id] ?? []).map(([key, label, value, unit, warnAbove]) => ({
+    metrics: scenarioMetrics(id).map(([key, label, value, unit, warnAbove]) => ({
       key, label, value, unit: unit as never, warnAbove,
     })),
     sections: rowsFor(spec),
@@ -221,7 +302,7 @@ export const SNAPSHOTS: HealthSnapshot[] = ESTATE.map((spec) => {
   };
 });
 
-export const ALERTS: Alert[] = [
+const BASE_ALERTS: Alert[] = [
   { id: "a1", fingerprint: "orders-api/containers", profileId: "orders-api", profileName: "orders-api",
     kind: "docker", severity: "critical", title: "3 containers exited with code 137",
     detail: "orders-worker-3, orders-worker-7, orders-worker-8 · reason=OOMKilled · memory limit 8G",
@@ -243,6 +324,50 @@ export const ALERTS: Alert[] = [
     component: "orders-api-release", firstSeen: iso(38 * 60_000), lastSeen: iso(38 * 60_000),
     active: true, acknowledged: false },
 ];
+
+/**
+ * A storm: five connections turning inside ninety seconds with nothing
+ * declared between them. This is the shape the correlator is most likely to
+ * get wrong, so it is the one most worth being able to look at.
+ */
+const STORM_ALERTS: Alert[] = [
+  ["edge-proxy", "nginx", "12 upstreams unreachable", "connect() failed · all backends refused"],
+  ["checkout-web", "kubernetes", "18 pods not ready", "readiness probe timeout on 3 nodes"],
+  ["session-cache", "redis", "connection refused on 6379", "no route to host"],
+  ["events-bus", "kafka", "consumer group rebalancing", "3 brokers unreachable"],
+  ["billing-mongo", "mongodb", "replica set has no primary", "election in progress · 2 members visible"],
+].map(([profileId, kind, title, detail], i) => ({
+  id: `s${i + 1}`,
+  fingerprint: `${profileId}/reachability`,
+  profileId: profileId as string,
+  profileName: profileId as string,
+  kind: kind as string,
+  severity: (i < 3 ? "critical" : "warning") as Alert["severity"],
+  title: title as string,
+  detail: detail as string,
+  component: undefined,
+  // Inside STORM_WINDOW of each other, which is what makes them a storm
+  // rather than five things that happened this afternoon.
+  firstSeen: iso(180_000 + i * 12_000),
+  lastSeen: iso(20_000),
+  active: true,
+  acknowledged: false,
+}));
+
+export const ALERTS: Alert[] = (() => {
+  switch (SCENARIO) {
+    case "quiet":
+      return [];
+    case "incident":
+      // Only the orders-api story: its OOM, and the lag it pressures into the
+      // database four minutes later.
+      return BASE_ALERTS.filter((a) => ["a1", "a2"].includes(a.id));
+    case "storm":
+      return STORM_ALERTS;
+    case "triage":
+      return BASE_ALERTS;
+  }
+})();
 
 export const DASHBOARD: DashboardState = {
   snapshots: SNAPSHOTS,
@@ -342,18 +467,52 @@ export const CONFIG: AppConfig = {
 };
 
 /** One observed deploy in the window, so charts have a marker to render. */
-export const CHANGES = [
+/**
+ * Typed, so it cannot drift from `ChangeEvent` again — the previous shape here
+ * carried `reported: false` where the type wants `source`, and the UI rendered
+ * an empty tag rather than failing to compile.
+ */
+export const CHANGES: ChangeEvent[] = [
   {
     id: "c1",
     profileId: "orders-api",
     profileName: "orders-api",
     kind: "docker",
+    change: "deployed",
+    source: "observed",
+    section: "containers",
     component: "worker",
-    change: "deployed" as const,
     from: "2.14.2",
     to: "2.14.3",
     at: iso(22 * 60_000),
-    reported: false,
+    summary: "orders-api worker 2.14.2 → 2.14.3",
+  },
+  {
+    id: "c2",
+    profileId: "checkout-web",
+    profileName: "checkout-web",
+    kind: "kubernetes",
+    change: "deployed",
+    source: "reported",
+    section: "deployments",
+    component: "checkout",
+    from: "1.9.0",
+    to: "1.9.1",
+    at: iso(74 * 60_000),
+    summary: "checkout-web checkout 1.9.0 → 1.9.1",
+  },
+  {
+    id: "c3",
+    profileId: "session-cache",
+    profileName: "session-cache",
+    kind: "redis",
+    change: "appeared",
+    source: "observed",
+    section: "replicas",
+    component: "replica-3",
+    to: "present",
+    at: iso(96 * 60_000),
+    summary: "session-cache replica-3 appeared",
   },
 ];
 
@@ -373,7 +532,7 @@ export function healthRuns(): Record<string, import("./types").HealthRun[]> {
       to: at(to),
     }));
 
-  return {
+  const scripted: Record<string, import("./types").HealthRun[]> = {
     "orders-api": runs([["healthy", 0, 0.7], ["degraded", 0.7, 0.78], ["down", 0.78, 1]]),
     "payments-db": runs([["healthy", 0, 0.77], ["degraded", 0.77, 1]]),
     "search-cluster": runs([["healthy", 0, 0.57], ["degraded", 0.57, 1]]),
@@ -391,6 +550,19 @@ export function healthRuns(): Record<string, import("./types").HealthRun[]> {
     "metrics-store": runs([["healthy", 0, 1]]),
     "status-page": runs([["healthy", 0, 1]]),
   };
+
+  // A connection the scenario moved gets runs that agree with where it moved
+  // to: healthy for the window, then the new state from about the moment the
+  // scenario's alerts begin. Connections the scenario left alone keep their
+  // scripted history, including checkout-web's deliberate flap-and-recover.
+  for (const id of OVERRIDDEN) {
+    const health = SCENARIO_HEALTH[SCENARIO][id];
+    scripted[id] =
+      health === "healthy"
+        ? runs([["healthy", 0, 1]])
+        : runs([["healthy", 0, 0.94], [health, 0.94, 1]]);
+  }
+  return scripted;
 }
 
 /** A grounded answer, so the dock can be exercised without a model configured. */
@@ -489,6 +661,7 @@ export function topology(): import("./types").TopologyView {
  */
 export function incidents(): Incident[] {
   const ONSET_TOLERANCE = 30_000;
+  const PRESSURE_WINDOW = 15 * 60_000;
   const STORM_WINDOW = 90_000;
   const STORM_MIN = 4;
 
@@ -523,14 +696,27 @@ export function incidents(): Incident[] {
   for (const [dependent, started] of onset) {
     for (const dep of DEPENDS_ON[dependent] ?? []) {
       const depStarted = onset.get(dep);
-      if (depStarted !== undefined && depStarted <= started + ONSET_TOLERANCE) {
+      if (depStarted === undefined) continue;
+      if (depStarted <= started + ONSET_TOLERANCE) {
         union(dependent, dep);
         reasons.push({ kind: "dependencyFailedFirst", root: dep, dependent });
+      } else if (depStarted <= started + PRESSURE_WINDOW) {
+        union(dependent, dep);
+        reasons.push({ kind: "dependentPressuredIt", origin: dependent, pressured: dep });
       }
     }
   }
 
-  const byTime = [...onset].sort((a, b) => a[1] - b[1]);
+  // Storms are counted in GROUPS, not connections: a declared chain that
+  // failed for a known reason is one participant, not four coincidences.
+  const groupOnset = new Map<string, [string, number]>();
+  for (const [id, started] of onset) {
+    const root = find(id);
+    const slot = groupOnset.get(root);
+    if (!slot || started < slot[1]) groupOnset.set(root, [id, started]);
+  }
+
+  const byTime = [...groupOnset.values()].sort((a, b) => a[1] - b[1]);
   let storm: string[] = [];
   for (let i = 0; i < byTime.length; i++) {
     const window: string[] = [];
@@ -566,7 +752,7 @@ export function incidents(): Incident[] {
       .reduce(worst, "unknown" as Health);
     const started = Math.min(...mine.map((a) => Date.parse(a.firstSeen)));
 
-    const roots = members.filter(
+    let roots = members.filter(
       (id) =>
         !(DEPENDS_ON[id] ?? []).some((dep) => {
           const depAt = onset.get(dep);
@@ -581,16 +767,36 @@ export function incidents(): Incident[] {
         ? members.includes(r.profileId)
         : r.kind === "dependencyFailedFirst"
           ? members.includes(r.root) && members.includes(r.dependent)
-          : stormed && members.length > 1,
+          : r.kind === "dependentPressuredIt"
+            ? members.includes(r.origin) && members.includes(r.pressured)
+            : stormed && members.length > 1,
     );
 
-    const heldOnlyByTiming =
-      members.length > 1 && grouping.every((r) => r.kind === "simultaneousOnset");
-    const confidence: Confidence = heldOnlyByTiming
+    // Reading an edge backwards leaves both ends looking like origins, so when
+    // declared edges are what bind the incident the clock settles it.
+    const boundByEdges = grouping.some(
+      (r) => r.kind === "dependencyFailedFirst" || r.kind === "dependentPressuredIt",
+    );
+    if (boundByEdges && roots.length > 1) {
+      const first = Math.min(...roots.map((id) => onset.get(id) ?? started));
+      roots = roots.filter((id) => (onset.get(id) ?? started) <= first + ONSET_TOLERANCE);
+    }
+    const onlyPressure =
+      boundByEdges && !grouping.some((r) => r.kind === "dependencyFailedFirst");
+
+    // Partly, not only: a chain swept into a storm has members nothing
+    // explains, so the whole grouping is what needs checking.
+    const heldPartlyByTiming =
+      members.length > 1 && grouping.some((r) => r.kind === "simultaneousOnset");
+    const confidence: Confidence = heldPartlyByTiming
       ? "low"
-      : members.length === 1 || roots.length === 1
+      : members.length === 1
         ? "high"
-        : "medium";
+        : onlyPressure
+          ? "medium"
+          : roots.length === 1
+            ? "high"
+            : "medium";
 
     const lead =
       mine
@@ -600,6 +806,7 @@ export function incidents(): Incident[] {
 
     return {
       id: `inc:${lead.fingerprint}`,
+      leadProfileId: lead.profileId,
       title: members.length > 1 ? `${lead.profileName} — ${lead.title}` : lead.title,
       severity,
       health,

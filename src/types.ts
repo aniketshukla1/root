@@ -290,6 +290,9 @@ export interface TopologyView {
 export type GroupingReason =
   | { kind: "sameConnection"; profileId: string }
   | { kind: "dependencyFailedFirst"; root: string; dependent: string }
+  /** The edge read backwards: a failing service pressuring what it depends on. */
+  | { kind: "dependentPressuredIt"; origin: string; pressured: string }
+  /** `count` is independent failures that coincided, not connections. */
   | { kind: "simultaneousOnset"; count: number; windowSecs: number };
 
 /**
@@ -312,6 +315,8 @@ export interface Incident {
   alertIds: string[];
   /** Members not explained by another member failing. */
   roots: string[];
+  /** The connection the title is about. Never re-derive this in the UI. */
+  leadProfileId: string;
   /** True only when every alert in it has been acknowledged. */
   acknowledged: boolean;
   confidence: Confidence;

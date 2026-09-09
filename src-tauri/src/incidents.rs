@@ -36,6 +36,16 @@ const ONSET_TOLERANCE: Duration = Duration::seconds(30);
 const STORM_WINDOW: Duration = Duration::seconds(90);
 const STORM_MIN_CONNECTIONS: usize = 4;
 
+/// How long after a connection fails its own dependencies may degrade under
+/// the pressure and still be the same incident.
+///
+/// Bounded, unlike the forward direction. A database that has been down for
+/// three hours still explains a service that just fell over — causation
+/// upstream does not expire. Back-pressure does: a retry storm shows up in
+/// seconds to minutes, so a dependency that degrades half an hour later is
+/// more likely a second problem than an echo of the first.
+const PRESSURE_WINDOW: Duration = Duration::minutes(15);
+
 /// Why a set of alerts is being shown as one thing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -44,8 +54,18 @@ pub enum GroupingReason {
     SameConnection { profile_id: String },
     /// A declared dependency that failed first, so it can explain the other.
     DependencyFailedFirst { root: String, dependent: String },
-    /// Many connections turning at once, with nothing else in common. The
-    /// weakest reason here, and the one most worth overruling.
+    /// A connection failed and something it depends on degraded shortly after
+    /// — a retry storm reaching the database rather than the database causing
+    /// the outage. Real propagation, but along the edge backwards, so it never
+    /// grants high confidence on its own.
+    DependentPressuredIt { origin: String, pressured: String },
+    /// Many things turning at once, with nothing else in common. The weakest
+    /// reason here, and the one most worth overruling.
+    ///
+    /// `count` is the number of INDEPENDENT failures that coincided, not the
+    /// number of connections: a declared chain that failed for a known reason
+    /// enters the storm as one participant. Four connections that already
+    /// explain each other are one coincidence, not four.
     SimultaneousOnset { count: usize, window_secs: i64 },
 }
 
@@ -72,6 +92,11 @@ pub struct Incident {
     pub alert_ids: Vec<String>,
     /// Members not explained by another member failing.
     pub roots: Vec<String>,
+    /// The connection the title is about — the worst, earliest alert among the
+    /// roots. Carried rather than left for the UI to re-derive, because a UI
+    /// that guesses picks a different one and then names one connection while
+    /// offering to open another.
+    pub lead_profile_id: String,
     /// True only when every alert in it has been acknowledged.
     pub acknowledged: bool,
     pub confidence: Confidence,
@@ -145,10 +170,19 @@ pub fn correlate(
         }
     }
 
-    // A declared dependency joins two connections only when it failed FIRST.
-    // An edge pointing the other way in time is evidence of reverse pressure —
-    // a dependent hammering what it depends on — not of causation, so it does
-    // not merge. See topology::roots_with_onset.
+    // A declared edge binds two connections when either end failed first, but
+    // the two directions are not the same claim and are not recorded as one.
+    //
+    // Forward — the dependency failed first — is causation, and it does not
+    // expire: a database down since breakfast still explains a service that
+    // fell over at noon.
+    //
+    // Backward — the dependent failed first and its dependency degraded soon
+    // after — is back-pressure. An operator whose service is OOM-looping and
+    // whose database is now lagging has ONE problem, and a correlator that
+    // insisted otherwise would be splitting the exact case this module opens
+    // by describing. It is bounded by PRESSURE_WINDOW and never grants high
+    // confidence, because the edge is being read against its direction.
     for (dependent, started) in onset.iter() {
         for dep in topology.depends_on(dependent) {
             let Some(dep_started) = onset.get(dep.as_str()) else {
@@ -160,15 +194,26 @@ pub fn correlate(
                     root: dep.clone(),
                     dependent: (*dependent).to_string(),
                 });
+            } else if *dep_started <= *started + PRESSURE_WINDOW {
+                merge.union(dependent, dep);
+                reasons.push(GroupingReason::DependentPressuredIt {
+                    origin: (*dependent).to_string(),
+                    pressured: dep.clone(),
+                });
             }
         }
     }
 
-    // Many connections turning together, sharing no declared edge, is worth
-    // suggesting as one event — a partition or a shared dependency nobody
-    // declared. It is the weakest reason here, so it lowers confidence rather
-    // than raising it, and the UI must offer to split it.
-    let storm = storm_cluster(&onset);
+    // Many things turning together, with nothing declared to explain it, is
+    // worth suggesting as one event — a partition, a shared host, a
+    // certificate nobody tracked.
+    //
+    // It runs over the groups the declared edges have already formed, not over
+    // raw connections, so a chain that failed for a known reason enters the
+    // storm as one participant rather than inflating the count. Each group is
+    // represented by its earliest onset, which is when that group's trouble
+    // began.
+    let storm = storm_cluster(&group_onsets(&mut merge, &onset));
     if let Some(members) = &storm {
         let first = members[0].as_str();
         for member in members.iter().skip(1) {
@@ -204,9 +249,32 @@ pub fn correlate(
     incidents
 }
 
-/// The largest set of connections whose onsets all fall inside one window and
-/// which share no declared edge. Returns None unless it is big enough to be
-/// more likely than coincidence.
+/// One representative per current group, carrying that group's earliest onset.
+///
+/// Storms are counted in groups rather than connections so a declared chain
+/// that failed for a known reason contributes one participant, not four. Four
+/// connections that already explain each other are not four coincidences.
+fn group_onsets<'a>(
+    merge: &mut Merge,
+    onset: &HashMap<&'a str, DateTime<Utc>>,
+) -> HashMap<&'a str, DateTime<Utc>> {
+    let mut earliest: HashMap<String, (&'a str, DateTime<Utc>)> = HashMap::new();
+    for (id, started) in onset.iter() {
+        let root = merge.find(id);
+        earliest
+            .entry(root)
+            .and_modify(|slot| {
+                if *started < slot.1 {
+                    *slot = (id, *started);
+                }
+            })
+            .or_insert((id, *started));
+    }
+    earliest.into_values().collect()
+}
+
+/// The largest set of groups whose onsets all fall inside one window. Returns
+/// None unless it is big enough to be more likely than coincidence.
 fn storm_cluster(onset: &HashMap<&str, DateTime<Utc>>) -> Option<Vec<String>> {
     let mut by_time: Vec<(&str, DateTime<Utc>)> = onset.iter().map(|(k, v)| (*k, *v)).collect();
     by_time.sort_by_key(|(_, t)| *t);
@@ -268,7 +336,7 @@ fn build(
         .iter()
         .filter_map(|id| onset.get(id.as_str()).map(|t| (id.as_str(), *t)))
         .collect();
-    let roots: Vec<String> = topology
+    let mut roots: Vec<String> = topology
         .roots_with_onset(&with_onset, ONSET_TOLERANCE)
         .into_iter()
         .map(str::to_string)
@@ -282,23 +350,67 @@ fn build(
             GroupingReason::DependencyFailedFirst { root, dependent } => {
                 members.contains(root) && members.contains(dependent)
             }
+            GroupingReason::DependentPressuredIt { origin, pressured } => {
+                members.contains(origin) && members.contains(pressured)
+            }
             GroupingReason::SimultaneousOnset { .. } => stormed && members.len() > 1,
         })
         .cloned()
         .collect();
 
+    // Reading an edge backwards leaves both ends looking like origins: the
+    // graph cannot separate a service from the database it is hammering,
+    // because neither is downstream of a failure in the declared sense. When
+    // declared edges are what bind the incident, the clock settles it — the
+    // one that turned first is where to look. Topology narrows, the clock
+    // arbitrates, and neither is a verdict.
+    let bound_by_edges = grouping.iter().any(|r| {
+        matches!(
+            r,
+            GroupingReason::DependencyFailedFirst { .. }
+                | GroupingReason::DependentPressuredIt { .. }
+        )
+    });
+    if bound_by_edges && roots.len() > 1 {
+        if let Some(first) = roots
+            .iter()
+            .filter_map(|id| onset.get(id.as_str()).copied())
+            .min()
+        {
+            roots.retain(|id| {
+                onset
+                    .get(id.as_str())
+                    .is_some_and(|t| *t <= first + ONSET_TOLERANCE)
+            });
+        }
+    }
+
+    // Back-pressure alone is a weaker claim than a dependency that failed
+    // first, so it caps confidence even when the roots came out clean.
+    let only_pressure = bound_by_edges
+        && !grouping
+            .iter()
+            .any(|r| matches!(r, GroupingReason::DependencyFailedFirst { .. }));
+
     // Confidence is about the GROUPING, not the diagnosis. One root with a
-    // dependency edge behind it is a claim worth making; several roots, or a
-    // group held together only by coincident timing, is not.
-    let held_only_by_timing = grouping
+    // dependency edge behind it is a claim worth making; anything partly held
+    // together by coincident timing is not.
+    //
+    // Partly, not only. An incident that merged on a declared edge AND then
+    // absorbed a storm is not a confident claim with an asterisk — the storm
+    // put connections in it that nothing explains, so the whole grouping is
+    // now the thing to check before acting on it as one.
+    let held_partly_by_timing = grouping
         .iter()
-        .all(|r| matches!(r, GroupingReason::SimultaneousOnset { .. }))
+        .any(|r| matches!(r, GroupingReason::SimultaneousOnset { .. }))
         && members.len() > 1;
-    let confidence = if held_only_by_timing {
+    let confidence = if held_partly_by_timing {
         Confidence::Low
-    } else if roots.len() == 1 && members.len() > 1 {
-        Confidence::High
     } else if members.len() == 1 {
+        Confidence::High
+    } else if only_pressure {
+        Confidence::Medium
+    } else if roots.len() == 1 {
         Confidence::High
     } else {
         Confidence::Medium
@@ -323,6 +435,10 @@ fn build(
 
     Incident {
         id: incident_id(lead.map(|a| a.fingerprint.as_str()), started),
+        lead_profile_id: lead
+            .map(|a| a.profile_id.clone())
+            .or_else(|| members.iter().next().cloned())
+            .unwrap_or_default(),
         title,
         severity,
         health,
@@ -468,7 +584,7 @@ mod tests {
     /// payments-db turned AFTER orders-api, so it cannot explain it — these
     /// stay two incidents rather than one blaming the database.
     #[test]
-    fn a_dependency_that_failed_later_does_not_merge() {
+    fn a_dependency_that_degrades_soon_after_is_back_pressure_not_a_second_problem() {
         let topology = Topology::build(&[
             profile("orders-api", &["payments-db"]),
             profile("payments-db", &[]),
@@ -483,7 +599,80 @@ mod tests {
         ];
 
         let incidents = correlate(&alerts, &snapshots, &topology);
-        assert_eq!(incidents.len(), 2, "must not blame the database: {incidents:#?}");
+        assert_eq!(incidents.len(), 1, "one problem, not two: {incidents:#?}");
+
+        let incident = &incidents[0];
+        assert_eq!(
+            incident.grouping,
+            vec![GroupingReason::DependentPressuredIt {
+                origin: "orders-api".into(),
+                pressured: "payments-db".into(),
+            }],
+            "the edge was read backwards and must say so",
+        );
+        // The graph cannot separate them — neither is downstream of a declared
+        // failure — so the clock does, and it names the one that turned first.
+        assert_eq!(incident.roots, vec!["orders-api".to_string()]);
+        assert_eq!(
+            incident.confidence,
+            Confidence::Medium,
+            "back-pressure alone never earns high confidence",
+        );
+    }
+
+    /// The bound that keeps back-pressure from becoming a licence to merge.
+    #[test]
+    fn a_dependency_that_degrades_much_later_is_a_second_problem() {
+        let topology = Topology::build(&[
+            profile("orders-api", &["payments-db"]),
+            profile("payments-db", &[]),
+        ]);
+        let alerts = vec![
+            alert("oom", "orders-api", AlertSeverity::Critical, 4),
+            // Well past PRESSURE_WINDOW: a retry storm reaches a database in
+            // seconds, so half an hour later is its own event.
+            alert("lag", "payments-db", AlertSeverity::Warning, 40),
+        ];
+        let snapshots = vec![
+            snapshot("orders-api", Health::Down),
+            snapshot("payments-db", Health::Degraded),
+        ];
+
+        let incidents = correlate(&alerts, &snapshots, &topology);
+        assert_eq!(
+            incidents.len(),
+            2,
+            "too far apart to be one story: {incidents:#?}",
+        );
+    }
+
+    /// Forward causation still outranks back-pressure, and still says so.
+    #[test]
+    fn a_dependency_that_failed_first_is_still_causation_not_pressure() {
+        let topology = Topology::build(&[
+            profile("orders-api", &["payments-db"]),
+            profile("payments-db", &[]),
+        ]);
+        let alerts = vec![
+            alert("lag", "payments-db", AlertSeverity::Critical, 4),
+            alert("errors", "orders-api", AlertSeverity::Critical, 9),
+        ];
+        let snapshots = vec![
+            snapshot("orders-api", Health::Down),
+            snapshot("payments-db", Health::Down),
+        ];
+
+        let incidents = correlate(&alerts, &snapshots, &topology);
+        assert_eq!(incidents.len(), 1);
+        assert_eq!(
+            incidents[0].grouping,
+            vec![GroupingReason::DependencyFailedFirst {
+                root: "payments-db".into(),
+                dependent: "orders-api".into(),
+            }],
+        );
+        assert_eq!(incidents[0].roots, vec!["payments-db".to_string()]);
+        assert_eq!(incidents[0].confidence, Confidence::High);
     }
 
     /// Unrelated failures stay unrelated. Under-merging is the safe direction.
@@ -524,6 +713,73 @@ mod tests {
             .grouping
             .iter()
             .any(|r| matches!(r, GroupingReason::SimultaneousOnset { .. })));
+    }
+
+    /// A declared chain that failed for a known reason is one participant in a
+    /// storm, not four coincidences. Four connections that already explain each
+    /// other must not, on their own, look like a partition.
+    #[test]
+    fn a_declared_chain_counts_once_and_does_not_make_a_storm_alone() {
+        // d -> c -> b -> a, failing in that order, all inside the window.
+        let topology = Topology::build(&[
+            profile("a", &[]),
+            profile("b", &["a"]),
+            profile("c", &["b"]),
+            profile("d", &["c"]),
+        ]);
+        let alerts: Vec<Alert> = ["a", "b", "c", "d"]
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let mut a = alert("down", id, AlertSeverity::Critical, 10);
+                a.first_seen = at(10) + Duration::seconds(i as i64 * 15);
+                a
+            })
+            .collect();
+
+        let incidents = correlate(&alerts, &[], &topology);
+        assert_eq!(incidents.len(), 1);
+        assert!(
+            !incidents[0]
+                .grouping
+                .iter()
+                .any(|r| matches!(r, GroupingReason::SimultaneousOnset { .. })),
+            "one explained chain is not a storm: {:#?}",
+            incidents[0].grouping,
+        );
+        assert_eq!(
+            incidents[0].confidence,
+            Confidence::High,
+            "a fully explained chain keeps its confidence",
+        );
+    }
+
+    /// And when a chain IS swept up with unrelated connections, the whole
+    /// incident drops to low — the storm put members in it that nothing
+    /// explains, so the grouping as a whole is now the thing to check.
+    #[test]
+    fn a_chain_swept_into_a_storm_loses_its_confidence() {
+        let topology = Topology::build(&[
+            profile("a", &[]),
+            profile("b", &["a"]),
+            profile("x", &[]),
+            profile("y", &[]),
+            profile("z", &[]),
+        ]);
+        let alerts: Vec<Alert> = ["a", "b", "x", "y", "z"]
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let mut a = alert("down", id, AlertSeverity::Critical, 10);
+                a.first_seen = at(10) + Duration::seconds(i as i64 * 15);
+                a
+            })
+            .collect();
+
+        let incidents = correlate(&alerts, &[], &topology);
+        assert_eq!(incidents.len(), 1, "{incidents:#?}");
+        assert_eq!(incidents[0].profile_ids.len(), 5);
+        assert_eq!(incidents[0].confidence, Confidence::Low);
     }
 
     /// Three is under the threshold — coincidence is likelier than a partition,

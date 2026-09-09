@@ -2,7 +2,7 @@ import { motion } from "motion/react";
 
 import { healthColor, healthLabel } from "../catalog";
 import type { Health } from "../types";
-import { drawLine, enter, popIn, reachBar, riseBar, stagger, washIn } from "./motion";
+import { drawLine, EASE_OUT, enter, reachBar } from "./motion";
 import { cx } from "./primitives";
 
 /* ══════════════════════════════════════════════════════════════════ ruler
@@ -114,9 +114,24 @@ export function Lanes({
         </div>
       )}
 
-      <motion.div variants={stagger(0.035)} {...enter} className="flex flex-col gap-1">
+      {/* Deliberately not animated.
+          These rows carried a staggered fade, and in some subtrees the
+          animation never started — the row kept its `initial` opacity of 0 and
+          the strip simply never painted. Both the variant form and an explicit
+          initial/animate pair failed the same way here while animating
+          correctly elsewhere in this file, so the cause is not understood.
+          It does not need to be. A lane strip that silently fails to paint is
+          this component's worst possible failure: a blank strip is not a
+          missing flourish, it is the claim "nothing happened here", and it is
+          the wrong one. motion.ts states the rule — motion explains where a
+          value came from, it never decorates — and a fade on a row explains
+          nothing. The strip's own segments already carry the meaning. */}
+      <div className="flex flex-col gap-1">
         {lanes.map((lane) => (
-          <div key={lane.id} className="flex items-center gap-2.5">
+          <div
+            key={lane.id}
+            className="flex items-center gap-2.5"
+          >
             <span
               className="flex shrink-0 items-center gap-1.5"
               style={{ width: labelWidth }}
@@ -132,12 +147,12 @@ export function Lanes({
                 {lane.name}
               </span>
             </span>
-            <motion.span variants={washIn} className="min-w-0 flex-1">
+            <span className="min-w-0 flex-1">
               <LaneStrip runs={lane.runs} height={rowHeight} />
-            </motion.span>
+            </span>
           </div>
         ))}
-      </motion.div>
+      </div>
 
       {footer && (
         <div className="mt-1.5 flex items-center gap-2.5">
@@ -267,8 +282,8 @@ export function RankBars({
 }) {
   const max = Math.max(1, ...items.map((i) => i.value));
   return (
-    <motion.div variants={stagger(0.06)} {...enter} className="flex flex-col gap-2.5">
-      {items.map((item) => (
+    <div className="flex flex-col gap-2.5">
+      {items.map((item, i) => (
         <div
           key={item.label}
           className="grid items-center gap-2.5"
@@ -277,7 +292,9 @@ export function RankBars({
           <span className="num truncate text-2xs text-ink-2">{item.label}</span>
           <span className="block h-2.5 overflow-hidden rounded-sm bg-sunk">
             <motion.span
-              variants={reachBar}
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: 1 }}
+              transition={{ ...EASE_OUT, delay: 0.05 + i * 0.06 }}
               className="block h-full origin-left rounded-sm"
               style={{
                 width: `${(item.value / max) * 100}%`,
@@ -293,7 +310,7 @@ export function RankBars({
           <span className="num text-right text-2xs text-ink-3">{format(item.value)}</span>
         </div>
       ))}
-    </motion.div>
+    </div>
   );
 }
 
@@ -356,13 +373,15 @@ export function StackBars({
     crit: "var(--color-crit)",
   } as const;
   return (
-    <motion.div variants={stagger(0.05)} {...enter} className="flex items-end gap-1.5">
-      {columns.map((col) => {
+    <div className="flex items-end gap-1.5">
+      {columns.map((col, i) => {
         const total = Math.max(1, col.parts.reduce((sum, p) => sum + p.value, 0));
         return (
           <div key={col.label} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
             <motion.span
-              variants={riseBar}
+              initial={{ scaleY: 0 }}
+              animate={{ scaleY: 1 }}
+              transition={{ ...EASE_OUT, delay: 0.05 + i * 0.05 }}
               className="flex w-full origin-bottom flex-col-reverse overflow-hidden rounded-sm bg-sunk"
               style={{ height }}
             >
@@ -380,7 +399,7 @@ export function StackBars({
           </div>
         );
       })}
-    </motion.div>
+    </div>
   );
 }
 
@@ -403,19 +422,25 @@ export function Calendar({
     "var(--color-crit)",
   ];
   return (
-    <motion.div variants={stagger(0.006, 0)} {...enter} className="flex gap-[3px]">
+    <div className="flex gap-[3px]">
       {weeks.map((week, w) => (
         <div key={w} className="flex flex-col gap-[3px]">
           {week.map((level, d) => (
             <motion.span
               key={d}
-              variants={popIn}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{
+                duration: 0.34,
+                ease: [0.3, 1.4, 0.5, 1],
+                delay: (w * 7 + d) * 0.006,
+              }}
               className="block rounded-[1px]"
               style={{ width: cell, height: cell, background: fill[Math.min(3, level)] }}
             />
           ))}
         </div>
       ))}
-    </motion.div>
+    </div>
   );
 }

@@ -290,6 +290,12 @@ function RadiusCell({
  * bare as a mark it measures 1.09:1 against the panel, which is not quiet but
  * invisible. A strip whose empty cells cannot be seen shows a count, and the
  * count was never the point; the ratio is.
+ *
+ * The RING is what makes a healthy cell legible, not the fill. Measured against
+ * the panel: fill 1.67:1 dark and 1.41:1 light, ring 8.75:1 and 4.90:1. Both
+ * halves are load-bearing — raising the fill would make a healthy estate shout,
+ * and dropping the ring would take the cell back below the floor `app.css`
+ * documents. Change one and re-measure the other.
  */
 function ComponentPips({
   affected,

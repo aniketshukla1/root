@@ -107,6 +107,7 @@ pub fn run() {
             commands::get_metric_history,
             commands::get_health_runs,
             commands::get_topology,
+            commands::get_incidents,
             commands::get_change_events,
             commands::get_component_history,
             commands::get_ingest_settings,

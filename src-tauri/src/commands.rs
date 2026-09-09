@@ -9,6 +9,7 @@ use crate::agent::{self, AgentTurn};
 use crate::config::{ConnectionProfile, LlmSettings};
 use crate::error::{AppError, Result};
 use crate::history::{self, HistogramBucket, MetricSeries};
+use crate::incidents::{self, Incident};
 use crate::llm::{build_provider, ChatMessage};
 use crate::model::{Alert, DashboardState, Health, HealthSnapshot, LogEvent};
 use crate::registry::{self, ServiceDescriptor};
@@ -586,6 +587,31 @@ pub struct TopologyView {
     pub dependents: std::collections::HashMap<String, Vec<String>>,
     /// Failing connections not explained by another failing connection.
     pub roots: Vec<String>,
+}
+
+/// The alert stream, read as the small number of things actually happening.
+///
+/// This is the same evidence `get_dashboard` already returns — active alerts,
+/// current snapshots, the declared graph — grouped rather than listed. It is
+/// derived on every call rather than stored, because an incident is a claim
+/// about the present: the moment an alert clears, the grouping that named it
+/// should stop existing too.
+///
+/// Ordering is the reading order: worst first, then earliest, so the top of
+/// the list is where to look. Incidents that are entirely acknowledged sink
+/// below the ones that are not, whatever their severity — an acknowledged
+/// outage is someone else's open tab.
+#[tauri::command]
+pub async fn get_incidents(state: Shared<'_>) -> Result<Vec<Incident>> {
+    let profiles = state.config.read().await.profiles.clone();
+    let graph = crate::topology::Topology::build(&profiles);
+    let dashboard = state.dashboard().await;
+
+    Ok(incidents::correlate(
+        &dashboard.alerts,
+        &dashboard.snapshots,
+        &graph,
+    ))
 }
 
 /// State runs for every connection across one window — the lane view.

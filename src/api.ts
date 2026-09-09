@@ -36,6 +36,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_component_history: () => [],
   get_health_runs: () => fixtures.healthRuns(),
   get_topology: () => fixtures.topology(),
+  get_incidents: () => fixtures.incidents(),
   get_change_events: () => fixtures.CHANGES,
   correlate: ({ at }) => ({ at: at ?? new Date().toISOString(), lanes: [] }),
   pending_confirmations: () => [],
@@ -68,6 +69,7 @@ import type {
   HealthRun,
   HealthSnapshot,
   HistogramBucket,
+  Incident,
   IngestStatus,
   LlmSettings,
   LogEvent,
@@ -155,6 +157,16 @@ export const api = {
 
   /** The declared dependency graph, plus which current failures are roots. */
   getTopology: () => invoke<TopologyView>("get_topology"),
+
+  /**
+   * The active alerts grouped into the things actually happening.
+   *
+   * Derived on every call, never stored: an incident is a claim about the
+   * present, so it should stop existing the moment its alerts clear. Each one
+   * carries the reasons its members were grouped, which is what makes a wrong
+   * grouping arguable instead of mysterious.
+   */
+  getIncidents: () => invoke<Incident[]>("get_incidents"),
 
   getConfig: () => invoke<AppConfig>("get_config"),
 

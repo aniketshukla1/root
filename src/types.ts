@@ -281,6 +281,43 @@ export interface TopologyView {
   roots: string[];
 }
 
+/**
+ * Why a set of alerts is being shown as one thing.
+ *
+ * Carried on the incident so a wrong grouping is arguable rather than
+ * mysterious: the operator can see the reason and overrule it.
+ */
+export type GroupingReason =
+  | { kind: "sameConnection"; profileId: string }
+  | { kind: "dependencyFailedFirst"; root: string; dependent: string }
+  | { kind: "simultaneousOnset"; count: number; windowSecs: number };
+
+/**
+ * `low` is not a hedge — it marks a grouping held together by timing alone,
+ * which is the one most worth a second look before it is believed.
+ */
+export type Confidence = "high" | "medium" | "low";
+
+/** The alert stream read as the small number of things actually happening. */
+export interface Incident {
+  /** Stable while the originating condition persists. */
+  id: string;
+  title: string;
+  severity: AlertSeverity;
+  health: Health;
+  started: string;
+  lastSeen: string;
+  /** Every connection involved, worst and earliest first. */
+  profileIds: string[];
+  alertIds: string[];
+  /** Members not explained by another member failing. */
+  roots: string[];
+  /** True only when every alert in it has been acknowledged. */
+  acknowledged: boolean;
+  confidence: Confidence;
+  grouping: GroupingReason[];
+}
+
 /** A period a connection spent in one state, as observed by its collector. */
 export interface HealthRun {
   health: Health;

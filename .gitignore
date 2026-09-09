@@ -31,3 +31,6 @@ dist-ssr
 design/root-console-redesign.html
 design/preview.html
 design/ref-dark.html
+
+# graphify knowledge graph (regenerable)
+graphify-out/

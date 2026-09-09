@@ -15,10 +15,15 @@
 
 import type {
   Alert,
+  AlertSeverity,
   AppConfig,
+  Confidence,
   DashboardState,
+  GroupingReason,
+  Health,
   HealthSnapshot,
   HistogramBucket,
+  Incident,
   LogEvent,
   LogLevel,
   MetricSeries,
@@ -465,4 +470,157 @@ export function topology(): import("./types").TopologyView {
   );
 
   return { dependsOn, dependents, roots: roots.length > 0 ? roots : failing };
+}
+
+/**
+ * The fixture estate's alerts, correlated the way the backend correlates them.
+ *
+ * This ports `incidents::correlate` rather than hard-coding an answer, for the
+ * same reason `topology()` ports onset arbitration: a hand-written incident
+ * list would keep saying whatever it said on the day it was written, however
+ * the fixture alerts changed underneath it. The rules are the same three —
+ * several conditions on one connection, a declared dependency that failed
+ * first, and a simultaneous storm — with the same 30s tolerance and 90s
+ * window.
+ *
+ * On this estate the interesting outcome is a NON-merge: orders-api depends on
+ * payments-db, but payments-db turned two minutes later, so the database is
+ * not credited with a failure that predates it and the two stay apart.
+ */
+export function incidents(): Incident[] {
+  const ONSET_TOLERANCE = 30_000;
+  const STORM_WINDOW = 90_000;
+  const STORM_MIN = 4;
+
+  const active = ALERTS.filter((a) => a.active);
+  if (active.length === 0) return [];
+
+  const onset = new Map<string, number>();
+  for (const a of active) {
+    const at = Date.parse(a.firstSeen);
+    onset.set(a.profileId, Math.min(onset.get(a.profileId) ?? at, at));
+  }
+
+  const parent = new Map<string, string>([...onset.keys()].map((id) => [id, id]));
+  const find = (id: string): string => {
+    let cur = id;
+    while (parent.get(cur) !== cur) cur = parent.get(cur)!;
+    return cur;
+  };
+  const union = (a: string, b: string) => {
+    const [ra, rb] = [find(a), find(b)];
+    if (ra !== rb) parent.set(ra, rb);
+  };
+
+  const reasons: GroupingReason[] = [];
+
+  for (const id of onset.keys()) {
+    if (active.filter((a) => a.profileId === id).length > 1) {
+      reasons.push({ kind: "sameConnection", profileId: id });
+    }
+  }
+
+  for (const [dependent, started] of onset) {
+    for (const dep of DEPENDS_ON[dependent] ?? []) {
+      const depStarted = onset.get(dep);
+      if (depStarted !== undefined && depStarted <= started + ONSET_TOLERANCE) {
+        union(dependent, dep);
+        reasons.push({ kind: "dependencyFailedFirst", root: dep, dependent });
+      }
+    }
+  }
+
+  const byTime = [...onset].sort((a, b) => a[1] - b[1]);
+  let storm: string[] = [];
+  for (let i = 0; i < byTime.length; i++) {
+    const window: string[] = [];
+    for (let j = i; j < byTime.length && byTime[j][1] - byTime[i][1] <= STORM_WINDOW; j++) {
+      window.push(byTime[j][0]);
+    }
+    if (window.length > storm.length) storm = window;
+  }
+  const stormed = storm.length >= STORM_MIN;
+  if (stormed) {
+    for (const member of storm.slice(1)) union(storm[0], member);
+    reasons.push({ kind: "simultaneousOnset", count: storm.length, windowSecs: 90 });
+  }
+
+  const groups = new Map<string, string[]>();
+  for (const id of onset.keys()) {
+    const root = find(id);
+    groups.set(root, [...(groups.get(root) ?? []), id].sort());
+  }
+
+  const rank = (s: AlertSeverity) => (s === "critical" ? 0 : s === "warning" ? 1 : 2);
+  const worst = (a: Health, b: Health) =>
+    (["unknown", "healthy", "degraded", "down"].indexOf(a) >
+    ["unknown", "healthy", "degraded", "down"].indexOf(b)
+      ? a
+      : b);
+
+  const out: Incident[] = [...groups.values()].map((members) => {
+    const mine = active.filter((a) => members.includes(a.profileId));
+    const severity = mine.map((a) => a.severity).sort((a, b) => rank(a) - rank(b))[0] ?? "warning";
+    const health = members
+      .map((id) => SNAPSHOTS.find((s) => s.profileId === id)?.health ?? "degraded")
+      .reduce(worst, "unknown" as Health);
+    const started = Math.min(...mine.map((a) => Date.parse(a.firstSeen)));
+
+    const roots = members.filter(
+      (id) =>
+        !(DEPENDS_ON[id] ?? []).some((dep) => {
+          const depAt = onset.get(dep);
+          return (
+            members.includes(dep) && depAt !== undefined && depAt <= (onset.get(id) ?? started) + ONSET_TOLERANCE
+          );
+        }),
+    );
+
+    const grouping = reasons.filter((r) =>
+      r.kind === "sameConnection"
+        ? members.includes(r.profileId)
+        : r.kind === "dependencyFailedFirst"
+          ? members.includes(r.root) && members.includes(r.dependent)
+          : stormed && members.length > 1,
+    );
+
+    const heldOnlyByTiming =
+      members.length > 1 && grouping.every((r) => r.kind === "simultaneousOnset");
+    const confidence: Confidence = heldOnlyByTiming
+      ? "low"
+      : members.length === 1 || roots.length === 1
+        ? "high"
+        : "medium";
+
+    const lead =
+      mine
+        .filter((a) => roots.includes(a.profileId))
+        .sort((a, b) => rank(a.severity) - rank(b.severity) || Date.parse(a.firstSeen) - Date.parse(b.firstSeen))[0] ??
+      mine.sort((a, b) => Date.parse(a.firstSeen) - Date.parse(b.firstSeen))[0];
+
+    return {
+      id: `inc:${lead.fingerprint}`,
+      title: members.length > 1 ? `${lead.profileName} — ${lead.title}` : lead.title,
+      severity,
+      health,
+      started: new Date(started).toISOString(),
+      lastSeen: new Date(Math.max(...mine.map((a) => Date.parse(a.lastSeen)))).toISOString(),
+      profileIds: [...members].sort(
+        (a, b) => (onset.get(a) ?? started) - (onset.get(b) ?? started),
+      ),
+      alertIds: mine.map((a) => a.id),
+      roots,
+      acknowledged: mine.every((a) => a.acknowledged),
+      confidence,
+      grouping,
+    };
+  });
+
+  return out.sort(
+    (a, b) =>
+      Number(a.acknowledged) - Number(b.acknowledged) ||
+      rank(a.severity) - rank(b.severity) ||
+      b.profileIds.length - a.profileIds.length ||
+      Date.parse(a.started) - Date.parse(b.started),
+  );
 }

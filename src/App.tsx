@@ -523,6 +523,7 @@ export default function App() {
         {view.name === "service" && (
           <ServiceDetail
             profileId={view.profileId}
+            incidents={incidents}
             tab={view.tab}
             model={model}
             catalog={catalog}

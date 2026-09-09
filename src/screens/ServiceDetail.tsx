@@ -7,7 +7,7 @@ import { formatDateTime, formatMetricValue, formatRelative, isBreaching } from "
 import { criticalityLabel, environmentLabel, type EstateModel } from "../model";
 import type { ServiceTab, View } from "../nav";
 import { spanOf } from "../ranges";
-import type { LogEvent, MetricSeries, Row, RowAction } from "../types";
+import type { Incident, LogEvent, MetricSeries, Row, RowAction } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { ServiceDashboard } from "./ServiceDashboard";
 import { AlertList } from "../ui/AlertList";
@@ -25,13 +25,14 @@ import {
   Tabs,
   Tag,
 } from "../ui/primitives";
-import { ChevronLeft, ExternalIcon, TimelineIcon } from "../ui/icons";
+import { ChevronLeft, ChevronRight, ExternalIcon, TimelineIcon } from "../ui/icons";
 
 export function ServiceDetail({
   profileId,
   tab = "dashboard",
   model,
   catalog,
+  incidents,
   logs,
   history,
   onNavigate,
@@ -43,6 +44,7 @@ export function ServiceDetail({
   tab?: ServiceTab;
   model: EstateModel;
   catalog: Catalog;
+  incidents: Incident[];
   logs: LogEvent[];
   history: MetricSeries[];
   onNavigate: (view: View) => void;
@@ -55,6 +57,19 @@ export function ServiceDetail({
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   const service = model.services.find((s) => s.snapshot.profileId === profileId);
+
+  /**
+   * The larger thing this connection is part of, if any.
+   *
+   * Without it a drill-down is a dead end: an operator who arrives here from a
+   * link, a bookmark or a search sees one broken connection and starts working
+   * on it, with no sign that three others turned with it and that this one may
+   * not even be where it started.
+   */
+  const incident = useMemo(
+    () => incidents.find((i) => i.profileIds.includes(profileId)),
+    [incidents, profileId],
+  );
 
   const serviceLogs = useMemo(
     () => logs.filter((event) => event.profileId === profileId),
@@ -145,6 +160,31 @@ export function ServiceDetail({
       </ScreenHeader>
 
       <Screen className="flex flex-col gap-3">
+        {incident && incident.profileIds.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onNavigate({ name: "overview" })}
+            className="row-hover flex items-center gap-2.5 rounded-lg border border-line bg-panel px-3 py-2 text-left"
+            style={{
+              borderLeftWidth: 2,
+              borderLeftColor:
+                incident.severity === "critical" ? "var(--color-crit)" : "var(--color-warn)",
+            }}
+          >
+            <Dot health={incident.health} size={9} />
+            <span className="label shrink-0">Part of an incident</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-ink-2" title={incident.title}>
+              {incident.title}
+            </span>
+            <span className="num shrink-0 text-2xs text-ink-4">
+              {incident.leadProfileId === profileId
+                ? "this turned first"
+                : `started on ${incident.leadProfileId}`}
+            </span>
+            <ChevronRight size={12} style={{ color: "var(--color-ink-4)" }} />
+          </button>
+        )}
+
         {snapshot.error && (
           <div
             className="rounded-lg border px-3 py-2 text-xs"

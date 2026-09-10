@@ -15,6 +15,7 @@ use crate::model::{Alert, DashboardState, Health, HealthSnapshot, LogEvent};
 use crate::registry::{self, ServiceDescriptor};
 use crate::secrets;
 use crate::state::{AppState, LogFilter, PendingConfirmation};
+use crate::team;
 use crate::supervisor;
 
 type Shared<'a> = State<'a, Arc<AppState>>;
@@ -578,6 +579,107 @@ pub async fn get_topology(state: Shared<'_>) -> Result<TopologyView> {
             .map(str::to_string)
             .collect(),
     })
+}
+
+// ------------------------------------------------------------------- team
+
+/// Local mode is not an error state, so it is a value.
+///
+/// `serverUrl` absent means root is doing what it does by default: reading a
+/// config file on this machine and answering to nobody. Everything below is
+/// additive.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamState {
+    pub server_url: Option<String>,
+    pub account: Option<crate::config::Account>,
+    /// A token exists on this machine. Not proof the server still honours it.
+    pub has_session: bool,
+}
+
+#[tauri::command]
+pub async fn get_team(state: Shared<'_>) -> Result<TeamState> {
+    let team = state.config.read().await.team.clone();
+    Ok(TeamState {
+        server_url: team.server_url,
+        account: team.account,
+        has_session: team::has_session().await,
+    })
+}
+
+/// Point this machine at a workspace server, or clear it to go back to local.
+///
+/// Clearing signs out too. Leaving a session behind for a server nobody is
+/// talking to any more is a token sitting in a keychain for no reason.
+#[tauri::command]
+pub async fn save_team_server(state: Shared<'_>, server_url: Option<String>) -> Result<TeamState> {
+    let normalized = match server_url.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(url) => Some(team::normalize_server(url)?),
+    };
+
+    if normalized.is_none() {
+        let previous = state.config.read().await.team.server_url.clone();
+        team::sign_out(previous.as_deref()).await?;
+    }
+
+    {
+        let mut config = state.config.write().await;
+        config.team.server_url = normalized;
+        if config.team.server_url.is_none() {
+            config.team.account = None;
+        }
+    }
+    state.save_config().await?;
+    get_team(state).await
+}
+
+/// The password is used to get a token and is not retained anywhere.
+#[tauri::command]
+pub async fn sign_in(state: Shared<'_>, email: String, password: String) -> Result<TeamState> {
+    let server = state
+        .config
+        .read()
+        .await
+        .team
+        .server_url
+        .clone()
+        .ok_or_else(|| AppError::Config("no workspace server is configured".into()))?;
+
+    let account = team::sign_in(&server, &email, &password).await?;
+    {
+        let mut config = state.config.write().await;
+        config.team.account = Some(account);
+    }
+    state.save_config().await?;
+    get_team(state).await
+}
+
+#[tauri::command]
+pub async fn sign_out(state: Shared<'_>) -> Result<TeamState> {
+    let server = state.config.read().await.team.server_url.clone();
+    team::sign_out(server.as_deref()).await?;
+    {
+        let mut config = state.config.write().await;
+        config.team.account = None;
+    }
+    state.save_config().await?;
+    get_team(state).await
+}
+
+/// Who else is in the workspace. Errors in local mode rather than returning an
+/// empty list — nobody is not the same fact as no workspace.
+#[tauri::command]
+pub async fn get_workspace(state: Shared<'_>) -> Result<team::Workspace> {
+    let server = state
+        .config
+        .read()
+        .await
+        .team
+        .server_url
+        .clone()
+        .ok_or_else(|| AppError::Config("no workspace server is configured".into()))?;
+    team::workspace(&server).await
 }
 
 #[derive(Debug, Serialize)]

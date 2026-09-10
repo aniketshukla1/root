@@ -1,8 +1,10 @@
 import type { ComponentType } from "react";
 
 import { healthColor, healthLabel } from "../catalog";
+import { initials } from "../model";
 import type { EstateModel } from "../model";
 import { rootOf, type View } from "../nav";
+import type { TeamState } from "../types";
 import { cx, Dot, Kbd, RootMark } from "../ui/primitives";
 import {
   AlertsIcon,
@@ -29,17 +31,22 @@ interface Entry {
 export function Sidebar({
   view,
   model,
+  team,
   collapsed,
   onNavigate,
   onToggleCollapsed,
   onOpenPalette,
+  onOpenWorkspace,
 }: {
   view: View;
   model: EstateModel;
+  /** Null until the first read; local mode is `{ hasSession: false }`. */
+  team: TeamState | null;
   collapsed: boolean;
   onNavigate: (view: View) => void;
   onToggleCollapsed: () => void;
   onOpenPalette: () => void;
+  onOpenWorkspace: () => void;
 }) {
   const current = rootOf(view);
 
@@ -187,23 +194,42 @@ export function Sidebar({
           view: { name: "settings" },
         })}
         {!collapsed && (
+          // Whatever is actually true. This block used to read "Acme Platform
+          // / aniket · admin" on every install, which is a stranger's name on
+          // your own machine — and it asserted a workspace and a role for a
+          // product that, by default, has neither.
           <button
             className="mt-2.5 flex w-full items-center gap-2.5 border-t border-line px-1.5 pt-2.5 text-left transition-colors hover:text-ink"
-            title="Switch workspace"
+            title={
+              team?.account
+                ? `${team.account.email} on ${team.serverUrl}`
+                : "root is running locally — open Settings to join a workspace"
+            }
+            onClick={onOpenWorkspace}
           >
             <span
               className="grid h-6 w-6 shrink-0 place-items-center rounded-sm font-mono text-[9.5px] font-semibold"
               style={{
-                color: "var(--color-series-6)",
-                boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--color-series-6) 45%, transparent)",
-                background: "color-mix(in srgb, var(--color-series-6) 15%, transparent)",
+                color: team?.account ? "var(--color-series-6)" : "var(--color-ink-4)",
+                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${
+                  team?.account ? "var(--color-series-6)" : "var(--color-ink-4)"
+                } 45%, transparent)`,
+                background: team?.account
+                  ? "color-mix(in srgb, var(--color-series-6) 15%, transparent)"
+                  : "transparent",
               }}
             >
-              AC
+              {team?.account ? initials(team.account.name) : <RootMark size={13} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[11.5px] text-ink">Acme Platform</span>
-              <span className="num block text-2xs text-ink-4">aniket · admin</span>
+              <span className="block truncate text-[11.5px] text-ink">
+                {team?.account?.name ?? "Local"}
+              </span>
+              <span className="num block truncate text-2xs text-ink-4">
+                {team?.account
+                  ? `${hostOf(team.serverUrl)} · ${team.account.role}`
+                  : "this machine only"}
+              </span>
             </span>
             <ChevronLeft size={12} className="-rotate-90 text-ink-4" />
           </button>
@@ -211,4 +237,14 @@ export function Sidebar({
       </div>
     </nav>
   );
+}
+
+/** Just the host, so a long URL does not push the role out of the sidebar. */
+function hostOf(url?: string): string {
+  if (!url) return "workspace";
+  try {
+    return new URL(url).host;
+  } catch {
+    return url.replace(/^https?:\/\//, "");
+  }
 }

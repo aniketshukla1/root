@@ -17,6 +17,7 @@ import type {
   Alert,
   AlertSeverity,
   AppConfig,
+  Account,
   ChangeEvent,
   Confidence,
   ConnectionProfile,
@@ -32,6 +33,8 @@ import type {
   MetricSeries,
   Point,
   ServiceDescriptor,
+  TeamState,
+  Workspace,
 } from "./types";
 
 export function isTauri(): boolean {
@@ -497,6 +500,9 @@ export const CONFIG: AppConfig = {
     agentMode: "read_only", hasApiKey: true },
   retention: { logCapacity: 5000 },
   ingest: { enabled: false, port: 7717 },
+  // Local by default, as the packaged app is until someone points it at a
+  // server. `?team=` overrides it; see TEAM_MODE.
+  team: {},
 };
 
 /** One observed deploy in the window, so charts have a marker to render. */
@@ -952,4 +958,76 @@ export function deleteProfile(profileId: string): AppConfig {
 
 export function currentConfig(): AppConfig {
   return { ...CONFIG, profiles: [...SAVED] };
+}
+
+// ------------------------------------------------------------------- team
+
+/**
+ * A workspace, in the browser.
+ *
+ * `?team=1` starts signed in so the Team screen can be looked at; `?team=out`
+ * starts with a server configured but no session, which is the only way to
+ * reach the sign-in screen without a server to sign in to. Without either,
+ * root is in local mode, which is what it is by default and what the packaged
+ * app does until someone points it at a server.
+ */
+const TEAM_MODE = (() => {
+  if (typeof window === "undefined") return "local";
+  const asked = new URLSearchParams(window.location.search).get("team");
+  return asked === "1" ? "in" : asked === "out" ? "out" : "local";
+})();
+
+const DEMO_SERVER = "https://root.acme.internal";
+
+const DEMO_ACCOUNT: Account = {
+  email: "aniket@acme.io",
+  name: "Aniket Shukla",
+  role: "owner",
+};
+
+let teamState: TeamState =
+  TEAM_MODE === "in"
+    ? { serverUrl: DEMO_SERVER, account: DEMO_ACCOUNT, hasSession: true }
+    : TEAM_MODE === "out"
+      ? { serverUrl: DEMO_SERVER, hasSession: false }
+      : { hasSession: false };
+
+export function team(): TeamState {
+  return { ...teamState };
+}
+
+export function saveTeamServer(serverUrl: string | null): TeamState {
+  const trimmed = serverUrl?.trim();
+  teamState = trimmed
+    ? { ...teamState, serverUrl: trimmed.includes("://") ? trimmed : `https://${trimmed}` }
+    : { hasSession: false };
+  return team();
+}
+
+export function signIn(email: string): TeamState {
+  teamState = {
+    ...teamState,
+    hasSession: true,
+    account: { ...DEMO_ACCOUNT, email, name: email.split("@")[0] },
+  };
+  return team();
+}
+
+export function signOut(): TeamState {
+  teamState = { serverUrl: teamState.serverUrl, hasSession: false };
+  return team();
+}
+
+export function workspace(): Workspace {
+  return {
+    sso: { domain: "acme.io", defaultRole: "viewer", enforced: true },
+    members: [
+      { email: "aniket@acme.io", name: "Aniket Shukla", role: "owner", lastSeen: iso(2 * 60_000), viaSso: false },
+      { email: "priya@acme.io", name: "Priya Raman", role: "admin", lastSeen: iso(26 * 60_000), viaSso: true },
+      { email: "tom@acme.io", name: "Tom Byrne", role: "responder", lastSeen: iso(3 * 60 * 60_000), viaSso: true },
+      { email: "dana@acme.io", name: "Dana Okoro", role: "responder", lastSeen: iso(9 * 60 * 60_000), viaSso: true },
+      { email: "sam@acme.io", name: "Sam Idris", role: "viewer", lastSeen: iso(2 * 24 * 60 * 60_000), viaSso: true },
+      { email: "new.hire@acme.io", name: "Invited", role: "viewer", viaSso: false },
+    ],
+  };
 }

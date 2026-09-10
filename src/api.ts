@@ -13,6 +13,11 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_dashboard: () => fixtures.DASHBOARD,
   get_service_catalog: () => fixtures.DESCRIPTORS,
   get_config: () => fixtures.currentConfig(),
+  get_team: () => fixtures.team(),
+  save_team_server: ({ serverUrl }) => fixtures.saveTeamServer(serverUrl as string | null),
+  sign_in: ({ email }) => fixtures.signIn(email as string),
+  sign_out: () => fixtures.signOut(),
+  get_workspace: () => fixtures.workspace(),
   refresh_connection: ({ profileId }) =>
     fixtures.SNAPSHOTS.find((s) => s.profileId === profileId) ?? fixtures.SNAPSHOTS[0],
   acknowledge_alert: ({ alertId }) => ({
@@ -113,7 +118,9 @@ import type {
   MetricSeries,
   PendingConfirmation,
   ServiceDescriptor,
+  TeamState,
   TopologyView,
+  Workspace,
 } from "./types";
 
 export const api = {
@@ -205,6 +212,22 @@ export const api = {
   getIncidents: () => invoke<Incident[]>("get_incidents"),
 
   getConfig: () => invoke<AppConfig>("get_config"),
+
+  /** Local mode, or a workspace on a server you run. Never a hosted service. */
+  getTeam: () => invoke<TeamState>("get_team"),
+
+  /** Pass `undefined` to clear it and return to local mode, which signs out. */
+  saveTeamServer: (serverUrl?: string) =>
+    invoke<TeamState>("save_team_server", { serverUrl: serverUrl ?? null }),
+
+  /** The password is exchanged for a token and is not retained. */
+  signIn: (email: string, password: string) =>
+    invoke<TeamState>("sign_in", { email, password }),
+
+  signOut: () => invoke<TeamState>("sign_out"),
+
+  /** Errors in local mode: nobody is not the same fact as no workspace. */
+  getWorkspace: () => invoke<Workspace>("get_workspace"),
 
   secretStoreAvailable: () => invoke<boolean>("secret_store_available"),
 

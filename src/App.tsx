@@ -24,6 +24,7 @@ import type {
   LogEvent,
   MetricSeries,
   PendingConfirmation,
+  TeamState,
   TopologyView,
 } from "./types";
 import { GLOBAL_STREAMS } from "./types";
@@ -43,6 +44,7 @@ import { Correlate } from "./screens/Correlate";
 import { Logs } from "./screens/Logs";
 import { Metrics } from "./screens/Metrics";
 import { Onboarding } from "./screens/Onboarding";
+import { SignIn } from "./screens/SignIn";
 import { Overview } from "./screens/Overview";
 import { ServiceDetail } from "./screens/ServiceDetail";
 import { Services } from "./screens/Services";
@@ -144,6 +146,7 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   /** Set by "Skip for now": the estate is empty on purpose, for now. */
   const [skippedOnboarding, setSkippedOnboarding] = useState(false);
+  const [team, setTeam] = useState<TeamState | null>(null);
 
   // Alert ids already toasted, so a still-firing alert does not re-notify on
   // every dashboard refresh.
@@ -164,6 +167,20 @@ export default function App() {
       console.error("dashboard refresh failed:", errorMessage(error));
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  /**
+   * Local mode is the default and needs no fetch to be usable, so a failure
+   * here is not fatal: it leaves the app local rather than locking someone out
+   * of their own machine over a setting they may never have set.
+   */
+  const refreshTeam = useCallback(async () => {
+    try {
+      setTeam(await api.getTeam());
+    } catch (error) {
+      console.error("workspace load failed:", errorMessage(error));
+      setTeam({ hasSession: false });
     }
   }, []);
 
@@ -234,6 +251,7 @@ export default function App() {
     refreshDashboard();
     refreshConfig();
     refreshIncidents();
+    refreshTeam();
     api
       .getServiceCatalog()
       .then((descriptors) => setCatalog(new Catalog(descriptors)))
@@ -243,7 +261,7 @@ export default function App() {
       .then(setLogs)
       .catch((e) => console.error("log load failed:", errorMessage(e)));
     api.pendingConfirmations().then(setConfirmations).catch(() => undefined);
-  }, [refreshDashboard, refreshConfig, refreshIncidents]);
+  }, [refreshDashboard, refreshConfig, refreshIncidents, refreshTeam]);
 
   // Re-runs whenever the window changes, which is what makes the range
   // controls on Metrics and Logs actually refetch rather than just re-slice.
@@ -440,7 +458,10 @@ export default function App() {
   const reached = dashboard?.snapshots.length ?? 0;
   const configured = config?.profiles.length ?? 0;
   const bootReady =
-    config !== null && !catalog.isEmpty && (configured === 0 || reached >= configured);
+    config !== null &&
+    !catalog.isEmpty &&
+    team !== null &&
+    (configured === 0 || reached >= configured);
 
   useEffect(() => {
     if (!booting) return;
@@ -461,6 +482,33 @@ export default function App() {
         catalogLoaded={!catalog.isEmpty}
         reached={reached}
         total={configured}
+      />
+    );
+  }
+
+  /**
+   * A workspace server is configured but this machine has no session.
+   *
+   * Only reachable once someone has pointed root at a server: in local mode —
+   * the default, and what the packaged app does out of the box — there is
+   * nothing to sign in to and this never appears. A monitoring tool that
+   * demanded an account before it would look at your own Docker socket would
+   * have taken something away rather than added anything.
+   */
+  if (team?.serverUrl && !team.hasSession) {
+    return (
+      <SignIn
+        serverUrl={team.serverUrl}
+        model={model}
+        minutes={minutes}
+        healthRuns={healthRuns}
+        onSignedIn={setTeam}
+        onUseLocal={() => {
+          api
+            .saveTeamServer(undefined)
+            .then(setTeam)
+            .catch((e) => console.error("could not return to local mode:", errorMessage(e)));
+        }}
       />
     );
   }
@@ -491,10 +539,12 @@ export default function App() {
       <Sidebar
         view={view}
         model={model}
+        team={team}
         collapsed={collapsed}
         onNavigate={setView}
         onToggleCollapsed={() => setCollapsed((c) => !c)}
         onOpenPalette={() => setPaletteOpen(true)}
+        onOpenWorkspace={() => setView({ name: "settings" })}
       />
 
       <main className="flex min-w-0 flex-1 flex-col">

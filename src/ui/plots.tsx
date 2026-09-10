@@ -164,7 +164,7 @@ export function Lanes({
   );
 }
 
-function LaneStrip({ runs, height }: { runs: Run[]; height: number }) {
+export function LaneStrip({ runs, height }: { runs: Run[]; height: number }) {
   const hatch = `hatch-${runs.length}-${Math.round((runs[0]?.from ?? 0) * 1000)}`;
   const needsHatch = runs.some((r) => r.health === "unknown");
 

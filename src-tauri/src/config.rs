@@ -273,6 +273,79 @@ pub struct AppConfig {
     pub retention: Retention,
     #[serde(default)]
     pub ingest: IngestSettings,
+    #[serde(default)]
+    pub team: TeamSettings,
+}
+
+/// Where a shared workspace lives, if there is one.
+///
+/// root is local-first and stays that way: with no server configured it is a
+/// single-operator tool reading a config file on this machine, which is the
+/// only mode that needs no trust in anything but the OS keychain.
+///
+/// Pointing it at a root server is opt-in and additive. The server is one you
+/// run — there is no hosted service and no account to create — and all it adds
+/// is a shared identity so several people can look at the same estate and be
+/// told apart. The session token is never written here; it lives in the
+/// keychain beside the connection credentials.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TeamSettings {
+    /// `None` is local mode, and is the default.
+    pub server_url: Option<String>,
+    /// Who is signed in. Absent until a sign-in succeeds.
+    pub account: Option<Account>,
+}
+
+/// What a signed-in person is, as far as this machine is concerned.
+///
+/// A cache of what the server said, not a claim this app can make on its own:
+/// the role here decides what the UI offers, and the server decides what the
+/// UI is allowed to do. A client that enforced its own permissions would be
+/// enforcing nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    pub email: String,
+    pub name: String,
+    pub role: Role,
+}
+
+/// Ascending authority. `Viewer` is the floor because it is what an SSO domain
+/// match grants, and granting anything more by default would make joining a
+/// workspace an escalation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    /// The default in every sense: the floor a domain match grants, and what
+    /// an unreadable or absent role must fall back to rather than up to.
+    #[default]
+    Viewer,
+    Responder,
+    Admin,
+    Owner,
+}
+
+impl Role {
+    pub fn label(self) -> &'static str {
+        match self {
+            Role::Viewer => "Viewer",
+            Role::Responder => "Responder",
+            Role::Admin => "Admin",
+            Role::Owner => "Owner",
+        }
+    }
+
+    /// What this role may do, in the app's own words. The server is the thing
+    /// that enforces it; this is only what the UI should bother offering.
+    pub fn summary(self) -> &'static str {
+        match self {
+            Role::Viewer => "Read everything. Change nothing, and the assistant stays read-only.",
+            Role::Responder => "Acknowledge alerts and run collector actions. Cannot change connections.",
+            Role::Admin => "Add, edit and remove connections, and manage members.",
+            Role::Owner => "Everything an admin can do, plus transferring the workspace.",
+        }
+    }
 }
 
 /// The local deploy-ingest listener.

@@ -436,11 +436,60 @@ export interface LlmSettings {
   hasApiKey: boolean;
 }
 
+/**
+ * Ascending authority. Viewer is the floor because it is what an SSO domain
+ * match grants, and joining a workspace should never be an escalation.
+ */
+export type Role = "viewer" | "responder" | "admin" | "owner";
+
+export interface Account {
+  email: string;
+  name: string;
+  role: Role;
+}
+
+/**
+ * Local mode is a value, not an error.
+ *
+ * `serverUrl` absent means root is doing what it does by default: reading a
+ * config file on this machine and answering to nobody. The role here decides
+ * which controls are worth drawing; the server decides what they are allowed
+ * to do. A client that enforced its own permissions would be enforcing
+ * nothing.
+ */
+export interface TeamState {
+  serverUrl?: string;
+  account?: Account;
+  /** A token exists locally. Not proof the server still honours it. */
+  hasSession: boolean;
+}
+
+export interface Member {
+  email: string;
+  name: string;
+  role: Role;
+  /** Absent for someone invited who has not signed in yet. */
+  lastSeen?: string;
+  viaSso: boolean;
+}
+
+export interface SsoSettings {
+  domain?: string;
+  defaultRole: Role;
+  enforced: boolean;
+}
+
+export interface Workspace {
+  members: Member[];
+  sso: SsoSettings;
+}
+
 export interface AppConfig {
   profiles: ConnectionProfile[];
   llm: LlmSettings;
   retention: { logCapacity: number };
   ingest: { enabled: boolean; port: number };
+  team: { serverUrl?: string; account?: Account };
 }
 
 /**

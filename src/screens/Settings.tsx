@@ -19,6 +19,7 @@ import type {
   ServiceDescriptor,
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
+import { TeamSettings } from "./TeamSettings";
 import {
   Button,
   cx,
@@ -34,7 +35,7 @@ import {
 } from "../ui/primitives";
 import { CloseIcon, PlusIcon, TrashIcon } from "../ui/icons";
 
-type Tab = "connections" | "assistant" | "ingest" | "display";
+type Tab = "connections" | "team" | "assistant" | "ingest" | "display";
 
 export function Settings({
   config,
@@ -61,6 +62,7 @@ export function Settings({
           onChange={setTab}
           options={[
             { value: "connections", label: "Connections", count: config?.profiles.length },
+            { value: "team", label: "Workspace" },
             { value: "assistant", label: "Assistant" },
             { value: "ingest", label: "Deploy ingest" },
             { value: "display", label: "Display" },
@@ -75,6 +77,7 @@ export function Settings({
               onConfigChange={onConfigChange}
             />
           )}
+          {tab === "team" && <TeamSettings />}
           {tab === "assistant" && (
             <AssistantSettings config={config} onConfigChange={onConfigChange} />
           )}

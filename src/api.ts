@@ -38,7 +38,9 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_metric_history: ({ profileId }) => fixtures.seriesFor(profileId as string),
   get_all_metric_history: () =>
     Object.fromEntries(fixtures.SNAPSHOTS.map((s) => [s.profileId, fixtures.seriesFor(s.profileId)])),
-  get_component_history: () => [],
+  get_component_history: ({ profileId, sectionId, rowId }) =>
+    fixtures.componentSeriesFor(profileId as string, sectionId as string, rowId as string),
+  get_capacity_risks: ({ take }) => fixtures.capacityRisks((take as number) ?? 8),
   get_health_runs: () => fixtures.healthRuns(),
   get_topology: () => fixtures.topology(),
   get_incidents: () => fixtures.incidents(),
@@ -104,6 +106,7 @@ import type {
   AgentTurn,
   AppConfig,
   ChangeEvent,
+  CapacityRisk,
   ConnectionProfile,
   Correlation,
   DashboardState,
@@ -169,6 +172,16 @@ export const api = {
       rowId,
       minutes: minutes ?? null,
     }),
+
+  /**
+   * What is closest to a limit across the whole estate, soonest first.
+   *
+   * Deliberately takes no window: the fit uses every retained sample, because
+   * a fifteen-minute view cannot see a disk three weeks out and the answer to
+   * "when does this fill" should not change because somebody clicked 1h.
+   */
+  getCapacityRisks: (take?: number) =>
+    invoke<CapacityRisk[]>("get_capacity_risks", { take: take ?? null }),
 
   getAllMetricHistory: (minutes?: number) =>
     invoke<Record<string, MetricSeries[]>>("get_all_metric_history", {

@@ -11,6 +11,7 @@ pub mod collectors;
 pub mod commands;
 pub mod config;
 pub mod error;
+pub mod forecast;
 pub mod history;
 pub mod incidents;
 pub mod ingest;
@@ -116,6 +117,7 @@ pub fn run() {
             commands::get_workspace,
             commands::get_change_events,
             commands::get_component_history,
+            commands::get_capacity_risks,
             commands::get_ingest_settings,
             commands::save_ingest_settings,
             commands::rotate_ingest_token,

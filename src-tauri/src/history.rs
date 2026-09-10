@@ -53,6 +53,75 @@ pub struct MetricSeries {
     pub min: f64,
     pub max: f64,
     pub latest: f64,
+    /// Where this metric is heading, and when it reaches `warn_above`.
+    ///
+    /// Absent when the history is too short, too brief, or too noisy to
+    /// extrapolate from — see `forecast`. Every metric that declares a limit
+    /// gets this for free, which is the point: "when does this become a
+    /// problem" is the same question about a disk, a connection pool and an
+    /// inode table, and it should not be answered once per collector.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trend: Option<crate::forecast::Trend>,
+}
+
+/// Which component a capacity risk belongs to, when it is not the connection
+/// itself. Ids only — the caller holds the live snapshot, which carries the
+/// current labels; a second copy here would only let the two drift.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Component {
+    pub section: String,
+    pub row: String,
+}
+
+/// One measure heading toward a limit, anywhere in the estate.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapacityRisk {
+    pub profile_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<Component>,
+    pub key: String,
+    pub label: String,
+    pub unit: MetricUnit,
+    pub value: f64,
+    pub limit: f64,
+    /// Fraction of the limit in use. Can exceed 1 — being over a threshold is
+    /// a state to render, not a value to clamp away.
+    pub used: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trend: Option<crate::forecast::Trend>,
+}
+
+impl CapacityRisk {
+    fn build(
+        profile_id: &str,
+        component: Option<Component>,
+        key: &str,
+        label: &str,
+        unit: MetricUnit,
+        warn_above: Option<f64>,
+        points: &VecDeque<Point>,
+    ) -> Option<Self> {
+        // No declared limit means no headroom to report. A number with no
+        // ceiling is not a warning waiting to happen, and inventing one would
+        // be exactly the guess this is here to avoid.
+        let limit = warn_above.filter(|l| *l > 0.0)?;
+        let value = points.back()?.v;
+        let series: Vec<Point> = points.iter().copied().collect();
+
+        Some(CapacityRisk {
+            profile_id: profile_id.to_string(),
+            component,
+            key: key.to_string(),
+            label: label.to_string(),
+            unit,
+            value,
+            limit,
+            used: value / limit,
+            trend: crate::forecast::trend(&series, Some(limit)),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -411,6 +480,7 @@ impl HistoryStore {
                     min: if min.is_finite() { min } else { 0.0 },
                     max: if max.is_finite() { max } else { 0.0 },
                     latest,
+                    trend: crate::forecast::trend(&points, track.warn_above),
                     points,
                 }
             })
@@ -418,6 +488,74 @@ impl HistoryStore {
 
         series.sort_by(|a, b| a.key.cmp(&b.key));
         series
+    }
+
+    /// Everything in the estate that has a declared limit, ranked by when it
+    /// reaches it.
+    ///
+    /// This exists because the interesting capacity answer is almost never at
+    /// connection level. An NFS connection reports "fullest export 71%"; what
+    /// the storage owner needs is *which* export, whose team owns it, and how
+    /// many days are left. Same for the one container on a busy host whose
+    /// volume is climbing, or the single hot node in a cluster. Those live in
+    /// the tracked entity series, one row deep, and no screen that only reads
+    /// connection metrics can see them.
+    ///
+    /// Ranking happens here rather than in the client for one reason: the
+    /// client would have to pull every entity's history for every connection
+    /// to do it, which is the whole store over IPC to compute a list of six.
+    ///
+    /// Deliberately ignores any caller window and fits over the full retained
+    /// history. The window on the metrics screen is a viewing choice; a fit is
+    /// a measurement, and a fifteen-minute view cannot see a disk three weeks
+    /// out. There is only ever one right answer to "when does this fill", and
+    /// it does not change because somebody clicked 1h.
+    pub fn capacity_risks(&self, take: usize) -> Vec<CapacityRisk> {
+        let mut out: Vec<CapacityRisk> = Vec::new();
+
+        for (profile_id, tracks) in &self.tracks {
+            for (key, track) in tracks {
+                if let Some(risk) =
+                    CapacityRisk::build(profile_id, None, key, &track.label, track.unit,
+                                        track.warn_above, &track.points)
+                {
+                    out.push(risk);
+                }
+            }
+        }
+
+        for (profile_id, entities) in &self.entities {
+            for (key, track) in entities {
+                let component = Some(Component {
+                    section: key.section.clone(),
+                    row: key.row.clone(),
+                });
+                if let Some(risk) =
+                    CapacityRisk::build(profile_id, component, &key.column, &track.label,
+                                        track.unit, track.warn_above, &track.points)
+                {
+                    out.push(risk);
+                }
+            }
+        }
+
+        // Soonest first; anything with no projection falls back to how full it
+        // is, which is all that can be said about it. A row at 80% that has
+        // not moved in a month needs nobody, and one at 40% doubling weekly
+        // needs somebody this week — so fill is the tiebreak, never the key.
+        out.sort_by(|a, b| {
+            match (
+                a.trend.as_ref().and_then(|t| t.seconds_to_limit),
+                b.trend.as_ref().and_then(|t| t.seconds_to_limit),
+            ) {
+                (Some(x), Some(y)) => x.total_cmp(&y),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => b.used.total_cmp(&a.used),
+            }
+        });
+        out.truncate(take);
+        out
     }
 
     /// How many component series this connection is holding, for diagnostics.
@@ -460,6 +598,7 @@ impl HistoryStore {
                     min: if min.is_finite() { min } else { 0.0 },
                     max: if max.is_finite() { max } else { 0.0 },
                     latest,
+                    trend: crate::forecast::trend(&points, track.warn_above),
                     points,
                 }
             })
@@ -680,6 +819,114 @@ mod tests {
         let runs = store.health_runs("p1", start, start + Duration::seconds(40 * 5));
         assert_eq!(runs.len(), 1, "a steady 5s poll is not a gap: {runs:?}");
         assert_eq!(runs[0].health, Health::Healthy);
+    }
+
+    // ------------------------------------------------------- capacity ranking
+
+    /// `count` samples 30s apart, ramping linearly from `from` to `to`. The
+    /// span clears the forecaster's fifteen-minute floor at count >= 32.
+    fn ramp(store: &mut HistoryStore, profile: &str, from: f64, to: f64, count: i64) {
+        let start = Utc::now() - Duration::seconds(count * 30);
+        for i in 0..count {
+            let progress = i as f64 / (count - 1) as f64;
+            let mut snap = snapshot(from + (to - from) * progress, start + Duration::seconds(i * 30));
+            snap.profile_id = profile.to_string();
+            store.record(&snap);
+        }
+    }
+
+    /// The whole reason this ranking exists: a metric at 40% climbing fast is
+    /// a bigger problem than one parked at 80%, and sorting by fill gets that
+    /// exactly backwards.
+    #[test]
+    fn a_fast_climb_outranks_a_fuller_metric_that_is_not_moving() {
+        let mut store = HistoryStore::default();
+        ramp(&mut store, "climbing", 10.0, 40.0, 40);
+        ramp(&mut store, "parked", 80.0, 80.0, 40);
+
+        let risks = store.capacity_risks(10);
+        assert_eq!(risks.len(), 2);
+        assert_eq!(risks[0].profile_id, "climbing");
+        assert!(risks[0].trend.unwrap().seconds_to_limit.is_some());
+        assert_eq!(risks[1].profile_id, "parked");
+        assert!(
+            risks[1].trend.unwrap().seconds_to_limit.is_none(),
+            "a flat metric never reaches its limit",
+        );
+    }
+
+    /// Component series are the point of the estate-wide walk — an NFS export
+    /// or one container's volume is where the actionable capacity answer
+    /// lives, and no connection-level metric can name it.
+    #[test]
+    fn tracked_components_are_ranked_alongside_connection_metrics() {
+        let mut store = HistoryStore::default();
+        let start = Utc::now() - Duration::seconds(40 * 30);
+        for i in 0..40 {
+            let cpu = 10.0 + (i as f64) * 1.8;
+            store.record(&with_containers(&["api"], cpu, start + Duration::seconds(i * 30), true));
+        }
+
+        let risks = store.capacity_risks(10);
+        let component = risks
+            .iter()
+            .find(|r| r.component.is_some())
+            .expect("the tracked container should be ranked");
+        let at = component.component.as_ref().unwrap();
+        assert_eq!(at.section, "containers");
+        assert_eq!(at.row, "api");
+        assert_eq!(component.key, "cpu");
+        assert_eq!(component.limit, 85.0);
+    }
+
+    /// An untracked section has no series behind it, so it cannot be forecast
+    /// and must not appear as though it had been.
+    #[test]
+    fn untracked_components_are_absent() {
+        let mut store = HistoryStore::default();
+        let start = Utc::now() - Duration::seconds(40 * 30);
+        for i in 0..40 {
+            let cpu = 10.0 + (i as f64) * 1.8;
+            store.record(&with_containers(&["api"], cpu, start + Duration::seconds(i * 30), false));
+        }
+
+        assert!(store.capacity_risks(10).iter().all(|r| r.component.is_none()));
+    }
+
+    /// A metric with no declared threshold has no headroom to report, and
+    /// inventing one would be a guess dressed as a measurement.
+    #[test]
+    fn a_metric_without_a_limit_has_no_capacity_answer() {
+        let mut store = HistoryStore::default();
+        let start = Utc::now() - Duration::seconds(40 * 30);
+        for i in 0..40 {
+            let mut snap = snapshot(10.0, start + Duration::seconds(i * 30));
+            snap.metrics = vec![Metric::new("conns", "Connections", i as f64, MetricUnit::Count)];
+            store.record(&snap);
+        }
+
+        assert!(store.capacity_risks(10).is_empty());
+    }
+
+    /// Being over the threshold is a state to report, not a value to clamp —
+    /// and it is already there, not arriving at some point in the past.
+    #[test]
+    fn a_metric_past_its_limit_reports_no_time_left() {
+        let mut store = HistoryStore::default();
+        ramp(&mut store, "over", 80.0, 95.0, 40);
+
+        let risks = store.capacity_risks(10);
+        assert_eq!(risks[0].used, 95.0 / 85.0);
+        assert_eq!(risks[0].trend.unwrap().seconds_to_limit, Some(0.0));
+    }
+
+    #[test]
+    fn the_ranking_is_bounded_by_take() {
+        let mut store = HistoryStore::default();
+        for i in 0..5 {
+            ramp(&mut store, &format!("p{i}"), 10.0, 40.0 + i as f64, 40);
+        }
+        assert_eq!(store.capacity_risks(3).len(), 3);
     }
 
     fn event(level: LogLevel, at: DateTime<Utc>) -> LogEvent {

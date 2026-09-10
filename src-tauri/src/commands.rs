@@ -765,6 +765,23 @@ pub async fn get_component_history(
         .entity_series(&profile_id, &section_id, &row_id, since))
 }
 
+/// What in the estate is heading for a limit, and when it gets there.
+///
+/// One call rather than one per connection per component, because the ranking
+/// needs every series at once to be a ranking at all — and the alternative is
+/// shipping the whole history store to the client to sort six rows.
+#[tauri::command]
+pub async fn get_capacity_risks(
+    state: Shared<'_>,
+    take: Option<usize>,
+) -> Result<Vec<crate::history::CapacityRisk>> {
+    Ok(state
+        .history
+        .read()
+        .await
+        .capacity_risks(take.unwrap_or(8).clamp(1, 100)))
+}
+
 /// History for every connection at once, so the dashboard can draw a sparkline
 /// on each card without a request per card.
 #[tauri::command]

@@ -12,6 +12,7 @@ import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { ServiceDashboard } from "./ServiceDashboard";
 import { AlertList } from "../ui/AlertList";
 import { levelColor, TimeSeries, type Domain } from "../ui/charts";
+import { Horizon, Rate } from "../ui/capacity";
 import { SectionList } from "../ui/SectionTable";
 import {
   Button,
@@ -383,10 +384,12 @@ function SummaryBar({
                 <div className="label mt-0.5 truncate" title={metric.label}>
                   {metric.label}
                 </div>
-                {series?.changePct !== undefined && (
-                  <div className="num mt-0.5 text-2xs text-ink-4">
-                    {series.changePct > 0 ? "+" : ""}
-                    {series.changePct.toFixed(1)}%
+                {series?.trend && (
+                  <div className="num mt-0.5 flex gap-1.5 text-2xs">
+                    <Rate trend={series.trend} unit={metric.unit} />
+                    {metric.warnAbove !== undefined && (
+                      <Horizon trend={series.trend} unit={metric.unit} />
+                    )}
                   </div>
                 )}
               </div>
@@ -519,10 +522,12 @@ function MetricsTab({
           title={series.label}
           actions={
             <span className="flex items-center gap-2">
-              {series.changePct !== undefined && (
-                <span className="num text-2xs text-ink-4">
-                  {series.changePct > 0 ? "+" : ""}
-                  {series.changePct.toFixed(1)}%
+              <span className="num text-2xs">
+                <Rate trend={series.trend} unit={series.unit} />
+              </span>
+              {series.warnAbove !== undefined && (
+                <span className="num text-2xs">
+                  <Horizon trend={series.trend} unit={series.unit} />
                 </span>
               )}
               <span

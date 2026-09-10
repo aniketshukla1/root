@@ -22,7 +22,6 @@ import type {
   Incident,
   LogEvent,
   MetricSeries,
-  MetricUnit,
   TopologyView,
 } from "./types";
 import type { EstateModel } from "./model";
@@ -402,46 +401,6 @@ export function confidenceMeaning(incident: Incident): string {
 }
 
 // ------------------------------------------------------------ quiet estate
-
-export interface Headroom {
-  profileId: string;
-  profileName: string;
-  label: string;
-  value: number;
-  limit: number;
-  unit: MetricUnit;
-  /** 0 to 1 — how much of the declared limit is used. */
-  used: number;
-}
-
-/**
- * What is closest to a limit, when nothing is wrong yet.
- *
- * The useful question in a quiet estate is not "is everything green" — the
- * header already said so — but "what will go first". Only metrics with a
- * declared threshold appear: a number with no limit has no headroom to
- * report, and inventing one would be the sort of guess this screen exists to
- * avoid.
- */
-export function headroom(model: EstateModel, take = 6): Headroom[] {
-  const out: Headroom[] = [];
-  for (const service of model.services) {
-    for (const metric of service.snapshot.metrics) {
-      if (metric.warnAbove === undefined || metric.warnAbove === null) continue;
-      if (metric.warnAbove <= 0) continue;
-      out.push({
-        profileId: service.snapshot.profileId,
-        profileName: service.snapshot.profileName,
-        label: metric.label,
-        value: metric.value,
-        limit: metric.warnAbove,
-        unit: metric.unit,
-        used: metric.value / metric.warnAbove,
-      });
-    }
-  }
-  return out.sort((a, b) => b.used - a.used).slice(0, take);
-}
 
 /**
  * Connections that left healthy at any point in the window, even briefly.

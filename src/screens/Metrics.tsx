@@ -8,6 +8,7 @@ import type { View } from "../nav";
 import type { MetricSeries, MetricUnit } from "../types";
 import { rangesAcross } from "../ranges";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
+import { Horizon, Rate } from "../ui/capacity";
 import { TimeSeries, type Domain, type Series } from "../ui/charts";
 import {
   Button,
@@ -299,12 +300,12 @@ function ConnectionMetrics({
                 <span className="min-w-0 truncate text-xs text-ink-3" title={s.label}>
                   {s.label}
                 </span>
-                {s.changePct !== undefined && (
-                  <span className="num ml-auto shrink-0 text-2xs text-ink-4">
-                    {s.changePct > 0 ? "+" : ""}
-                    {s.changePct.toFixed(1)}%
-                  </span>
-                )}
+                {/* The fitted slope, not the first-to-last delta that used
+                    to sit here — see Rate. Absent when the history cannot
+                    support a fit, which is its own answer. */}
+                <span className="num ml-auto shrink-0 text-2xs">
+                  <Rate trend={s.trend} unit={s.unit} />
+                </span>
                 <span
                   className={cx("num shrink-0 text-[15px]", over ? "text-warn" : "text-ink")}
                   title={
@@ -348,6 +349,8 @@ function ConnectionMetrics({
                     <span className="num text-warn">
                       {formatMetricValue(s.warnAbove, s.unit)}
                     </span>
+                    {" · "}
+                    <Horizon trend={s.trend} unit={s.unit} />
                   </span>
                 )}
               </div>
@@ -424,12 +427,12 @@ function ComparisonChart({
               />
               <ServiceMark descriptor={catalog.get(entry.kind)} size={14} />
               <span className="min-w-0 flex-1 truncate text-ink-3">{entry.profileName}</span>
-              {s.changePct !== undefined && (
-                <span className="num text-2xs text-ink-4">
-                  {s.changePct > 0 ? "+" : ""}
-                  {s.changePct.toFixed(1)}%
-                </span>
-              )}
+              {/* Comparing the same metric across the fleet, the question is
+                  which one gets there first — so the column is the horizon,
+                  not the value's recent wobble. */}
+              <span className="num w-[68px] shrink-0 text-right text-2xs">
+                <Horizon trend={s.trend} unit={s.unit} />
+              </span>
               <span className={cx("num w-16 text-right", over ? "text-warn" : "text-ink")}>
                 {formatMetricValue(s.latest, s.unit)}
               </span>

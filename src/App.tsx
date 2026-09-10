@@ -22,6 +22,7 @@ import type {
   HistogramBucket,
   Incident,
   LogEvent,
+  CapacityRisk,
   MetricSeries,
   PendingConfirmation,
   TeamState,
@@ -92,6 +93,7 @@ export default function App() {
   const [catalog, setCatalog] = useState<Catalog>(EMPTY_CATALOG);
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [history, setHistory] = useState<Record<string, MetricSeries[]>>({});
+  const [capacity, setCapacity] = useState<CapacityRisk[]>([]);
   const [buckets, setBuckets] = useState<HistogramBucket[]>([]);
   const [healthRuns, setHealthRuns] = useState<Record<string, HealthRun[]>>({});
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -200,6 +202,19 @@ export default function App() {
     }
   }, [minutes]);
 
+  /**
+   * Rides the history cadence but takes no window, because the forecast
+   * behind it does not: the fit uses every retained sample regardless of what
+   * the metrics screen is currently showing.
+   */
+  const refreshCapacity = useCallback(async () => {
+    try {
+      setCapacity(await api.getCapacityRisks(8));
+    } catch (error) {
+      console.error("capacity load failed:", errorMessage(error));
+    }
+  }, []);
+
   const refreshHealthRuns = useCallback(async () => {
     try {
       setHealthRuns(await api.getHealthRuns(minutes));
@@ -270,7 +285,8 @@ export default function App() {
     refreshHealthRuns();
     refreshHistogram();
     refreshContext();
-  }, [refreshHistory, refreshHealthRuns, refreshHistogram, refreshContext]);
+    refreshCapacity();
+  }, [refreshHistory, refreshHealthRuns, refreshHistogram, refreshContext, refreshCapacity]);
 
   useEffect(() => {
     const dashboardTimer = setInterval(() => {
@@ -282,6 +298,7 @@ export default function App() {
       refreshHealthRuns();
       refreshHistogram();
       refreshContext();
+      refreshCapacity();
     }, HISTORY_POLL_MS);
     return () => {
       clearInterval(dashboardTimer);
@@ -294,6 +311,7 @@ export default function App() {
     refreshHealthRuns,
     refreshHistogram,
     refreshContext,
+    refreshCapacity,
   ]);
 
   /**
@@ -419,7 +437,8 @@ export default function App() {
     refreshHistory();
     refreshHealthRuns();
     refreshHistogram();
-  }, [refreshDashboard, refreshHistory, refreshHealthRuns, refreshHistogram]);
+    refreshCapacity();
+  }, [refreshDashboard, refreshHistory, refreshHealthRuns, refreshHistogram, refreshCapacity]);
 
   const acknowledge = useCallback(
     (alertId: string) => {
@@ -570,6 +589,7 @@ export default function App() {
             buckets={buckets}
             healthRuns={healthRuns}
             history={history}
+            capacity={capacity}
             logs={logs}
             loading={loading}
             minutes={minutes}

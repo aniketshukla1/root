@@ -32,6 +32,7 @@ import {
   type Annotation,
   type Domain,
 } from "../ui/charts";
+import { Horizon, Rate } from "../ui/capacity";
 import { Bullet } from "../ui/plots";
 import {
   Button,
@@ -363,10 +364,12 @@ export function ServiceDashboard({
                     >
                       {formatMetricValue(metric.value, metric.unit)}
                     </span>
-                    {series?.changePct !== undefined && (
-                      <span className="num pb-0.5 text-2xs text-ink-4">
-                        {series.changePct > 0 ? "+" : ""}
-                        {series.changePct.toFixed(1)}%
+                    {series?.trend && (
+                      <span className="num flex gap-1.5 pb-0.5 text-2xs">
+                        <Rate trend={series.trend} unit={metric.unit} />
+                        {metric.warnAbove !== undefined && (
+                          <Horizon trend={series.trend} unit={metric.unit} />
+                        )}
                       </span>
                     )}
                     <span className="ml-auto">

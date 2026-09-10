@@ -38,6 +38,7 @@ import type {
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { AlertList } from "../ui/AlertList";
 import { levelColor, Meter, Sparkline, TimeSeries, type Domain } from "../ui/charts";
+import { Horizon, Rate } from "../ui/capacity";
 import {
   Button,
   cx,
@@ -556,6 +557,25 @@ function ChartCard({
         hoverTime={hoverTime}
         onHoverTime={onHoverTime}
       />
+
+      {/* Per-component is where the capacity answer is actually actionable:
+          it is one export, one container, one node that fills — the
+          connection-level roll-up cannot tell you which. */}
+      {series.trend && (
+        <div className="num mt-1 flex items-baseline gap-3 text-2xs">
+          <Rate trend={series.trend} unit={series.unit} />
+          {series.warnAbove !== undefined && (
+            <span className="ml-auto text-ink-4">
+              limit{" "}
+              <span className="num text-warn">
+                {formatMetricValue(series.warnAbove, series.unit)}
+              </span>
+              {" · "}
+              <Horizon trend={series.trend} unit={series.unit} />
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

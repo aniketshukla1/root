@@ -85,3 +85,43 @@ export function formatDuration(ms: number): string {
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.round(ms / 60000)}m`;
 }
+
+/**
+ * How long until something happens, at a scale a person plans around.
+ *
+ * Deliberately coarse. A projection is an estimate with a fit score attached,
+ * and rendering it as "6d 4h 12m" would dress a straight line through noisy
+ * data as a countdown. Days are the unit capacity decisions are actually made
+ * in, and beyond a season the honest answer is that it is not the problem.
+ */
+export function formatHorizon(seconds: number): string {
+  if (seconds <= 0) return "now";
+  const hours = seconds / 3600;
+  if (hours < 1) return `${Math.max(1, Math.round(seconds / 60))}m`;
+  if (hours < 48) return `${Math.round(hours)}h`;
+  const days = hours / 24;
+  if (days < 90) return `${Math.round(days)}d`;
+  return "beyond 90d";
+}
+
+/**
+ * A rate, over a period the reader plans in rather than per second.
+ *
+ * Storage grows in gigabytes a day, not bytes a second, and the per-second
+ * figure is unreadable for every unit that matters to capacity planning.
+ *
+ * The period follows the window the rate was fitted over, because quoting a
+ * one-hour slope per day multiplies it by twenty-four and the result stops
+ * being defensible: a CPU drifting down over an hour was reading "−197%/day",
+ * which is not a thing a percentage can do. Half a day of history earns a
+ * daily figure; less than that gets an hourly one, so the number quoted is
+ * never more than about twice the span actually measured.
+ */
+export function formatRate(perSecond: number, unit: MetricUnit, windowSecs?: number): string {
+  const daily = windowSecs === undefined || windowSecs >= 12 * 3600;
+  const period = daily ? 86_400 : 3_600;
+  const scaled = perSecond * period;
+  if (Math.abs(scaled) < 1e-9) return "flat";
+  const sign = scaled > 0 ? "+" : "−";
+  return `${sign}${formatMetricValue(Math.abs(scaled), unit)}/${daily ? "day" : "h"}`;
+}

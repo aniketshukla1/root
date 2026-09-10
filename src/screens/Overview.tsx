@@ -3,11 +3,12 @@ import { useMemo, useState } from "react";
 import { healthColor, healthLabel } from "../catalog";
 import type { Catalog } from "../catalog";
 import { formatMetricValue, formatRelative } from "../format";
-import { flapped, headroom, homeState, leadIncident } from "../incident";
+import { flapped, homeState, leadIncident } from "../incident";
 import type { EstateModel, Entity, Issue } from "../model";
 import type { View } from "../nav";
 import type {
   Alert,
+  CapacityRisk,
   ChangeEvent,
   Correlation,
   Health,
@@ -18,6 +19,7 @@ import type {
   TopologyView,
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
+import { Horizon } from "../ui/capacity";
 import { AlertList } from "../ui/AlertList";
 import { LogHistogram, levelColor, type Bucket } from "../ui/charts";
 import {
@@ -62,6 +64,7 @@ export function Overview({
   buckets,
   healthRuns,
   history,
+  capacity,
   logs,
   loading,
   minutes,
@@ -83,6 +86,7 @@ export function Overview({
   buckets: Bucket[];
   healthRuns: Record<string, HealthRun[]>;
   history: Record<string, MetricSeries[]>;
+  capacity: CapacityRisk[];
   logs: LogEvent[];
   loading: boolean;
   minutes: number;
@@ -194,6 +198,7 @@ export function Overview({
             catalog={catalog}
             changes={changes}
             healthRuns={healthRuns}
+            capacity={capacity}
             minutes={minutes}
             onNavigate={onNavigate}
           />
@@ -359,6 +364,7 @@ function QuietState({
   catalog,
   changes,
   healthRuns,
+  capacity,
   minutes,
   onNavigate,
 }: {
@@ -366,10 +372,18 @@ function QuietState({
   catalog: Catalog;
   changes: ChangeEvent[];
   healthRuns: Record<string, HealthRun[]>;
+  capacity: CapacityRisk[];
   minutes: number;
   onNavigate: (view: View) => void;
 }) {
-  const limits = useMemo(() => headroom(model), [model]);
+  // Ranked by the backend, which is the only place that can see the component
+  // series — the export, the container's volume, the one hot node. Those are
+  // where the answer usually is, and they are invisible from up here.
+  const limits = capacity;
+  const names = useMemo(
+    () => new Map(model.services.map((s) => [s.snapshot.profileId, s.snapshot.profileName])),
+    [model.services],
+  );
   const flaps = useMemo(() => flapped(healthRuns, model), [healthRuns, model]);
 
   const recent = useMemo(
@@ -416,7 +430,7 @@ function QuietState({
           title="Closest to a limit"
           subtitle={
             limits.length > 0
-              ? "measured against the threshold the collector declares"
+              ? "soonest to reach it first, not fullest"
               : "no thresholds declared"
           }
         >
@@ -430,14 +444,30 @@ function QuietState({
             <div className="flex flex-col gap-2.5">
               {limits.map((row) => (
                 <button
-                  key={`${row.profileId}:${row.label}`}
+                  key={`${row.profileId}:${row.component?.row ?? ""}:${row.key}`}
                   type="button"
-                  onClick={() => onNavigate({ name: "service", profileId: row.profileId })}
+                  onClick={() =>
+                    onNavigate(
+                      row.component
+                        ? {
+                            name: "component",
+                            profileId: row.profileId,
+                            sectionId: row.component.section,
+                            rowId: row.component.row,
+                          }
+                        : { name: "service", profileId: row.profileId },
+                    )
+                  }
                   className="row-hover flex items-center gap-3 rounded-sm px-1 py-0.5 text-left"
-                  title={`${row.profileName} · ${row.label}`}
+                  title={`${names.get(row.profileId) ?? row.profileId} · ${
+                    row.component ? `${row.component.row} · ` : ""
+                  }${row.label}`}
                 >
+                  {/* The component is the answer when there is one. "nfs-prod
+                      is 71% full" sends you looking; "/mnt/teams/alpha" is
+                      the thing to go and look at. */}
                   <span className="num w-[110px] shrink-0 truncate text-2xs text-ink-3">
-                    {row.profileName}
+                    {row.component?.row ?? names.get(row.profileId) ?? row.profileId}
                   </span>
                   <span className="num w-[120px] shrink-0 truncate text-2xs text-ink-2">
                     {row.label}
@@ -453,6 +483,12 @@ function QuietState({
                   <span className="num w-[124px] shrink-0 text-right text-2xs text-ink-3">
                     {formatMetricValue(row.value, row.unit)}
                     <span className="text-ink-4"> of {formatMetricValue(row.limit, row.unit)}</span>
+                  </span>
+                  {/* The capacity answer. A row with no projection says so
+                      rather than showing a blank column, because a blank one
+                      reads as "no rush" and the truth is "not knowable yet". */}
+                  <span className="num w-[104px] shrink-0 text-right text-2xs">
+                    <Horizon trend={row.trend} unit={row.unit} />
                   </span>
                 </button>
               ))}

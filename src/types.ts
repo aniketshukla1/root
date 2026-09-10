@@ -260,6 +260,46 @@ export interface Point {
   v: number;
 }
 
+/**
+ * Where a metric is heading, and when it reaches its declared limit.
+ *
+ * Absent whenever the history is too short, too brief, or too noisy to
+ * extrapolate from. That absence is the point: a projection nobody can trust
+ * is worse than none, because the first wrong one teaches people to ignore the
+ * rest. `fit` travels with it so the screen can say how much to believe it.
+ */
+export interface Trend {
+  /** Change per second, in the metric's own unit. */
+  perSecond: number;
+  /** 0–1. How much of the movement a straight line explains. */
+  fit: number;
+  windowSecs: number;
+  samples: number;
+  /** Seconds until it is at or above `warnAbove`. Absent if not heading there. */
+  secondsToLimit?: number;
+}
+
+/**
+ * One measure heading toward a limit, anywhere in the estate.
+ *
+ * Ranked by the backend because ranking needs every series at once, and the
+ * component ones — an NFS export, a container's volume, a single hot node —
+ * are one row deep in a place no connection-level view reaches.
+ */
+export interface CapacityRisk {
+  profileId: string;
+  /** Absent for connection metrics; identifies the component otherwise. */
+  component?: { section: string; row: string };
+  key: string;
+  label: string;
+  unit: MetricUnit;
+  value: number;
+  limit: number;
+  /** Fraction of the limit in use. May exceed 1 — over is a state, not an error. */
+  used: number;
+  trend?: Trend;
+}
+
 export interface MetricSeries {
   key: string;
   label: string;
@@ -271,6 +311,7 @@ export interface MetricSeries {
   min: number;
   max: number;
   latest: number;
+  trend?: Trend;
 }
 
 /** The declared dependency graph, resolved both ways. */

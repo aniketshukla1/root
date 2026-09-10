@@ -32,8 +32,11 @@ import type {
   LogLevel,
   MetricSeries,
   Point,
+  CapacityRisk,
+  MetricUnit,
   ServiceDescriptor,
   TeamState,
+  Trend,
   Workspace,
 } from "./types";
 
@@ -55,6 +58,24 @@ function seeded(seed: number) {
   };
 }
 
+/** Poll interval the fixtures pretend to have been collected at. */
+const STEP_MS = 15_000;
+
+/**
+ * How long a series runs.
+ *
+ * An hour, because that is the metrics screen's default window and a fixture
+ * that fills a quarter of its own chart teaches the wrong thing about what
+ * the product looks like with data in it. It also clears the forecaster's
+ * fifteen-minute floor — the previous 60 points spanned 885 seconds, fifteen
+ * short of it, so every projection on the demo estate was correctly refused
+ * and the capacity columns all read "not knowable yet".
+ */
+const SAMPLES = 240;
+
+/** The step figures below were tuned at this many points. See `series`. */
+const SAMPLES_TUNED_AT = 60;
+
 function series(
   n: number,
   seed: number,
@@ -64,13 +85,22 @@ function series(
   const r = seeded(seed);
   const out: Point[] = [];
   let v = base;
+
+  // Shapes are defined over the whole window, not per sample, so the drawing
+  // is the same at any resolution. The per-step figures were tuned at 60
+  // points; scaling drift by 60/n and noise by sqrt(60/n) — a random walk's
+  // spread grows with the root of its length — keeps a longer series looking
+  // like the same metric rather than a wilder one.
+  const drift = SAMPLES_TUNED_AT / n;
+  const noise = Math.sqrt(drift);
+
   for (let i = 0; i < n; i += 1) {
-    v += (r() - 0.5) * base * 0.13;
-    if (shape === "rise") v += base * 0.012;
-    if (shape === "fall") v -= base * 0.01;
-    if (shape === "spike" && i > n * 0.72) v += base * 0.06;
+    v += (r() - 0.5) * base * 0.13 * noise;
+    if (shape === "rise") v += base * 0.012 * drift;
+    if (shape === "fall") v -= base * 0.01 * drift;
+    if (shape === "spike" && i > n * 0.72) v += base * 0.06 * drift;
     v = Math.max(base * 0.1, v);
-    out.push({ t: iso((n - i) * 15_000), v: Number(v.toFixed(2)) });
+    out.push({ t: iso((n - i) * STEP_MS), v: Number(v.toFixed(2)) });
   }
 
   // The walk starts at `base` and drifts, which left the LAST point — the one
@@ -306,6 +336,12 @@ function rowsFor(spec: Spec): HealthSnapshot["sections"] {
               ? "responding slowly"
               : "running",
         cells: {
+          // The primary column reads cells.name, not row.name — without this
+          // every component listed as "—" and there was nothing to click.
+          name: {
+            type: "text" as const,
+            value: `${label.toLowerCase().replace(/\s+/g, "-")}-${i + 1}`,
+          },
           image: { type: "text" as const, value: `${id}:2.14.3` },
           cpu: { type: "number" as const, value: Math.round(r() * 90) },
           memory: { type: "number" as const, value: Math.round(r() * 8 * 1024 ** 3) },
@@ -454,12 +490,13 @@ export function seriesFor(profileId: string): MetricSeries[] {
   return scenarioMetrics(profileId).map(([key, label, value, unit, warnAbove], i) => {
     const shape = key === "memory" || key === "lag" || key === "heap" ? "rise"
       : key === "error_rate" ? "spike" : key === "running" ? "fall" : "flat";
-    const points = series(60, profileId.length * 31 + i * 7, value, shape);
+    const points = series(SAMPLES, profileId.length * 31 + i * 7, value, shape);
     const values = points.map((p) => p.v);
     return {
       key, label, unit: unit as never, warnAbove, points,
       changePct: Number((((values[values.length - 1] - values[0]) / (values[0] || 1)) * 100).toFixed(1)),
       min: Math.min(...values), max: Math.max(...values), latest: values[values.length - 1],
+      trend: fitTrend(points, warnAbove),
     };
   });
 }
@@ -1075,4 +1112,158 @@ export function workspace(): Workspace {
       { email: "new.hire@acme.io", name: "Invited", role: "viewer", viaSso: false },
     ],
   };
+}
+
+/**
+ * The same least-squares fit the backend does, over the fixture's own points.
+ *
+ * Ported rather than hard-coded, for the reason `incidents()` is: a fabricated
+ * "fills in 6 days" would keep saying six days however the generated series
+ * changed underneath it, and the capacity view would be designed against a
+ * number that means nothing. The gates match forecast.rs — eight samples,
+ * fifteen minutes, R² of 0.25 — so the browser refuses to project in exactly
+ * the cases the product does.
+ */
+function fitTrend(points: Point[], warnAbove?: number): Trend | undefined {
+  if (points.length < 8) return undefined;
+  const t0 = Date.parse(points[0].t);
+  const windowSecs = (Date.parse(points[points.length - 1].t) - t0) / 1000;
+  if (windowSecs < 900) return undefined;
+
+  const xs = points.map((p) => (Date.parse(p.t) - t0) / 1000);
+  const ys = points.map((p) => p.v);
+  const n = xs.length;
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+
+  let sxy = 0;
+  let sxx = 0;
+  for (let i = 0; i < n; i += 1) {
+    sxy += (xs[i] - meanX) * (ys[i] - meanY);
+    sxx += (xs[i] - meanX) ** 2;
+  }
+  if (sxx <= Number.EPSILON) return undefined;
+
+  const perSecond = sxy / sxx;
+  const intercept = meanY - perSecond * meanX;
+  let ssRes = 0;
+  let ssTot = 0;
+  for (let i = 0; i < n; i += 1) {
+    ssRes += (ys[i] - (intercept + perSecond * xs[i])) ** 2;
+    ssTot += (ys[i] - meanY) ** 2;
+  }
+  const fit = ssTot <= Number.EPSILON ? 1 : Math.min(1, Math.max(0, 1 - ssRes / ssTot));
+
+  const current = ys[ys.length - 1];
+  let secondsToLimit: number | undefined;
+  if (warnAbove !== undefined) {
+    // Already past it is a reading of the present, not a projection, so it
+    // does not wait on the fit — same ordering as seconds_to_ceiling.
+    if (current >= warnAbove) secondsToLimit = 0;
+    else if (fit >= 0.25 && perSecond > 0) secondsToLimit = (warnAbove - current) / perSecond;
+  }
+
+  return { perSecond, fit, windowSecs, samples: n, secondsToLimit };
+}
+
+/**
+ * The estate's capacity ranking, over the fixture's own series.
+ *
+ * Mirrors capacity_risks() in history.rs: everything with a declared limit,
+ * soonest to reach it first, fill only as the tiebreak for rows with no
+ * projection. Component-level rows are absent here because the fixture has no
+ * per-entity history to fit — that gap is the fixture's, not the product's.
+ */
+export function capacityRisks(take = 8): CapacityRisk[] {
+  const out: CapacityRisk[] = [];
+  for (const snapshot of SNAPSHOTS) {
+    const series = seriesFor(snapshot.profileId);
+    for (const metric of snapshot.metrics) {
+      if (metric.warnAbove === undefined || metric.warnAbove === null) continue;
+      if (metric.warnAbove <= 0) continue;
+      out.push({
+        profileId: snapshot.profileId,
+        key: metric.key,
+        label: metric.label,
+        unit: metric.unit,
+        value: metric.value,
+        limit: metric.warnAbove,
+        used: metric.value / metric.warnAbove,
+        trend: series.find((s) => s.key === metric.key)?.trend,
+      });
+    }
+  }
+
+  return out
+    .sort((a, b) => {
+      const at = a.trend?.secondsToLimit;
+      const bt = b.trend?.secondsToLimit;
+      if (at !== undefined && bt !== undefined) return at - bt;
+      if (at !== undefined) return -1;
+      if (bt !== undefined) return 1;
+      return b.used - a.used;
+    })
+    .slice(0, take);
+}
+
+/**
+ * History for one component, the way a tracked section produces it.
+ *
+ * The real store records the numeric cells of any section a collector marked
+ * `tracked` — that is how an NFS export's fill, a container's memory or one
+ * node's heap get a series of their own, and it is where the capacity answer
+ * usually lives, because "which export fills first" is not a question the
+ * connection-level roll-up can answer.
+ *
+ * Limits come from the column's gauge threshold in the product. The fixture
+ * declares them here for the same two columns the estate declares them on, so
+ * the component screen shows what it will show with real data behind it.
+ */
+export function componentSeriesFor(
+  profileId: string,
+  sectionId: string,
+  rowId: string,
+): MetricSeries[] {
+  // Read from SNAPSHOTS, which is what the screen is rendering. Rebuilding
+  // the rows from the estate spec looked equivalent and was not: the row
+  // generator draws restarts from a seeded stream only for unhealthy rows, so
+  // a scenario that heals one connection shifts every value after it. The
+  // component page showed 63% in its current-state panel and a series topping
+  // out at 54% — a history of a number the component never held.
+  const section = SNAPSHOTS.find((s) => s.profileId === profileId)?.sections.find(
+    (s) => s.id === sectionId,
+  );
+  const row = section?.rows.find((r) => r.id === rowId);
+  if (!section?.tracked || !row) return [];
+
+  const columns: [string, string, MetricUnit, number | undefined][] = [
+    ["cpu", "CPU", "percent", 85],
+    ["memory", "Memory", "bytes", 8 * 1024 ** 3],
+    ["restarts", "Restarts", "count", undefined],
+  ];
+
+  const seed = rowId.length * 613 + profileId.length * 17;
+  return columns.flatMap(([key, label, unit, warnAbove], i) => {
+    const cell = row.cells[key];
+    if (!cell || cell.type !== "number") return [];
+    const shape = key === "memory" ? "rise" : key === "restarts" ? "flat" : "spike";
+    const points = series(SAMPLES, seed + i * 29, cell.value, shape);
+    const values = points.map((p) => p.v);
+    return [
+      {
+        key,
+        label,
+        unit,
+        warnAbove,
+        points,
+        changePct: Number(
+          (((values[values.length - 1] - values[0]) / (values[0] || 1)) * 100).toFixed(1),
+        ),
+        min: Math.min(...values),
+        max: Math.max(...values),
+        latest: values[values.length - 1],
+        trend: fitTrend(points, warnAbove),
+      },
+    ];
+  });
 }

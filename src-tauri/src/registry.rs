@@ -614,6 +614,125 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             },
         },
         ServiceDescriptor {
+            kind: ServiceKind::Apache,
+            label: "Apache httpd".to_string(),
+            monogram: "AP".to_string(),
+            accent: 13,
+            category: "Endpoints".to_string(),
+            blurb: "Worker saturation from the mod_status scoreboard, request and byte rates, \
+                    and the per-state breakdown that separates a busy server from a stalled one."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Status URL", FieldKind::Url)
+                .placeholder("http://apache.internal/server-status?auto")
+                .required()
+                .help(
+                    "mod_status with the `?auto` query, which is what makes it machine \
+                     readable. Without it the page is HTML and root cannot read it.",
+                ),
+            username: Some(user("optional")),
+            credential: Some(token("Password", "If the status location is password protected.")),
+            fields: {
+                let mut fields = vec![FieldSpec::new(
+                    "saturationWarn",
+                    "Worker saturation warning",
+                    FieldKind::Number,
+                )
+                .default(serde_json::json!(85))
+                .range(1.0, 100.0)
+                .help(
+                    "Percent of worker slots in use above which the server is degraded. \
+                     Counted against every slot httpd will open, not just the ones it has.",
+                )];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 20,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
+            kind: ServiceKind::Haproxy,
+            label: "HAProxy".to_string(),
+            monogram: "HA".to_string(),
+            accent: 14,
+            category: "Endpoints".to_string(),
+            blurb: "Frontends, backends and the servers behind them, with the queue depth that \
+                    moves before the errors do."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Stats URL", FieldKind::Url)
+                .placeholder("http://haproxy.internal:8404/stats")
+                .required()
+                .help(
+                    "The stats page. root appends `;csv` for you — that is what turns the \
+                     HTML page into something it can read.",
+                ),
+            username: Some(user("optional")),
+            credential: Some(token("Password", "If the stats page requires authentication.")),
+            fields: {
+                let mut fields = vec![FieldSpec::new(
+                    "queueWarn",
+                    "Queued request warning",
+                    FieldKind::Number,
+                )
+                .default(serde_json::json!(1))
+                .range(1.0, 100_000.0)
+                .help(
+                    "Requests queued on one backend, waiting for a free server, above which \
+                     the proxy is degraded. Anything queueing at all is usually worth seeing.",
+                )];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 15,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
+            kind: ServiceKind::Memcached,
+            label: "Memcached".to_string(),
+            monogram: "MC".to_string(),
+            accent: 15,
+            category: "Databases".to_string(),
+            blurb: "Hit rate, memory fill, and the eviction rate that tells you a cache is too \
+                    small even while its hit rate looks fine."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Host and port", FieldKind::Text)
+                .placeholder("cache.internal:11211")
+                .required()
+                .help("Port 11211 is assumed if you leave it off."),
+            username: None,
+            credential: None,
+            fields: {
+                let mut fields = vec![
+                    FieldSpec::new("evictionWarn", "Eviction rate warning", FieldKind::Number)
+                        .default(serde_json::json!(1))
+                        .range(0.0, 100_000.0)
+                        .help(
+                            "Evictions per second above which the cache is degraded. Evicting \
+                             at all means it is discarding valid items to make room.",
+                        ),
+                    FieldSpec::new("fillWarn", "Memory warning", FieldKind::Number)
+                        .default(serde_json::json!(90))
+                        .range(1.0, 100.0)
+                        .help("Percent of the configured memory limit in use."),
+                ];
+                fields.extend(shared_fields(false));
+                fields
+            },
+            default_poll_secs: 20,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
             kind: ServiceKind::Kafka,
             label: "Kafka".to_string(),
             monogram: "KF".to_string(),

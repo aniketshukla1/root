@@ -7,6 +7,8 @@
 //! effectively real time, and it degrades far better: a flapping endpoint costs
 //! one failed request instead of leaking a task per container.
 
+pub mod apache;
+pub mod haproxy;
 pub mod database;
 pub mod docker;
 pub mod elasticsearch;
@@ -14,6 +16,7 @@ pub mod http;
 pub mod jenkins;
 pub mod kafka;
 pub mod kubernetes;
+pub mod memcached;
 pub mod mongodb;
 pub mod nginx;
 pub mod prometheus;
@@ -152,6 +155,9 @@ pub async fn build_collector(
         ServiceKind::Prometheus => Arc::new(prometheus::PrometheusCollector::new(profile, secret)?),
         ServiceKind::Rabbitmq => Arc::new(rabbitmq::RabbitCollector::new(profile, secret)?),
         ServiceKind::Nginx => Arc::new(nginx::NginxCollector::new(profile, secret)?),
+        ServiceKind::Apache => Arc::new(apache::ApacheCollector::new(profile, secret)?),
+        ServiceKind::Haproxy => Arc::new(haproxy::HaproxyCollector::new(profile, secret)?),
+        ServiceKind::Memcached => Arc::new(memcached::MemcachedCollector::new(profile)?),
         ServiceKind::Kafka => Arc::new(kafka::KafkaCollector::new(profile, secret)?),
     };
     Ok(collector)

@@ -26,6 +26,9 @@ pub enum ServiceKind {
     Prometheus,
     Rabbitmq,
     Nginx,
+    Apache,
+    Haproxy,
+    Memcached,
     Kafka,
 }
 
@@ -45,6 +48,9 @@ impl ServiceKind {
         ServiceKind::Prometheus,
         ServiceKind::Rabbitmq,
         ServiceKind::Nginx,
+        ServiceKind::Apache,
+        ServiceKind::Haproxy,
+        ServiceKind::Memcached,
         ServiceKind::Kafka,
     ];
 
@@ -62,6 +68,9 @@ impl ServiceKind {
             ServiceKind::Prometheus => "Prometheus",
             ServiceKind::Rabbitmq => "RabbitMQ",
             ServiceKind::Nginx => "Nginx",
+            ServiceKind::Apache => "Apache httpd",
+            ServiceKind::Haproxy => "HAProxy",
+            ServiceKind::Memcached => "Memcached",
             ServiceKind::Kafka => "Kafka",
         }
     }

@@ -100,9 +100,31 @@ const METRIC_KINDS = ["docker", "kubernetes",
   "nginx", "apache", "tomcat", "haproxy", "traefik", "consul", "jenkins",
   "elasticsearch", "prometheus", "http_endpoint"];
 
+/**
+ * The registry's own labels, for the kinds where capitalising the id gets it
+ * wrong. "Mysql" and "Clickhouse" are not what those products are called, and
+ * the onboarding screen is the first thing anyone sees.
+ */
+const KIND_LABELS: Record<string, string> = {
+  mysql: "MySQL",
+  postgres: "PostgreSQL",
+  mongodb: "MongoDB",
+  clickhouse: "ClickHouse",
+  etcd: "etcd",
+  rabbitmq: "RabbitMQ",
+  nats: "NATS",
+  zookeeper: "ZooKeeper",
+  apache: "Apache httpd",
+  tomcat: "Apache Tomcat",
+  haproxy: "HAProxy",
+  http_endpoint: "HTTP endpoint",
+};
+
 export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
   kind,
-  label: kind.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase()),
+  label:
+    KIND_LABELS[kind] ??
+    kind.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase()),
   monogram: kind.slice(0, 2).toUpperCase(),
   accent: i,
   category:

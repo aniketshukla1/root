@@ -226,6 +226,83 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             },
         },
         ServiceDescriptor {
+            kind: ServiceKind::Podman,
+            label: "Podman".to_string(),
+            monogram: "PO".to_string(),
+            accent: 23,
+            category: "Containers".to_string(),
+            blurb: "Containers, their resource use and their logs — the same Engine API Docker \
+                    serves, from a daemonless, rootless engine."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Socket or host", FieldKind::Text)
+                .placeholder("leave blank for the local socket")
+                .help(
+                    "Blank searches the rootless socket, then the rootful one, then a podman \
+                     machine on macOS. Podman has no daemon, so the socket only exists once \
+                     `podman.socket` or `podman machine` is started.",
+                ),
+            username: None,
+            credential: None,
+            fields: shared_fields(false),
+            default_poll_secs: 10,
+            capabilities: Capabilities {
+                logs: true,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
+            kind: ServiceKind::LinuxHost,
+            label: "Linux host".to_string(),
+            monogram: "LX".to_string(),
+            accent: 24,
+            category: "Hosts".to_string(),
+            blurb: "A VM or bare-metal server through node_exporter: disk fill per mount, \
+                    memory that is actually available, and load measured per core."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "node_exporter URL", FieldKind::Text)
+                .placeholder("web-1.internal")
+                .required()
+                .help(
+                    "Port 9100 is assumed if you leave it off. This host needs node_exporter \
+                     listening — root reaches servers through an agent rather than by holding \
+                     SSH keys for the estate.",
+                ),
+            username: Some(user("optional")),
+            credential: Some(token("Password", "If the exporter is behind basic auth.")),
+            fields: {
+                let mut fields = vec![
+                    FieldSpec::new("diskWarn", "Disk warning", FieldKind::Number)
+                        .default(serde_json::json!(85))
+                        .range(1.0, 100.0)
+                        .help(
+                            "Percent full, measured on the fullest filesystem rather than the \
+                             average — a root volume at 99% beside an empty data volume \
+                             averages to comfortable.",
+                        ),
+                    FieldSpec::new("memoryWarn", "Memory warning", FieldKind::Number)
+                        .default(serde_json::json!(90))
+                        .range(1.0, 100.0)
+                        .help(
+                            "Percent of memory in use, counted from MemAvailable. Free memory \
+                             is near zero on a healthy Linux box and is not the same question.",
+                        ),
+                    FieldSpec::new("loadWarn", "Load per core warning", FieldKind::Number)
+                        .default(serde_json::json!(1.5))
+                        .range(0.1, 100.0)
+                        .help("Load average divided by logical CPUs. 1.0 means fully committed."),
+                ];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 20,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
             kind: ServiceKind::Jenkins,
             label: "Jenkins".to_string(),
             monogram: "JK".to_string(),
@@ -698,7 +775,7 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             label: "Memcached".to_string(),
             monogram: "MC".to_string(),
             accent: 15,
-            category: "Databases".to_string(),
+            category: "Caching".to_string(),
             blurb: "Hit rate, memory fill, and the eviction rate that tells you a cache is too \
                     small even while its hit rate looks fine."
                 .to_string(),
@@ -804,7 +881,7 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             label: "ZooKeeper".to_string(),
             monogram: "ZK".to_string(),
             accent: 18,
-            category: "Messaging".to_string(),
+            category: "Coordination".to_string(),
             blurb: "Ensemble role, request backlog, and the synced-follower count that says \
                     whether quorum has any margin left."
                 .to_string(),
@@ -841,7 +918,7 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             label: "Consul".to_string(),
             monogram: "CS".to_string(),
             accent: 19,
-            category: "Endpoints".to_string(),
+            category: "Coordination".to_string(),
             blurb: "Raft leadership and service health, with a dead agent counted once rather \
                     than once per service registered on it."
                 .to_string(),
@@ -867,7 +944,7 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             label: "etcd".to_string(),
             monogram: "ET".to_string(),
             accent: 20,
-            category: "Databases".to_string(),
+            category: "Coordination".to_string(),
             blurb: "Raft health and — the one that matters — database size against the backend \
                     quota, which turns etcd read-only when it is reached."
                 .to_string(),

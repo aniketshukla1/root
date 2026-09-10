@@ -94,10 +94,12 @@ function series(
  * screen that offered twelve types while the app ships seventeen would be
  * designing against a smaller product than the one that exists.
  */
-const METRIC_KINDS = ["docker", "kubernetes",
-  "postgres", "mysql", "mongodb", "redis", "memcached", "clickhouse", "etcd",
-  "kafka", "rabbitmq", "nats", "zookeeper",
-  "nginx", "apache", "tomcat", "haproxy", "traefik", "consul", "jenkins",
+const METRIC_KINDS = ["docker", "podman", "kubernetes", "linux_host",
+  "postgres", "mysql", "mongodb", "clickhouse",
+  "redis", "memcached",
+  "etcd", "consul", "zookeeper",
+  "kafka", "rabbitmq", "nats",
+  "nginx", "apache", "tomcat", "haproxy", "traefik", "jenkins",
   "elasticsearch", "prometheus", "http_endpoint"];
 
 /**
@@ -118,6 +120,7 @@ const KIND_LABELS: Record<string, string> = {
   tomcat: "Apache Tomcat",
   haproxy: "HAProxy",
   http_endpoint: "HTTP endpoint",
+  linux_host: "Linux host",
 };
 
 export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
@@ -128,10 +131,16 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
   monogram: kind.slice(0, 2).toUpperCase(),
   accent: i,
   category:
-    ["docker", "kubernetes"].includes(kind) ? "Containers & orchestration"
-    : ["postgres", "mysql", "mongodb", "redis", "memcached", "clickhouse", "etcd"].includes(kind)
-      ? "Databases"
-    : ["kafka", "rabbitmq", "nats", "zookeeper"].includes(kind) ? "Messaging"
+    ["docker", "podman"].includes(kind) ? "Containers"
+    : kind === "kubernetes" ? "Orchestration"
+    : kind === "linux_host" ? "Hosts"
+    : ["postgres", "mysql", "mongodb", "clickhouse"].includes(kind) ? "Databases"
+    : ["redis", "memcached"].includes(kind) ? "Caching"
+    : ["etcd", "consul", "zookeeper"].includes(kind) ? "Coordination"
+    : ["kafka", "rabbitmq", "nats"].includes(kind) ? "Messaging"
+    : kind === "jenkins" ? "CI/CD"
+    : kind === "elasticsearch" ? "Search & analytics"
+    : kind === "prometheus" ? "Observability"
     : "Web & endpoints",
   blurb: "",
   endpoint: { key: "endpoint", label: "Endpoint", kind: "text", required: true, advanced: false },

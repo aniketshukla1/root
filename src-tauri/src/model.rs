@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum ServiceKind {
     Docker,
+    Podman,
+    LinuxHost,
     Jenkins,
     Elasticsearch,
     Postgres,
@@ -44,6 +46,8 @@ impl ServiceKind {
     /// without the descriptor the UI needs to display it.
     pub const ALL: &'static [ServiceKind] = &[
         ServiceKind::Docker,
+        ServiceKind::Podman,
+        ServiceKind::LinuxHost,
         ServiceKind::Jenkins,
         ServiceKind::Elasticsearch,
         ServiceKind::Postgres,
@@ -71,6 +75,8 @@ impl ServiceKind {
     pub fn label(self) -> &'static str {
         match self {
             ServiceKind::Docker => "Docker",
+            ServiceKind::Podman => "Podman",
+            ServiceKind::LinuxHost => "Linux host",
             ServiceKind::Jenkins => "Jenkins",
             ServiceKind::Elasticsearch => "Elasticsearch",
             ServiceKind::Postgres => "PostgreSQL",

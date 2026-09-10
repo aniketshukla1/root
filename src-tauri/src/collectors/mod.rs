@@ -19,11 +19,13 @@ pub mod http;
 pub mod jenkins;
 pub mod kafka;
 pub mod kubernetes;
+pub mod linux_host;
 pub mod memcached;
 pub mod mongodb;
 pub mod nats;
 pub mod nginx;
 pub mod prometheus;
+pub mod promtext;
 pub mod rabbitmq;
 pub mod tomcat;
 pub mod traefik;
@@ -147,7 +149,10 @@ pub async fn build_collector(
     secret: Option<String>,
 ) -> Result<Arc<dyn Collector>> {
     let collector: Arc<dyn Collector> = match profile.kind {
-        ServiceKind::Docker => Arc::new(docker::DockerCollector::new(profile)?),
+        ServiceKind::Docker | ServiceKind::Podman => {
+            Arc::new(docker::DockerCollector::new(profile)?)
+        }
+        ServiceKind::LinuxHost => Arc::new(linux_host::LinuxHostCollector::new(profile, secret)?),
         ServiceKind::Jenkins => Arc::new(jenkins::JenkinsCollector::new(profile, secret)?),
         ServiceKind::Elasticsearch => {
             Arc::new(elasticsearch::ElasticsearchCollector::new(profile, secret)?)

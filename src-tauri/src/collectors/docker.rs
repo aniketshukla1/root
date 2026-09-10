@@ -1,5 +1,13 @@
-//! Docker collector: container inventory, per-container CPU/memory/network
+//! Container-engine collector: inventory, per-container CPU/memory/network
 //! stats, health-check state, and log tailing via the Docker Engine API.
+//!
+//! Serves both Docker and Podman, because Podman implements the same API. What
+//! it does not do is pretend they are the same product. Podman is daemonless
+//! and rootless by default, its socket lives somewhere else entirely, and it
+//! is usually started on demand by a systemd socket unit — so a connection
+//! that fails needs a different sentence, and a connection that works should
+//! be labelled with the engine the operator actually runs. The collector
+//! carries its kind rather than hard-coding Docker into every snapshot.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -53,6 +61,8 @@ struct ContainerSample {
 
 pub struct DockerCollector {
     docker: Docker,
+    /// Docker or Podman. Only the labelling and the socket search differ.
+    kind: ServiceKind,
     profile_id: String,
     profile_name: String,
     log_limit: usize,
@@ -61,17 +71,22 @@ pub struct DockerCollector {
 
 impl DockerCollector {
     pub fn new(profile: &ConnectionProfile) -> Result<Self> {
+        let kind = profile.kind;
         let endpoint = profile.endpoint.trim();
         let docker = if endpoint.is_empty() || endpoint.eq_ignore_ascii_case("local") {
-            connect_local()
+            connect_local(kind)
         } else {
             Docker::connect_with_host(endpoint).map_err(|e| {
-                AppError::Collector(format!("could not open the Docker connection: {e}"))
+                AppError::Collector(format!(
+                    "could not open the {} connection: {e}",
+                    kind.label()
+                ))
             })
         }?;
 
         Ok(DockerCollector {
             docker,
+            kind,
             profile_id: profile.id.clone(),
             profile_name: profile.name.clone(),
             log_limit: profile.options.log_limit(),
@@ -217,7 +232,7 @@ impl DockerCollector {
 #[async_trait]
 impl Collector for DockerCollector {
     fn kind(&self) -> ServiceKind {
-        ServiceKind::Docker
+        self.kind
     }
 
     async fn collect(&self) -> Result<HealthSnapshot> {
@@ -229,7 +244,7 @@ impl Collector for DockerCollector {
                 return Ok(HealthSnapshot::unreachable(
                     &self.profile_id,
                     &self.profile_name,
-                    ServiceKind::Docker,
+                    self.kind,
                     e.to_string(),
                     elapsed_ms(start),
                 ))
@@ -246,7 +261,7 @@ impl Collector for DockerCollector {
                 return Ok(HealthSnapshot::unreachable(
                     &self.profile_id,
                     &self.profile_name,
-                    ServiceKind::Docker,
+                    self.kind,
                     e.to_string(),
                     elapsed_ms(start),
                 ))
@@ -409,7 +424,7 @@ impl Collector for DockerCollector {
         Ok(HealthSnapshot {
             profile_id: self.profile_id.clone(),
             profile_name: self.profile_name.clone(),
-            kind: ServiceKind::Docker,
+            kind: self.kind,
             health,
             summary: format!(
                 "Engine {} — {running}/{} containers running{}",
@@ -475,7 +490,7 @@ impl Collector for DockerCollector {
                     events.push(LogEvent::new(
                         &self.profile_id,
                         &self.profile_name,
-                        ServiceKind::Docker,
+                        self.kind,
                         &name,
                         level,
                         message.to_string(),
@@ -575,10 +590,33 @@ fn exited_recently(status: &str) -> bool {
 /// nothing at `/var/run/docker.sock` at all. Colima, Rancher Desktop, and
 /// rootless Podman each place it somewhere else again, so probe for a socket
 /// that actually exists rather than assuming one path.
-fn local_socket_candidates() -> Vec<PathBuf> {
+/// Where each engine keeps its socket.
+///
+/// Searched in the order an operator would expect to be believed: the engine
+/// they asked for first. A Podman connection that quietly fell through to a
+/// Docker socket would report Docker's containers under Podman's name, which
+/// is worse than failing.
+fn local_socket_candidates(kind: ServiceKind) -> Vec<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
     let mut candidates = Vec::new();
 
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+    if kind == ServiceKind::Podman {
+        // Rootless, which is Podman's default and the common case.
+        if let Some(runtime) = &runtime {
+            candidates.push(runtime.join("podman/podman.sock"));
+        }
+        // Rootful, on a host where the socket unit runs as root.
+        candidates.push(PathBuf::from("/run/podman/podman.sock"));
+        if let Some(home) = &home {
+            // `podman machine` on macOS forwards the VM's socket to here.
+            candidates.push(home.join(".local/share/containers/podman/machine/podman.sock"));
+            candidates.push(home.join(".local/share/containers/podman/machine/qemu/podman.sock"));
+        }
+        return candidates;
+    }
+
+    if let Some(home) = &home {
         candidates.push(home.join(".docker/run/docker.sock")); // Docker Desktop
         candidates.push(home.join(".colima/default/docker.sock")); // Colima
         candidates.push(home.join(".rd/docker.sock")); // Rancher Desktop
@@ -586,26 +624,31 @@ fn local_socket_candidates() -> Vec<PathBuf> {
 
     candidates.push(PathBuf::from("/var/run/docker.sock"));
 
-    if let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from) {
-        candidates.push(runtime.join("podman/podman.sock")); // rootless Podman
+    if let Some(runtime) = &runtime {
         candidates.push(runtime.join("docker.sock"));
     }
 
     candidates
 }
 
-fn connect_local() -> Result<Docker> {
-    // An explicit DOCKER_HOST always wins; it is how users point at a remote or
-    // non-standard daemon.
-    if let Ok(host) = std::env::var("DOCKER_HOST") {
+fn connect_local(kind: ServiceKind) -> Result<Docker> {
+    // Each engine has its own "point somewhere else" variable, and an explicit
+    // one always wins — it is how an operator reaches a remote or non-standard
+    // socket. Podman reads CONTAINER_HOST; honouring DOCKER_HOST for a Podman
+    // connection would send it to the wrong engine on any machine running both.
+    let (var, value) = match kind {
+        ServiceKind::Podman => ("CONTAINER_HOST", std::env::var("CONTAINER_HOST")),
+        _ => ("DOCKER_HOST", std::env::var("DOCKER_HOST")),
+    };
+    if let Ok(host) = value {
         if !host.trim().is_empty() {
             return Docker::connect_with_host(&host).map_err(|e| {
-                AppError::Collector(format!("DOCKER_HOST is set to `{host}` but failed: {e}"))
+                AppError::Collector(format!("{var} is set to `{host}` but failed: {e}"))
             });
         }
     }
 
-    let candidates = local_socket_candidates();
+    let candidates = local_socket_candidates(kind);
     for path in &candidates {
         if !path.exists() {
             continue;
@@ -615,14 +658,23 @@ fn connect_local() -> Result<Docker> {
             DOCKER_TIMEOUT_SECS,
             API_DEFAULT_VERSION,
         ) {
-            tracing::debug!("using the Docker socket at {}", path.display());
+            tracing::debug!("using the {} socket at {}", kind.label(), path.display());
             return Ok(docker);
         }
     }
 
+    let hint = if kind == ServiceKind::Podman {
+        // Podman has no daemon: the socket only exists once the socket unit or
+        // `podman machine` has been started, which is the usual cause.
+        "Start it with `systemctl --user start podman.socket`, or `podman machine start` \
+         on macOS. You can also set CONTAINER_HOST or enter the endpoint explicitly."
+    } else {
+        "Set DOCKER_HOST, or enter the endpoint explicitly on the connection."
+    };
+
     Err(AppError::Collector(format!(
-        "no Docker socket found. Tried {}. Set DOCKER_HOST, or enter the endpoint \
-         explicitly on the connection.",
+        "no {} socket found. Tried {}. {hint}",
+        kind.label(),
         candidates
             .iter()
             .map(|p| p.display().to_string())

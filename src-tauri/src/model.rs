@@ -29,6 +29,7 @@ pub enum ServiceKind {
     Apache,
     Haproxy,
     Memcached,
+    Traefik,
     Kafka,
 }
 
@@ -51,6 +52,7 @@ impl ServiceKind {
         ServiceKind::Apache,
         ServiceKind::Haproxy,
         ServiceKind::Memcached,
+        ServiceKind::Traefik,
         ServiceKind::Kafka,
     ];
 
@@ -71,6 +73,7 @@ impl ServiceKind {
             ServiceKind::Apache => "Apache httpd",
             ServiceKind::Haproxy => "HAProxy",
             ServiceKind::Memcached => "Memcached",
+            ServiceKind::Traefik => "Traefik",
             ServiceKind::Kafka => "Kafka",
         }
     }

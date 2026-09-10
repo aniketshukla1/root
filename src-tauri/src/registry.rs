@@ -733,6 +733,32 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             },
         },
         ServiceDescriptor {
+            kind: ServiceKind::Traefik,
+            label: "Traefik".to_string(),
+            monogram: "TR".to_string(),
+            accent: 16,
+            category: "Endpoints".to_string(),
+            blurb: "Routers, services and the servers behind them — including routes that fail \
+                    to build, which the proxy answers for and an uptime check never sees."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "API base URL", FieldKind::Url)
+                .placeholder("http://traefik.internal:8080")
+                .required()
+                .help(
+                    "The dashboard or API base. Traefik needs `api.dashboard` or \
+                     `api.insecure` enabled for this to answer.",
+                ),
+            username: Some(user("optional")),
+            credential: Some(token("Password", "If the API is behind basic auth.")),
+            fields: shared_fields(true),
+            default_poll_secs: 20,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
             kind: ServiceKind::Kafka,
             label: "Kafka".to_string(),
             monogram: "KF".to_string(),

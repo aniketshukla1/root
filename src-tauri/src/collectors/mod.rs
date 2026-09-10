@@ -21,6 +21,7 @@ pub mod mongodb;
 pub mod nginx;
 pub mod prometheus;
 pub mod rabbitmq;
+pub mod traefik;
 pub mod redis;
 
 use std::sync::Arc;
@@ -158,6 +159,7 @@ pub async fn build_collector(
         ServiceKind::Apache => Arc::new(apache::ApacheCollector::new(profile, secret)?),
         ServiceKind::Haproxy => Arc::new(haproxy::HaproxyCollector::new(profile, secret)?),
         ServiceKind::Memcached => Arc::new(memcached::MemcachedCollector::new(profile)?),
+        ServiceKind::Traefik => Arc::new(traefik::TraefikCollector::new(profile, secret)?),
         ServiceKind::Kafka => Arc::new(kafka::KafkaCollector::new(profile, secret)?),
     };
     Ok(collector)

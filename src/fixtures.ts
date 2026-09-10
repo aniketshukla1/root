@@ -86,8 +86,17 @@ function series(
   return out;
 }
 
-const METRIC_KINDS = ["docker", "postgres", "elasticsearch", "jenkins", "rabbitmq",
-  "nginx", "kubernetes", "kafka", "redis", "mongodb", "prometheus", "http_endpoint"];
+/**
+ * Every kind the Rust registry publishes.
+ *
+ * The real catalog comes from the backend, which is the whole point of the
+ * descriptor model — but the browser preview has no backend, and an onboarding
+ * screen that offered twelve types while the app ships seventeen would be
+ * designing against a smaller product than the one that exists.
+ */
+const METRIC_KINDS = ["docker", "postgres", "mysql", "elasticsearch", "jenkins", "rabbitmq",
+  "nginx", "apache", "haproxy", "traefik", "kubernetes", "kafka", "redis", "memcached",
+  "mongodb", "prometheus", "http_endpoint"];
 
 export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
   kind,
@@ -96,7 +105,7 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
   accent: i,
   category:
     ["docker", "kubernetes"].includes(kind) ? "Containers & orchestration"
-    : ["postgres", "mongodb", "redis"].includes(kind) ? "Databases"
+    : ["postgres", "mysql", "mongodb", "redis", "memcached"].includes(kind) ? "Databases"
     : ["kafka", "rabbitmq"].includes(kind) ? "Messaging"
     : "Web & endpoints",
   blurb: "",

@@ -6,7 +6,8 @@ export type View =
   | { name: "metrics" }
   | { name: "logs" }
   | { name: "assistant" }
-  | { name: "settings" }
+  /** `profileId` opens that connection's editor straight away. */
+  | { name: "settings"; profileId?: string }
   | { name: "service"; profileId: string; tab?: ServiceTab }
   /** One component inside a service — a container, a cluster node, a job. */
   | { name: "component"; profileId: string; sectionId: string; rowId: string }

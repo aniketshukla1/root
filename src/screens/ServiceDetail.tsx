@@ -7,7 +7,7 @@ import { formatDateTime, formatMetricValue, formatRelative, isBreaching } from "
 import { criticalityLabel, environmentLabel, type EstateModel } from "../model";
 import type { ServiceTab, View } from "../nav";
 import { spanOf } from "../ranges";
-import type { Incident, LogEvent, MetricSeries, Row, RowAction } from "../types";
+import type { Incident, LogEvent, MetricSeries, Row, RowAction, TopologyView } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { ServiceDashboard } from "./ServiceDashboard";
 import { AlertList } from "../ui/AlertList";
@@ -33,6 +33,7 @@ export function ServiceDetail({
   model,
   catalog,
   incidents,
+  topology,
   logs,
   history,
   onNavigate,
@@ -45,6 +46,7 @@ export function ServiceDetail({
   model: EstateModel;
   catalog: Catalog;
   incidents: Incident[];
+  topology: TopologyView;
   logs: LogEvent[];
   history: MetricSeries[];
   onNavigate: (view: View) => void;
@@ -288,7 +290,11 @@ export function ServiceDetail({
               <ConfigurationTab
                 service={service}
                 catalog={catalog}
-                onOpenSettings={() => onNavigate({ name: "settings" })}
+                topology={topology}
+                onOpenSettings={() =>
+                  onNavigate({ name: "settings", profileId: snapshot.profileId })
+                }
+                onOpenService={(id) => onNavigate({ name: "service", profileId: id })}
               />
             )}
           </div>
@@ -630,11 +636,15 @@ function LogsTab({
 function ConfigurationTab({
   service,
   catalog,
+  topology,
   onOpenSettings,
+  onOpenService,
 }: {
   service: EstateModel["services"][number];
   catalog: Catalog;
+  topology: TopologyView;
   onOpenSettings: () => void;
+  onOpenService: (profileId: string) => void;
 }) {
   const { snapshot, profile, ownership } = service;
   const descriptor = catalog.get(snapshot.kind);
@@ -678,6 +688,39 @@ function ConfigurationTab({
             </div>
           ))}
         </dl>
+      </Panel>
+
+      {/* Dependencies are configuration, and since the correlator started
+          reading them they are the configuration that decides whether an
+          incident can be explained at all. Leaving them visible only inside
+          the Settings edit form meant the one screen that says "no
+          dependencies declared" could not show you what WAS declared. */}
+      <Panel
+        title="Dependencies"
+        subtitle="declared, not discovered"
+        actions={
+          <Button variant="ghost" onClick={onOpenSettings}>
+            Declare
+          </Button>
+        }
+      >
+        <DependencyList
+          label="Depends on"
+          empty="Nothing declared. Without this, a failure here cannot be explained by anything upstream — only by when it happened."
+          ids={topology.dependsOn[snapshot.profileId] ?? []}
+          model={service}
+          onOpen={onOpenService}
+        />
+        <div className="mt-3 border-t border-line pt-3">
+          <DependencyList
+            label="Depended on by"
+            empty="Nothing declares a dependency on this connection."
+            ids={topology.dependents[snapshot.profileId] ?? []}
+            model={service}
+            onOpen={onOpenService}
+            derived
+          />
+        </div>
       </Panel>
 
       <Panel title="Ownership">
@@ -839,5 +882,54 @@ function ConfirmAction({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * One direction of the declared graph.
+ *
+ * "Depended on by" is marked derived because it is: only one direction is ever
+ * declared, and showing both without saying which was typed invites someone to
+ * go looking for a field that does not exist.
+ */
+function DependencyList({
+  label,
+  empty,
+  ids,
+  onOpen,
+  derived,
+}: {
+  label: string;
+  empty: string;
+  ids: string[];
+  model: EstateModel["services"][number];
+  onOpen: (profileId: string) => void;
+  derived?: boolean;
+}) {
+  return (
+    <>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="label">{label}</span>
+        {derived && <span className="num text-2xs text-ink-4">derived</span>}
+        <span className="num ml-auto text-2xs text-ink-4">{ids.length}</span>
+      </div>
+      {ids.length === 0 ? (
+        <p className="text-2xs leading-relaxed text-ink-4">{empty}</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {ids.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onOpen(id)}
+              className="row-hover num flex items-center gap-1.5 rounded-sm border border-line px-2 py-1 text-2xs text-ink-2"
+            >
+              {id}
+              <ChevronRight size={11} style={{ color: "var(--color-ink-4)" }} />
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

@@ -39,11 +39,14 @@ type Tab = "connections" | "assistant" | "ingest" | "display";
 export function Settings({
   config,
   catalog,
+  openProfileId,
   onConfigChange,
   onAsk,
 }: {
   config: AppConfig | null;
   catalog: Catalog;
+  /** Opens this connection's editor on arrival. */
+  openProfileId?: string;
   onConfigChange: (config: AppConfig) => void;
   onAsk: () => void;
 }) {
@@ -65,7 +68,12 @@ export function Settings({
         />
         <div className="p-4">
           {tab === "connections" && (
-            <Connections config={config} catalog={catalog} onConfigChange={onConfigChange} />
+            <Connections
+              config={config}
+              catalog={catalog}
+              openProfileId={openProfileId}
+              onConfigChange={onConfigChange}
+            />
           )}
           {tab === "assistant" && (
             <AssistantSettings config={config} onConfigChange={onConfigChange} />
@@ -83,13 +91,16 @@ export function Settings({
 function Connections({
   config,
   catalog,
+  openProfileId,
   onConfigChange,
 }: {
   config: AppConfig | null;
   catalog: Catalog;
+  openProfileId?: string;
   onConfigChange: (config: AppConfig) => void;
 }) {
   const [editing, setEditing] = useState<ConnectionProfile | null>(null);
+
   const [picking, setPicking] = useState(false);
   const [keychain, setKeychain] = useState<boolean | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -99,6 +110,20 @@ function Connections({
   }, []);
 
   const profiles = config?.profiles ?? [];
+
+  /**
+   * Arriving with a connection named opens its editor directly.
+   *
+   * The incident screen's "could not see" disclosure links here to have
+   * dependencies declared. Landing on a list of twelve connections and asking
+   * the operator to find the right one again is most of the friction the
+   * disclosure was meant to remove.
+   */
+  useEffect(() => {
+    if (!openProfileId) return;
+    const target = profiles.find((p) => p.id === openProfileId);
+    if (target) setEditing(target);
+  }, [openProfileId, config]);
 
   const toggle = async (profile: ConnectionProfile) => {
     setBusy(profile.id);

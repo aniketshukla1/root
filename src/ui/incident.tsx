@@ -20,7 +20,7 @@ import {
   groupingSentence,
   propagation,
 } from "../incident";
-import type { Evidence } from "../incident";
+import type { BlindSpot, Evidence } from "../incident";
 import type { EstateModel } from "../model";
 import { enter, stagger } from "./motion";
 import type {
@@ -54,6 +54,8 @@ export interface IncidentContext {
 
 export interface IncidentActions {
   onOpenService: (profileId: string) => void;
+  /** Where a blind spot gets closed — the connection's own configuration. */
+  onOpenSettingsFor: (profileId: string) => void;
   onOpenAlerts: () => void;
   onOpenLogs: (profileId: string) => void;
   onCorrelate: (at: string) => void;
@@ -164,7 +166,7 @@ export function IncidentHero({
       <div className="grid gap-px border-t border-line bg-line @4xl:grid-cols-3">
         <ChangeCell change={change} catalog={context.catalog} incident={incident} />
         <RadiusCell radius={radius} onOpen={actions.onOpenService} />
-        <ConfidenceCell incident={incident} spots={spots} />
+        <ConfidenceCell incident={incident} spots={spots} onFix={actions.onOpenSettingsFor} />
       </div>
     </section>
   );
@@ -344,7 +346,15 @@ function ComponentPips({
  * important as the rest of the screen gets more confident, so it is never
  * collapsed away.
  */
-function ConfidenceCell({ incident, spots }: { incident: Incident; spots: string[] }) {
+function ConfidenceCell({
+  incident,
+  spots,
+  onFix,
+}: {
+  incident: Incident;
+  spots: BlindSpot[];
+  onFix: (profileId: string) => void;
+}) {
   const fill =
     incident.confidence === "high" ? 3 : incident.confidence === "medium" ? 2 : 1;
   const tone =
@@ -380,9 +390,21 @@ function ConfidenceCell({ incident, spots }: { incident: Incident; spots: string
           <div className="label mb-1.5" style={{ color: "var(--color-warn)" }}>
             Could not see
           </div>
-          <ul className="num flex flex-col gap-1 text-2xs leading-relaxed text-ink-4">
+          <ul className="num flex flex-col gap-1.5 text-2xs leading-relaxed text-ink-4">
             {spots.map((spot) => (
-              <li key={spot}>{spot}</li>
+              <li key={spot.text}>
+                {spot.text}
+                {spot.fix && (
+                  <button
+                    type="button"
+                    onClick={() => onFix(spot.fix!.profileId)}
+                    className="ml-1.5 underline decoration-dotted underline-offset-2 transition-colors hover:text-accent"
+                    style={{ color: "var(--color-accent)" }}
+                  >
+                    {spot.fix.label}
+                  </button>
+                )}
+              </li>
             ))}
           </ul>
         </div>

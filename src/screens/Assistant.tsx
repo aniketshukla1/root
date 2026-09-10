@@ -1,27 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "../events";
 
 import { api, errorMessage } from "../api";
 import { formatDuration } from "../format";
-import type { AgentEvent, AgentStep, AppConfig, ChatEntry } from "../types";
+import { suggestions } from "../incident";
+import type { AgentEvent, AgentStep, AppConfig, ChatEntry, Incident } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { Button, cx, Empty, Panel, Tag } from "../ui/primitives";
 import { ChevronDown, ChevronRight, SendIcon, ShieldIcon } from "../ui/icons";
 
-const SUGGESTIONS = [
-  "What is failing right now, and which team owns it?",
-  "Show me the error lines from the last ten minutes.",
-  "Is memory usage on the database trending up?",
-  "Which containers have restarted recently?",
-];
-
 export function Assistant({
   config,
   conversationId,
+  incidents,
   onOpenSettings,
 }: {
   config: AppConfig | null;
   conversationId: string;
+  incidents: Incident[];
   onOpenSettings: () => void;
 }) {
   const [entries, setEntries] = useState<ChatEntry[]>([]);
@@ -29,6 +25,13 @@ export function Assistant({
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Starters that know what is happening. Asking "what is failing right now?"
+   * of a model, on a screen that already knows, spends a tool call to be told
+   * something the estate could have said for free.
+   */
+  const SUGGESTIONS = useMemo(() => suggestions(incidents), [incidents]);
 
   const configured = Boolean(config?.llm.hasApiKey || config?.llm.provider === "ollama");
   const readOnly = config?.llm.agentMode === "read_only";

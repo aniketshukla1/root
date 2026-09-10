@@ -524,6 +524,7 @@ export default function App() {
           <ServiceDetail
             profileId={view.profileId}
             incidents={incidents}
+            topology={topology}
             tab={view.tab}
             model={model}
             catalog={catalog}
@@ -557,6 +558,7 @@ export default function App() {
         {view.name === "assistant" && (
           <Assistant
             config={config}
+            incidents={incidents}
             conversationId={CONVERSATION_ID}
             onOpenSettings={() => setView({ name: "settings" })}
           />
@@ -565,6 +567,7 @@ export default function App() {
         {view.name === "settings" && (
           <Settings
             config={config}
+            openProfileId={view.name === "settings" ? view.profileId : undefined}
             catalog={catalog}
             onConfigChange={onConfigChange}
             onAsk={askAssistant}

@@ -249,6 +249,16 @@ function minutesBefore(at: number, reference: number): string {
  * confident. Every entry is a real absence checked against real state — never
  * a generic caveat, because a caveat that is always there is never read.
  */
+export interface BlindSpot {
+  text: string;
+  /**
+   * Where to go to remove this blind spot, when it is one the operator can
+   * actually close. A disclosure the reader cannot act on is a shrug; one that
+   * hands them the screen that fixes it is a to-do.
+   */
+  fix?: { label: string; profileId: string };
+}
+
 export function blindSpots(
   incident: Incident,
   sources: {
@@ -256,20 +266,21 @@ export function blindSpots(
     changes: ChangeEvent[];
     history: Record<string, MetricSeries[]>;
   },
-): string[] {
-  const out: string[] = [];
+): BlindSpot[] {
+  const out: BlindSpot[] = [];
   const members = incident.profileIds;
 
-  const declared = members.filter((id) => (sources.topology.dependsOn[id] ?? []).length > 0);
-  if (members.length > 1 && declared.length === 0) {
-    out.push(
-      "No dependencies are declared between these connections, so the order below is inferred from timing alone.",
-    );
-  } else if (members.length > 1 && declared.length < members.length) {
-    const missing = members.filter((id) => (sources.topology.dependsOn[id] ?? []).length === 0);
-    out.push(
-      `${missing.join(", ")} ${missing.length === 1 ? "declares" : "declare"} no dependencies, so ${missing.length === 1 ? "its" : "their"} place in the order is inferred from timing.`,
-    );
+  const missing = members.filter((id) => (sources.topology.dependsOn[id] ?? []).length === 0);
+  if (members.length > 1 && missing.length === members.length) {
+    out.push({
+      text: "No dependencies are declared between these connections, so the order below is inferred from timing alone.",
+      fix: { label: `Declare them on ${missing[0]}`, profileId: missing[0] },
+    });
+  } else if (members.length > 1 && missing.length > 0) {
+    out.push({
+      text: `${missing.join(", ")} ${missing.length === 1 ? "declares" : "declare"} no dependencies, so ${missing.length === 1 ? "its" : "their"} place in the order is inferred from timing.`,
+      fix: { label: `Declare them on ${missing[0]}`, profileId: missing[0] },
+    });
   }
 
   const started = Date.parse(incident.started);
@@ -277,16 +288,19 @@ export function blindSpots(
     (c) => members.includes(c.profileId) && Date.parse(c.at) <= started + 60_000,
   );
   if (changed.length === 0) {
-    out.push(
-      "No deploy or configuration change was observed before this started — either nothing changed, or the change was somewhere root does not watch.",
-    );
+    // No `fix` here on purpose: this one may be entirely correct. Nothing
+    // changed is a finding, and offering to "fix" it would imply otherwise.
+    out.push({
+      text: "No deploy or configuration change was observed before this started — either nothing changed, or the change was somewhere root does not watch.",
+    });
   }
 
   const blind = members.filter((id) => (sources.history[id] ?? []).length === 0);
   if (blind.length > 0) {
-    out.push(
-      `No metric history for ${blind.join(", ")}, so nothing here can say what ${blind.length === 1 ? "it" : "they"} looked like before.`,
-    );
+    out.push({
+      text: `No metric history for ${blind.join(", ")}, so nothing here can say what ${blind.length === 1 ? "it" : "they"} looked like before.`,
+      fix: { label: `Check ${blind[0]}`, profileId: blind[0] },
+    });
   }
 
   return out;
@@ -458,4 +472,47 @@ export function flapped(
     })
     .filter((row) => row.flapped)
     .sort((a, b) => order.indexOf(b.worst) - order.indexOf(a.worst));
+}
+
+// ------------------------------------------------------------- suggestions
+
+/**
+ * What is worth asking, given what is actually happening.
+ *
+ * A generic starter list — "what is failing right now?" — asks the model to
+ * rediscover something the screen already knows, and spends a tool call doing
+ * it. When there is a live incident the useful questions are about THAT: its
+ * mechanism, its blast radius, and the one thing the correlator cannot judge,
+ * which is whether its own grouping is right.
+ */
+export function suggestions(incidents: Incident[]): string[] {
+  const lead = leadIncident(incidents.filter((i) => !i.acknowledged));
+  if (!lead) {
+    return [
+      "What is closest to a limit across the estate?",
+      "What changed in the last hour?",
+      "Which connections have flapped today?",
+      "Is anything trending toward a threshold?",
+    ];
+  }
+
+  const root = lead.leadProfileId || lead.profileIds[0];
+  const out = [
+    `Why is ${root} failing, and what should I check first?`,
+    `What changed on ${root} before this started?`,
+  ];
+
+  if (lead.profileIds.length > 1) {
+    const others = lead.profileIds.filter((id) => id !== root);
+    out.push(
+      `Is ${others[0]} failing because of ${root}, or is that a separate problem?`,
+    );
+  }
+  if (lead.confidence !== "high") {
+    out.push("Does the evidence actually support grouping these as one incident?");
+  } else {
+    out.push(`What else depends on ${root} that has not failed yet?`);
+  }
+
+  return out;
 }

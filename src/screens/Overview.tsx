@@ -124,6 +124,8 @@ export function Overview({
 
   const actions: IncidentActions = {
     onOpenService: (profileId) => onNavigate({ name: "service", profileId }),
+    onOpenSettingsFor: (profileId) =>
+      onNavigate({ name: "service", profileId, tab: "configuration" }),
     onOpenAlerts: () => onNavigate({ name: "alerts" }),
     onOpenLogs: (profileId) => onNavigate({ name: "service", profileId, tab: "logs" }),
     onCorrelate: (at) => onNavigate({ name: "correlate", at }),

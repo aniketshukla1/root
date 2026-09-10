@@ -303,6 +303,56 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             },
         },
         ServiceDescriptor {
+            kind: ServiceKind::Nfs,
+            label: "NFS exports".to_string(),
+            monogram: "NF".to_string(),
+            accent: 25,
+            category: "Storage".to_string(),
+            blurb: "Shared exports as the client sees them: fill, inode exhaustion, and stale \
+                    mounts — which report zeroes that read as an empty, healthy export."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "node_exporter URL", FieldKind::Text)
+                .placeholder("build-1.internal")
+                .required()
+                .help(
+                    "A client that mounts the exports, not the NFS server. What matters is \
+                     whether the path works from where the team uses it — a server can be \
+                     healthy while a client's mount is stale.",
+                ),
+            username: Some(user("optional")),
+            credential: Some(token("Password", "If the exporter is behind basic auth.")),
+            fields: {
+                let mut fields = vec![
+                    FieldSpec::new("pathPrefix", "Path prefix", FieldKind::Text)
+                        .placeholder("/mnt/team-a")
+                        .help(
+                            "Narrow to the exports under one path, so a team can watch its own \
+                             allocation. Blank watches every NFS mount on the client.",
+                        ),
+                    FieldSpec::new("fillWarn", "Fill warning", FieldKind::Number)
+                        .default(serde_json::json!(85))
+                        .range(1.0, 100.0)
+                        .help("Percent of bytes used above which an export is degraded."),
+                    FieldSpec::new("inodeWarn", "Inode warning", FieldKind::Number)
+                        .default(serde_json::json!(85))
+                        .range(1.0, 100.0)
+                        .help(
+                            "Percent of inodes used. An export full of small files runs out of \
+                             these long before its bytes, and writes then fail with `No space \
+                             left on device` while df still shows free space.",
+                        ),
+                ];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 30,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
             kind: ServiceKind::Jenkins,
             label: "Jenkins".to_string(),
             monogram: "JK".to_string(),

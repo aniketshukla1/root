@@ -60,6 +60,13 @@ const IGNORED_FILESYSTEMS: &[&str] = &[
     "proc", "sysfs", "devpts", "fuse.lxcfs", "nsfs", "efivarfs", "debugfs", "tracefs",
 ];
 
+/// Network mounts belong to the NFS collector, not to this one.
+///
+/// A machine's disks and the shared storage it happens to mount are different
+/// questions with different owners, and mixing them attributes the wrong
+/// failure: a stale export from a server across the datacentre would otherwise
+/// make this host read as down when nothing about the host is wrong.
+
 pub struct LinuxHostCollector {
     client: reqwest::Client,
     base: String,
@@ -109,7 +116,9 @@ pub(crate) fn mounts(samples: &[Sample]) -> Vec<Mount> {
             continue;
         };
         let fstype = sample.labels.get("fstype").cloned().unwrap_or_default();
-        if IGNORED_FILESYSTEMS.contains(&fstype.as_str()) {
+        if IGNORED_FILESYSTEMS.contains(&fstype.as_str())
+            || super::nfs::NFS_TYPES.contains(&fstype.as_str())
+        {
             continue;
         }
 

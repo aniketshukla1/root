@@ -23,6 +23,7 @@ pub mod linux_host;
 pub mod memcached;
 pub mod mongodb;
 pub mod nats;
+pub mod nfs;
 pub mod nginx;
 pub mod prometheus;
 pub mod promtext;
@@ -153,6 +154,7 @@ pub async fn build_collector(
             Arc::new(docker::DockerCollector::new(profile)?)
         }
         ServiceKind::LinuxHost => Arc::new(linux_host::LinuxHostCollector::new(profile, secret)?),
+        ServiceKind::Nfs => Arc::new(nfs::NfsCollector::new(profile, secret)?),
         ServiceKind::Jenkins => Arc::new(jenkins::JenkinsCollector::new(profile, secret)?),
         ServiceKind::Elasticsearch => {
             Arc::new(elasticsearch::ElasticsearchCollector::new(profile, secret)?)

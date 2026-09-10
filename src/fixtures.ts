@@ -94,7 +94,7 @@ function series(
  * screen that offered twelve types while the app ships seventeen would be
  * designing against a smaller product than the one that exists.
  */
-const METRIC_KINDS = ["docker", "podman", "kubernetes", "linux_host",
+const METRIC_KINDS = ["docker", "podman", "kubernetes", "linux_host", "nfs",
   "postgres", "mysql", "mongodb", "clickhouse",
   "redis", "memcached",
   "etcd", "consul", "zookeeper",
@@ -121,6 +121,7 @@ const KIND_LABELS: Record<string, string> = {
   haproxy: "HAProxy",
   http_endpoint: "HTTP endpoint",
   linux_host: "Linux host",
+  nfs: "NFS exports",
 };
 
 export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
@@ -134,6 +135,7 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
     ["docker", "podman"].includes(kind) ? "Containers"
     : kind === "kubernetes" ? "Orchestration"
     : kind === "linux_host" ? "Hosts"
+    : kind === "nfs" ? "Storage"
     : ["postgres", "mysql", "mongodb", "clickhouse"].includes(kind) ? "Databases"
     : ["redis", "memcached"].includes(kind) ? "Caching"
     : ["etcd", "consul", "zookeeper"].includes(kind) ? "Coordination"

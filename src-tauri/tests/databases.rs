@@ -42,6 +42,7 @@ fn profile(kind: ServiceKind, endpoint: &str, username: &str) -> ConnectionProfi
             options.set("slowQuerySecs", serde_json::json!(0));
             options
         },
+        depends_on: Vec::new(),
         metadata: ProfileOptions::default(),
     }
 }

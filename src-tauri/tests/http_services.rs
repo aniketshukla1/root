@@ -20,6 +20,8 @@ use inframonitoring_lib::config::{ConnectionProfile, ProfileOptions};
 use inframonitoring_lib::model::{Health, HealthSnapshot, ServiceKind};
 
 use chrono::{Duration, Utc};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const PROM_URL: &str = "http://127.0.0.1:59090";
 const RABBIT_URL: &str = "http://127.0.0.1:55672";
@@ -36,6 +38,7 @@ fn profile(kind: ServiceKind, endpoint: &str, username: Option<&str>) -> Connect
         enabled: true,
         poll_interval_secs: 20,
         options: ProfileOptions::default(),
+        depends_on: Vec::new(),
         metadata: ProfileOptions::default(),
     }
 }
@@ -209,29 +212,37 @@ async fn nginx_parses_stub_status_and_rates() {
     assert!(logs.is_empty(), "stub_status exposes counters, not messages");
 }
 
+/// Pointing at the site root is the usual misconfiguration, and it must report
+/// the real cause rather than a snapshot full of zeroes.
+///
+/// This one serves its own page rather than reusing the container the rest of
+/// the file needs. It used to point at port 58080 and skip "when the server is
+/// not up" — but the guard tested for a zero latency and no error, which is
+/// not what an unreachable host produces. With nothing listening, the
+/// collector correctly reported a connection failure and the test asserted
+/// that a connection failure should mention `stub_status`. Serving the wrong
+/// body deliberately is the only way to actually exercise the wrong body.
 #[tokio::test]
 async fn nginx_rejects_a_page_that_is_not_stub_status() {
-    // Pointing at the site root is the usual misconfiguration. It must report
-    // a helpful error, not a snapshot full of zeroes.
-    let Some(collector) = build_collector(
-        &profile(ServiceKind::Nginx, "http://127.0.0.1:58080/", None),
-        None,
-    )
-    .await
-    .ok() else {
-        return;
-    };
-    let Ok(snapshot) = collector.collect().await else {
-        return;
-    };
-    // Only meaningful when the server is actually up.
-    if snapshot.latency_ms == 0 && snapshot.error.is_none() {
-        return;
-    }
-    if let Some(error) = &snapshot.error {
-        assert!(
-            error.contains("stub_status"),
-            "the error should name the real cause: {error}"
-        );
-    }
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("<html><body>Welcome to nginx!</body></html>"),
+        )
+        .mount(&server)
+        .await;
+
+    let collector = build_collector(&profile(ServiceKind::Nginx, &server.uri(), None), None)
+        .await
+        .expect("nginx collector builds");
+    let snapshot = collector.collect().await.expect("returns a snapshot either way");
+
+    let error = snapshot
+        .error
+        .expect("an HTML page is not stub_status output, so this must not be a healthy snapshot");
+    assert!(
+        error.contains("stub_status"),
+        "the error should name the real cause: {error}"
+    );
 }

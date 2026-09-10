@@ -237,11 +237,8 @@ impl Collector for ZookeeperCollector {
         } else if backed_up {
             format!("{outstanding:.0} requests queued waiting to be serviced")
         } else {
-            match synced {
-                Some((synced_count, _)) => format!(
-                    "{role} · {:.0} voting members",
-                    synced_count + 1.0
-                ),
+            match mntr.voting_members() {
+                Some(voting) => format!("{role} · {voting:.0} voting members"),
                 None => format!(
                     "{role} · {:.0} znodes",
                     mntr.number("zk_znode_count").unwrap_or(0.0)

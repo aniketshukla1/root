@@ -38,6 +38,7 @@ fn profile(kind: ServiceKind, endpoint: &str) -> ConnectionProfile {
             options.set("slowOpMillis", serde_json::json!(1));
             options
         },
+        depends_on: Vec::new(),
         metadata: ProfileOptions::default(),
     }
 }

@@ -69,6 +69,7 @@ fn profile(kind: ServiceKind, endpoint: String, options: ProfileOptions) -> Conn
         enabled: true,
         poll_interval_secs: 10,
         options,
+        depends_on: Vec::new(),
         metadata: ProfileOptions::default(),
     }
 }

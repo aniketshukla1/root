@@ -9,19 +9,25 @@
 
 pub mod apache;
 pub mod haproxy;
+pub mod clickhouse;
+pub mod consul;
 pub mod database;
 pub mod docker;
 pub mod elasticsearch;
+pub mod etcd;
 pub mod http;
 pub mod jenkins;
 pub mod kafka;
 pub mod kubernetes;
 pub mod memcached;
 pub mod mongodb;
+pub mod nats;
 pub mod nginx;
 pub mod prometheus;
 pub mod rabbitmq;
+pub mod tomcat;
 pub mod traefik;
+pub mod zookeeper;
 pub mod redis;
 
 use std::sync::Arc;
@@ -160,6 +166,12 @@ pub async fn build_collector(
         ServiceKind::Haproxy => Arc::new(haproxy::HaproxyCollector::new(profile, secret)?),
         ServiceKind::Memcached => Arc::new(memcached::MemcachedCollector::new(profile)?),
         ServiceKind::Traefik => Arc::new(traefik::TraefikCollector::new(profile, secret)?),
+        ServiceKind::Tomcat => Arc::new(tomcat::TomcatCollector::new(profile, secret)?),
+        ServiceKind::Zookeeper => Arc::new(zookeeper::ZookeeperCollector::new(profile)?),
+        ServiceKind::Consul => Arc::new(consul::ConsulCollector::new(profile, secret)?),
+        ServiceKind::Etcd => Arc::new(etcd::EtcdCollector::new(profile, secret)?),
+        ServiceKind::Nats => Arc::new(nats::NatsCollector::new(profile, secret)?),
+        ServiceKind::Clickhouse => Arc::new(clickhouse::ClickhouseCollector::new(profile, secret)?),
         ServiceKind::Kafka => Arc::new(kafka::KafkaCollector::new(profile, secret)?),
     };
     Ok(collector)

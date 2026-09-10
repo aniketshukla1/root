@@ -94,9 +94,11 @@ function series(
  * screen that offered twelve types while the app ships seventeen would be
  * designing against a smaller product than the one that exists.
  */
-const METRIC_KINDS = ["docker", "postgres", "mysql", "elasticsearch", "jenkins", "rabbitmq",
-  "nginx", "apache", "haproxy", "traefik", "kubernetes", "kafka", "redis", "memcached",
-  "mongodb", "prometheus", "http_endpoint"];
+const METRIC_KINDS = ["docker", "kubernetes",
+  "postgres", "mysql", "mongodb", "redis", "memcached", "clickhouse", "etcd",
+  "kafka", "rabbitmq", "nats", "zookeeper",
+  "nginx", "apache", "tomcat", "haproxy", "traefik", "consul", "jenkins",
+  "elasticsearch", "prometheus", "http_endpoint"];
 
 export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
   kind,
@@ -105,8 +107,9 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
   accent: i,
   category:
     ["docker", "kubernetes"].includes(kind) ? "Containers & orchestration"
-    : ["postgres", "mysql", "mongodb", "redis", "memcached"].includes(kind) ? "Databases"
-    : ["kafka", "rabbitmq"].includes(kind) ? "Messaging"
+    : ["postgres", "mysql", "mongodb", "redis", "memcached", "clickhouse", "etcd"].includes(kind)
+      ? "Databases"
+    : ["kafka", "rabbitmq", "nats", "zookeeper"].includes(kind) ? "Messaging"
     : "Web & endpoints",
   blurb: "",
   endpoint: { key: "endpoint", label: "Endpoint", kind: "text", required: true, advanced: false },

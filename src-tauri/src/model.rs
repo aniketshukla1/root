@@ -30,6 +30,12 @@ pub enum ServiceKind {
     Haproxy,
     Memcached,
     Traefik,
+    Tomcat,
+    Zookeeper,
+    Consul,
+    Etcd,
+    Nats,
+    Clickhouse,
     Kafka,
 }
 
@@ -53,6 +59,12 @@ impl ServiceKind {
         ServiceKind::Haproxy,
         ServiceKind::Memcached,
         ServiceKind::Traefik,
+        ServiceKind::Tomcat,
+        ServiceKind::Zookeeper,
+        ServiceKind::Consul,
+        ServiceKind::Etcd,
+        ServiceKind::Nats,
+        ServiceKind::Clickhouse,
         ServiceKind::Kafka,
     ];
 
@@ -74,6 +86,12 @@ impl ServiceKind {
             ServiceKind::Haproxy => "HAProxy",
             ServiceKind::Memcached => "Memcached",
             ServiceKind::Traefik => "Traefik",
+            ServiceKind::Tomcat => "Apache Tomcat",
+            ServiceKind::Zookeeper => "ZooKeeper",
+            ServiceKind::Consul => "Consul",
+            ServiceKind::Etcd => "etcd",
+            ServiceKind::Nats => "NATS",
+            ServiceKind::Clickhouse => "ClickHouse",
             ServiceKind::Kafka => "Kafka",
         }
     }

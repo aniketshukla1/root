@@ -759,6 +759,225 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             },
         },
         ServiceDescriptor {
+            kind: ServiceKind::Tomcat,
+            label: "Apache Tomcat".to_string(),
+            monogram: "TC".to_string(),
+            accent: 17,
+            category: "Endpoints".to_string(),
+            blurb: "Thread pool saturation per connector, request and error rates, read from \
+                    the manager's JMX proxy."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Base URL", FieldKind::Url)
+                .placeholder("http://tomcat.internal:8080")
+                .required()
+                .help("Tomcat's root. root appends `/manager/jmxproxy` itself."),
+            username: Some(user("required")),
+            credential: Some(token(
+                "Password",
+                "The user needs the `manager-jmx` role, which is separate from `manager-gui`.",
+            )),
+            fields: {
+                let mut fields = vec![FieldSpec::new(
+                    "threadWarn",
+                    "Thread saturation warning",
+                    FieldKind::Number,
+                )
+                .default(serde_json::json!(85))
+                .range(1.0, 100.0)
+                .help(
+                    "Percent of one connector's thread limit in use above which Tomcat is \
+                     degraded. Measured per connector — a busy HTTP pool is not excused by an \
+                     idle HTTPS one.",
+                )];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 20,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
+            kind: ServiceKind::Zookeeper,
+            label: "ZooKeeper".to_string(),
+            monogram: "ZK".to_string(),
+            accent: 18,
+            category: "Messaging".to_string(),
+            blurb: "Ensemble role, request backlog, and the synced-follower count that says \
+                    whether quorum has any margin left."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Host and port", FieldKind::Text)
+                .placeholder("zk-1.internal:2181")
+                .required()
+                .help(
+                    "One server, not the whole ensemble — `mntr` answers for the server you \
+                     ask, and the leader is the one that reports quorum.",
+                ),
+            username: None,
+            credential: None,
+            fields: {
+                let mut fields = vec![FieldSpec::new(
+                    "outstandingWarn",
+                    "Queued request warning",
+                    FieldKind::Number,
+                )
+                .default(serde_json::json!(10))
+                .range(1.0, 100_000.0)
+                .help("Requests queued waiting to be serviced above which this is degraded.")];
+                fields.extend(shared_fields(false));
+                fields
+            },
+            default_poll_secs: 20,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
+            kind: ServiceKind::Consul,
+            label: "Consul".to_string(),
+            monogram: "CS".to_string(),
+            accent: 19,
+            category: "Endpoints".to_string(),
+            blurb: "Raft leadership and service health, with a dead agent counted once rather \
+                    than once per service registered on it."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "HTTP API address", FieldKind::Url)
+                .placeholder("http://consul.internal:8500")
+                .required()
+                .help("Any agent's HTTP API. It will answer for the whole cluster."),
+            username: None,
+            credential: Some(token(
+                "ACL token",
+                "Needs `node:read` and `service:read`. Omit it if ACLs are not enabled.",
+            )),
+            fields: shared_fields(true),
+            default_poll_secs: 15,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
+            kind: ServiceKind::Etcd,
+            label: "etcd".to_string(),
+            monogram: "ET".to_string(),
+            accent: 20,
+            category: "Databases".to_string(),
+            blurb: "Raft health and — the one that matters — database size against the backend \
+                    quota, which turns etcd read-only when it is reached."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Client URL", FieldKind::Url)
+                .placeholder("http://etcd-1.internal:2379")
+                .required()
+                .help("A client port. root reads `/metrics` from it."),
+            username: Some(user("optional")),
+            credential: Some(token("Password", "If the metrics endpoint requires auth.")),
+            fields: {
+                let mut fields = vec![FieldSpec::new(
+                    "quotaWarn",
+                    "Backend quota warning",
+                    FieldKind::Number,
+                )
+                .default(serde_json::json!(80))
+                .range(1.0, 100.0)
+                .help(
+                    "Percent of the backend quota used above which etcd is degraded. At 100% \
+                     it stops accepting writes entirely until it is compacted and defragmented.",
+                )];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 15,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
+            kind: ServiceKind::Nats,
+            label: "NATS".to_string(),
+            monogram: "NA".to_string(),
+            accent: 21,
+            category: "Messaging".to_string(),
+            blurb: "Connections, subscriptions and cluster routes — and the slow-consumer \
+                    counter, which is the only trace NATS leaves when it drops messages."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Monitoring URL", FieldKind::Url)
+                .placeholder("http://nats.internal:8222")
+                .required()
+                .help(
+                    "The HTTP monitoring port, not the client port — NATS needs `http_port` \
+                     set for this to answer.",
+                ),
+            username: Some(user("optional")),
+            credential: Some(token("Password", "If the monitoring port is behind basic auth.")),
+            fields: {
+                let mut fields = vec![FieldSpec::new(
+                    "slowConsumerWarn",
+                    "Slow consumer rate warning",
+                    FieldKind::Number,
+                )
+                .default(serde_json::json!(0.1))
+                .range(0.0, 10_000.0)
+                .help(
+                    "Slow-consumer events per second above which this is degraded. Each one is \
+                     a client that was disconnected and had its pending messages dropped.",
+                )];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 15,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
+            kind: ServiceKind::Clickhouse,
+            label: "ClickHouse".to_string(),
+            monogram: "CH".to_string(),
+            accent: 22,
+            category: "Databases".to_string(),
+            blurb: "Running queries, merges, and replicated tables — including the read-only \
+                    ones, which keep answering queries while replication has stopped."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "HTTP interface URL", FieldKind::Url)
+                .placeholder("http://clickhouse.internal:8123")
+                .required()
+                .help("The HTTP port (8123), not the native protocol port (9000)."),
+            username: Some(user("required")),
+            credential: Some(token(
+                "Password",
+                "The user needs SELECT on system.metrics, and on system.replicas to see \
+                 replication.",
+            )),
+            fields: {
+                let mut fields = vec![FieldSpec::new(
+                    "delayWarn",
+                    "Replication delay warning",
+                    FieldKind::Number,
+                )
+                .default(serde_json::json!(60))
+                .range(1.0, 86_400.0)
+                .help("Seconds a replica may be behind before it is degraded.")];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 20,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
             kind: ServiceKind::Kafka,
             label: "Kafka".to_string(),
             monogram: "KF".to_string(),

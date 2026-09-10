@@ -265,7 +265,7 @@ export function ComponentDetail({
         <HealthBadge health={row.health} />
       </ScreenHeader>
 
-      <Screen className="stack flex flex-col gap-3">
+      <Screen className="flex flex-col gap-3">
         <div
           className="panel border-l-2 px-4 py-3"
           style={{

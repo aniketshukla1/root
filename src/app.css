@@ -284,15 +284,10 @@
     );
   }
 
-  /* Direct children of a scrolling flex column must not shrink.
-     A scroll container has a definite height, so flex items default to being
-     squeezed to fit it — and a panel with `overflow-hidden` then clips its own
-     content instead of letting the page scroll. This has bitten every screen
-     built as a vertical stack, so it lives here rather than as a `shrink-0`
-     repeated on every panel. */
-  .stack > * {
-    flex-shrink: 0;
-  }
+  /* The `.stack` utility that used to live here — flex-shrink: 0 on the
+     direct children of a scrolling column — moved onto the Screen component
+     itself. It was opt-in, and four of the six screens that needed it never
+     opted in; see the comment in shell/ScreenHeader.tsx. */
 }
 
 /* -------------------------------------------------------------------- motion

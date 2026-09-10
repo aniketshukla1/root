@@ -185,7 +185,7 @@ export function Overview({
         onAsk={onAsk}
       />
 
-      <Screen className="stack flex flex-col gap-3">
+      <Screen className="flex flex-col gap-3">
         {state === "quiet" ? (
           <QuietState
             model={model}

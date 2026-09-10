@@ -96,6 +96,19 @@ export function Screen({
         // headings wrapped one word per line. Everything inside sizes itself
         // with @ variants against THIS element instead.
         "@container min-h-0 flex-1",
+        // Direct children of a scrolling flex column must not shrink.
+        //
+        // A scroll container has a definite height, so flex items default to
+        // being squeezed to fit it — and a panel with `overflow-hidden` then
+        // clips its own content instead of letting the page scroll. Metrics
+        // rendered eleven connections as eleven empty bands this way: each
+        // panel wanted 169px, each was given 24.
+        //
+        // This used to be an opt-in `.stack` class, and four of the six
+        // screens that needed it did not have it. A rule every caller must
+        // remember is a rule that gets forgotten, so it lives here now. On a
+        // Screen that is not a flex column it is simply inert.
+        "[&>*]:shrink-0",
         scroll ? "overflow-y-auto" : "overflow-hidden",
         padded && "p-4",
         className,

@@ -88,7 +88,12 @@ export function Onboarding({
             here is irreversible.
           </p>
 
-          <section className="panel mt-7 flex min-h-0 flex-col overflow-hidden">
+          {/* shrink-0, because this is a flex item in a column with no
+              definite height: without it the panel is squeezed to its header
+              and `overflow-hidden` clips the entire catalogue away. The same
+              trap Screen guards against for every other screen — this one
+              builds its own frame, so it has to say so itself. */}
+          <section className="panel mt-7 flex shrink-0 flex-col overflow-hidden">
             <header className="flex h-[33px] shrink-0 items-center gap-2.5 border-b border-line px-3">
               <h2 className="label">Service types</h2>
               <span className="num text-2xs text-ink-4">
@@ -105,7 +110,7 @@ export function Onboarding({
               </div>
             </header>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
+            <div className="p-3.5">
               {catalog.isEmpty ? (
                 <Empty
                   title="Catalog unavailable"

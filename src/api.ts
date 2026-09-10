@@ -50,11 +50,29 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   clear_conversation: () => undefined,
 };
 
+/**
+ * `?slow=<ms>` delays every fixture response.
+ *
+ * The boot screen only shows its named steps when the boot is actually slow —
+ * on a fast one it is a mark and a wordmark and then it is gone, which is the
+ * intent. That made the steps impossible to look at while designing them,
+ * since fixtures resolve in the same tick. This makes the slow path
+ * reachable. Fixtures only: the packaged app never takes this branch.
+ */
+const SLOW_MS = (() => {
+  if (typeof window === "undefined") return 0;
+  const asked = Number(new URLSearchParams(window.location.search).get("slow"));
+  return Number.isFinite(asked) ? Math.min(Math.max(asked, 0), 20_000) : 0;
+})();
+
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!fixtures.isTauri()) {
     const fixture = FIXTURES[cmd];
-    if (fixture) return Promise.resolve(fixture(args ?? {}) as T);
-    return Promise.reject(new Error(`No development fixture for "${cmd}"`));
+    if (!fixture) return Promise.reject(new Error(`No development fixture for "${cmd}"`));
+    const value = fixture(args ?? {}) as T;
+    return SLOW_MS > 0
+      ? new Promise((resolve) => setTimeout(() => resolve(value), SLOW_MS))
+      : Promise.resolve(value);
   }
   return tauriInvoke<T>(cmd, args);
 }

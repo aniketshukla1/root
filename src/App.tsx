@@ -33,6 +33,7 @@ import { ConfirmDialog } from "./shell/ConfirmDialog";
 import { AssistantDock } from "./shell/AssistantDock";
 import { ComponentDialog } from "./shell/ComponentDialog";
 import { Sidebar } from "./shell/Sidebar";
+import { Splash } from "./shell/Splash";
 import { Toasts, toastFromAlert, type Toast } from "./shell/Toasts";
 
 import { Alerts } from "./screens/Alerts";
@@ -57,6 +58,18 @@ const HISTORY_POLL_MS = 15000;
 
 const HISTOGRAM_BUCKETS = 64;
 const CONVERSATION_ID = "main";
+
+/**
+ * How long the boot screen is guaranteed, and how long it is allowed.
+ *
+ * The floor exists so the mark can finish its own gesture — a splash that
+ * flashes for 200ms is worse than none at all. The ceiling exists because a
+ * collector that never answers must not hold the whole app hostage: the estate
+ * has its own vocabulary for a connection that has not reported, and it is
+ * better at saying so than a boot screen is.
+ */
+const SPLASH_MIN_MS = 1200;
+const SPLASH_MAX_MS = 5000;
 
 /** Until the first fetch lands, an estate with no declared edges — not a lie. */
 const EMPTY_TOPOLOGY: TopologyView = { dependsOn: {}, dependents: {}, roots: [] };
@@ -127,6 +140,7 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [booting, setBooting] = useState(true);
 
   // Alert ids already toasted, so a still-firing alert does not re-notify on
   // every dashboard refresh.
@@ -408,6 +422,45 @@ export default function App() {
   const dismissToast = useCallback((id: string) => {
     setToasts((current) => current.filter((t) => t.id !== id));
   }, []);
+
+  /**
+   * The boot screen stands down when the app can actually answer for itself:
+   * the workspace is loaded, the catalog is loaded, and every configured
+   * connection has reported at least once. A first run with no connections
+   * clears as soon as the catalog is in — there is nothing to reach.
+   *
+   * The floor keeps it from flashing; the ceiling keeps one unreachable
+   * collector from holding the whole app behind a screen that cannot explain
+   * itself. The estate has better words for a connection that has not
+   * reported than a splash does.
+   */
+  const reached = dashboard?.snapshots.length ?? 0;
+  const configured = config?.profiles.length ?? 0;
+  const bootReady =
+    config !== null && !catalog.isEmpty && (configured === 0 || reached >= configured);
+
+  useEffect(() => {
+    if (!booting) return;
+    const floor = window.setTimeout(() => {
+      if (bootReady) setBooting(false);
+    }, SPLASH_MIN_MS);
+    const ceiling = window.setTimeout(() => setBooting(false), SPLASH_MAX_MS);
+    return () => {
+      window.clearTimeout(floor);
+      window.clearTimeout(ceiling);
+    };
+  }, [booting, bootReady]);
+
+  if (booting) {
+    return (
+      <Splash
+        workspaceLoaded={config !== null}
+        catalogLoaded={!catalog.isEmpty}
+        reached={reached}
+        total={configured}
+      />
+    );
+  }
 
   return (
     // `reducedMotion="user"` is resolved once here, so no variant has to

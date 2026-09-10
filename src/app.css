@@ -317,6 +317,10 @@
   from { opacity: 0; }
   to { opacity: var(--op, 1); }
 }
+@keyframes pop {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: var(--op, 1); }
+}
 
 .a-draw {
   stroke-dasharray: var(--len);
@@ -328,6 +332,8 @@
 .a-rise { transform-origin: bottom; animation: rise 0.5s cubic-bezier(0.22, 0.9, 0.3, 1) both; }
 .a-reach { transform-origin: left; animation: reach 0.55s cubic-bezier(0.22, 0.9, 0.3, 1) both; }
 .a-wash { animation: wash 0.7s ease-out both; }
+/* The CSS twin of motion.ts's `popIn`: a discrete mark arriving. */
+.a-pop { animation: pop 0.34s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -342,5 +348,6 @@
   .a-sweep { stroke-dashoffset: 0; }
   .a-rise,
   .a-reach { transform: none; }
+  .a-pop { transform: none; opacity: var(--op, 1); }
   .a-wash { opacity: var(--op, 1); }
 }

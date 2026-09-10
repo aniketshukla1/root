@@ -297,7 +297,7 @@ function Connections({
   );
 }
 
-function blankProfile(descriptor: ServiceDescriptor): ConnectionProfile {
+export function blankProfile(descriptor: ServiceDescriptor): ConnectionProfile {
   const options: Record<string, unknown> = {};
   for (const field of descriptor.fields) {
     if (field.default !== undefined) options[field.key] = field.default;
@@ -363,7 +363,8 @@ function KindPicker({
 const ENVIRONMENTS: Environment[] = ["production", "staging", "development", "shared"];
 const TIERS: Criticality[] = ["tier_0", "tier_1", "tier_2", "tier_3"];
 
-function ProfileForm({
+/** Exported so first-run onboarding uses the same form, not a second one. */
+export function ProfileForm({
   profile,
   descriptor,
   siblings,

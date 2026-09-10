@@ -12,7 +12,7 @@ import * as fixtures from "./fixtures";
 const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_dashboard: () => fixtures.DASHBOARD,
   get_service_catalog: () => fixtures.DESCRIPTORS,
-  get_config: () => fixtures.CONFIG,
+  get_config: () => fixtures.currentConfig(),
   refresh_connection: ({ profileId }) =>
     fixtures.SNAPSHOTS.find((s) => s.profileId === profileId) ?? fixtures.SNAPSHOTS[0],
   acknowledge_alert: ({ alertId }) => ({
@@ -44,7 +44,24 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_ingest_settings: () => ({ enabled: false, port: 7717, hasToken: false }),
   secret_store_available: () => true,
   list_models: () => ["claude-opus-5", "claude-sonnet-5"],
-  test_profile: () => "connected — 8 containers found",
+  // A HealthSnapshot, not a string: the form reads snapshot.summary and
+  // snapshot.health, and a string here rendered as a shrug.
+  test_profile: ({ profile }) => {
+    const p = profile as { id?: string; name?: string; kind?: string };
+    return {
+      profileId: p.id ?? "new",
+      profileName: p.name ?? "new connection",
+      kind: p.kind ?? "docker",
+      health: "healthy",
+      summary: "connected — 8 containers found",
+      metrics: [],
+      sections: [],
+      checkedAt: new Date().toISOString(),
+      latencyMs: 42,
+    };
+  },
+  save_profile: ({ profile }) => fixtures.saveProfile(profile as never),
+  delete_profile: ({ profileId }) => fixtures.deleteProfile(profileId as string),
   send_message: ({ conversationId, message }) =>
     fixtures.agentTurn(conversationId as string, message as string),
   clear_conversation: () => undefined,

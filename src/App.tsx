@@ -42,6 +42,7 @@ import { ComponentDetail } from "./screens/ComponentDetail";
 import { Correlate } from "./screens/Correlate";
 import { Logs } from "./screens/Logs";
 import { Metrics } from "./screens/Metrics";
+import { Onboarding } from "./screens/Onboarding";
 import { Overview } from "./screens/Overview";
 import { ServiceDetail } from "./screens/ServiceDetail";
 import { Services } from "./screens/Services";
@@ -141,6 +142,8 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [booting, setBooting] = useState(true);
+  /** Set by "Skip for now": the estate is empty on purpose, for now. */
+  const [skippedOnboarding, setSkippedOnboarding] = useState(false);
 
   // Alert ids already toasted, so a still-firing alert does not re-notify on
   // every dashboard refresh.
@@ -458,6 +461,24 @@ export default function App() {
         catalogLoaded={!catalog.isEmpty}
         reached={reached}
         total={configured}
+      />
+    );
+  }
+
+  /**
+   * Nothing configured means a first run, not an empty dashboard.
+   *
+   * Dropping someone into an estate view with no estate makes them hunt for
+   * Settings to find out what the product even wants from them. Skipping is
+   * allowed and remembered for the session — an operator who wants to look
+   * around first should be able to.
+   */
+  if (configured === 0 && !skippedOnboarding && !catalog.isEmpty) {
+    return (
+      <Onboarding
+        catalog={catalog}
+        onConfigChange={onConfigChange}
+        onSkip={() => setSkippedOnboarding(true)}
       />
     );
   }

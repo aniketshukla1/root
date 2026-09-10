@@ -19,6 +19,7 @@ import type {
   AppConfig,
   ChangeEvent,
   Confidence,
+  ConnectionProfile,
   Correlation,
   DashboardState,
   GroupingReason,
@@ -115,17 +116,23 @@ type Spec = [id: string, name: string, kind: string, health: HealthSnapshot["hea
  * reaches any of this code, so there is no way to put the real product into a
  * state the real estate is not in.
  *
+ *   ?estate=empty     nothing configured — the first run
  *   ?estate=quiet     nothing alerting
  *   ?estate=incident  one story, several connections
  *   ?estate=triage    several unrelated incidents (the default)
  *   ?estate=storm     many connections turning at once
  */
-export type Scenario = "quiet" | "incident" | "triage" | "storm";
+export type Scenario = "empty" | "quiet" | "incident" | "triage" | "storm";
 
 export const SCENARIO: Scenario = (() => {
   if (typeof window === "undefined") return "triage";
   const asked = new URLSearchParams(window.location.search).get("estate");
-  return asked === "quiet" || asked === "incident" || asked === "storm" ? asked : "triage";
+  return asked === "empty" ||
+    asked === "quiet" ||
+    asked === "incident" ||
+    asked === "storm"
+    ? asked
+    : "triage";
 })();
 
 const BASE_ESTATE: Spec[] = [
@@ -145,6 +152,7 @@ const BASE_ESTATE: Spec[] = [
 
 /** Health overrides per scenario; anything unnamed keeps its base health. */
 const SCENARIO_HEALTH: Record<Scenario, Record<string, HealthSnapshot["health"]>> = {
+  empty: {},
   quiet: {
     "orders-api": "healthy",
     "payments-db": "healthy",
@@ -175,7 +183,7 @@ const SCENARIO_SUMMARY: Record<string, string> = {
  */
 const OVERRIDDEN = new Set(Object.keys(SCENARIO_HEALTH[SCENARIO]));
 
-const ESTATE: Spec[] = BASE_ESTATE.map((spec) => {
+const ESTATE: Spec[] = SCENARIO === "empty" ? [] : BASE_ESTATE.map((spec) => {
   const override = SCENARIO_HEALTH[SCENARIO][spec[0]];
   if (!override || override === spec[3]) return spec;
   const next: Spec = [...spec];
@@ -368,6 +376,7 @@ const STORM_ALERTS: Alert[] = [
 
 export const ALERTS: Alert[] = (() => {
   switch (SCENARIO) {
+    case "empty":
     case "quiet":
       return [];
     case "incident":
@@ -422,13 +431,23 @@ const LINES: [string, string, LogLevel, string][] = [
   ["events-bus", "broker-2", "debug", "group orders-consumer rebalanced, 12 partitions"],
 ];
 
-export const LOGS: LogEvent[] = Array.from({ length: 240 }, (_, i) => {
+/**
+ * Lines belonging to connections this scenario actually has.
+ *
+ * The `empty` scenario has no estate, and the non-null assertion here used to
+ * throw on the first line rather than yield no logs — a fixture cannot invent
+ * a connection to attribute a log to.
+ */
+export const LOGS: LogEvent[] = Array.from({ length: 240 }, (_, i) => i).flatMap<LogEvent>((i) => {
   const [profileId, source, level, message] = LINES[i % LINES.length];
-  const spec = ESTATE.find((e) => e[0] === profileId)!;
-  return {
-    id: `log-${i}`, profileId, profileName: profileId, kind: spec[2], source, level, message,
-    timestamp: iso(i * 4_300), stream: level === "info" ? "event" : "runtime",
-  };
+  const spec = ESTATE.find((e) => e[0] === profileId);
+  if (!spec) return [];
+  return [
+    {
+      id: `log-${i}`, profileId, profileName: profileId, kind: spec[2], source, level, message,
+      timestamp: iso(i * 4_300), stream: level === "info" ? "event" : "runtime",
+    },
+  ];
 });
 
 export function histogram(buckets: number): HistogramBucket[] {
@@ -905,4 +924,32 @@ export function correlation(at: string, windowSecs = 120): Correlation {
     lanes,
     alerts: ALERTS.filter((a) => Date.parse(a.firstSeen) <= to),
   };
+}
+
+/**
+ * Saving and deleting, in the browser.
+ *
+ * The fixture layer is otherwise a pure read model, and this is the one place
+ * it has to hold state: without it the first-run flow ends at a Save button
+ * that rejects, which is the one step of onboarding most worth being able to
+ * try. Session-scoped and thrown away on reload — nothing here reaches disk,
+ * and the packaged app never takes this path.
+ */
+const SAVED: ConnectionProfile[] = [...CONFIG.profiles];
+
+export function saveProfile(profile: ConnectionProfile): AppConfig {
+  const at = SAVED.findIndex((p) => p.id === profile.id);
+  if (at >= 0) SAVED[at] = profile;
+  else SAVED.push(profile);
+  return { ...CONFIG, profiles: [...SAVED] };
+}
+
+export function deleteProfile(profileId: string): AppConfig {
+  const at = SAVED.findIndex((p) => p.id === profileId);
+  if (at >= 0) SAVED.splice(at, 1);
+  return { ...CONFIG, profiles: [...SAVED] };
+}
+
+export function currentConfig(): AppConfig {
+  return { ...CONFIG, profiles: [...SAVED] };
 }

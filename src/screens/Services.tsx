@@ -13,7 +13,7 @@ import {
   type ServiceView,
 } from "../model";
 import type { View } from "../nav";
-import type { MetricSeries } from "../types";
+import type { Incident, MetricSeries } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { Sparkline } from "../ui/charts";
 import {
@@ -32,6 +32,7 @@ import { ChevronDown, ChevronRight, SearchIcon } from "../ui/icons";
 export function Services({
   model,
   catalog,
+  incidents,
   history,
   syncedAt,
   onNavigate,
@@ -40,12 +41,29 @@ export function Services({
 }: {
   model: EstateModel;
   catalog: Catalog;
+  incidents: Incident[];
   history: Record<string, MetricSeries[]>;
   syncedAt?: string;
   onNavigate: (view: View) => void;
   onRefresh: () => void;
   onAsk: () => void;
 }) {
+  /**
+   * Which incident each connection belongs to.
+   *
+   * A table of twelve rows shows three failing connections as three problems.
+   * Two of them may be the same one, and an operator who splits them up starts
+   * three investigations into a single failure.
+   */
+  const incidentOf = useMemo(() => {
+    const map = new Map<string, Incident>();
+    for (const incident of incidents) {
+      if (incident.profileIds.length < 2) continue;
+      for (const id of incident.profileIds) map.set(id, incident);
+    }
+    return map;
+  }, [incidents]);
+
   const [groupBy, setGroupBy] = useState<GroupBy>("category");
   const [query, setQuery] = useState("");
   const [onlyProblems, setOnlyProblems] = useState(false);
@@ -193,6 +211,7 @@ export function Services({
                       key={service.snapshot.profileId}
                       service={service}
                       catalog={catalog}
+                      incident={incidentOf.get(service.snapshot.profileId)}
                       series={history[service.snapshot.profileId] ?? []}
                       expanded={expanded.has(service.snapshot.profileId)}
                       onToggle={() => toggle(service.snapshot.profileId)}
@@ -214,6 +233,7 @@ export function Services({
 function ServiceRow({
   service,
   catalog,
+  incident,
   series,
   expanded,
   onToggle,
@@ -221,6 +241,8 @@ function ServiceRow({
 }: {
   service: ServiceView;
   catalog: Catalog;
+  /** Set only when this connection shares an incident with others. */
+  incident?: Incident;
   series: MetricSeries[];
   expanded: boolean;
   onToggle: () => void;
@@ -272,6 +294,18 @@ function ServiceRow({
         <td className="px-3">
           <div className="flex items-center gap-2">
             <HealthBadge health={service.health} />
+            {incident && (
+              <Tag
+                color={
+                  incident.severity === "critical" ? "var(--color-crit)" : "var(--color-warn)"
+                }
+                title={`${incident.title} — ${incident.profileIds.length} connections, started on ${incident.leadProfileId}`}
+              >
+                {incident.leadProfileId === snapshot.profileId
+                  ? "INCIDENT ORIGIN"
+                  : `WITH ${incident.leadProfileId.toUpperCase()}`}
+              </Tag>
+            )}
             <span
               className="hidden max-w-64 truncate text-2xs text-ink-4 2xl:inline"
               title={snapshot.error ?? snapshot.summary}

@@ -464,6 +464,7 @@ export default function App() {
           <Services
             model={model}
             catalog={catalog}
+            incidents={incidents}
             history={history}
             syncedAt={dashboard?.generatedAt}
             onNavigate={setView}

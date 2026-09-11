@@ -60,6 +60,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
+use crate::advisor::Provenance;
 use crate::error::Result;
 
 /// Bumped whenever a rule's logic or wording changes, so a score can be
@@ -102,46 +103,6 @@ pub enum FixVerdict {
     /// Right idea, wrong specifics (value, syntax, target).
     PartlyRight,
     Unsure,
-}
-
-/// Where a finding came from.
-///
-/// Rules and the model fail differently — a rule never invents a setting but
-/// only finds what somebody encoded; the model reaches further and can be
-/// confidently wrong — so a score that mixes them describes neither. Kept as
-/// a string rather than an enum so a rule id (`redis.maxmemory-noeviction`)
-/// travels with it and a per-rule score is a `GROUP BY`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Provenance {
-    /// A deterministic rule, named.
-    Rule { id: String },
-    /// The assistant, unprompted by any rule.
-    Model { model: String },
-    /// The assistant restating a rule's finding. Scored apart from both,
-    /// because counting it as a model win would credit the model for the
-    /// rule's work.
-    ModelCitingRule { model: String, rule: String },
-}
-
-impl Provenance {
-    /// The column value: `rule:<id>`, `model:<name>`, `model+rule:<id>`.
-    pub fn tag(&self) -> String {
-        match self {
-            Provenance::Rule { id } => format!("rule:{id}"),
-            Provenance::Model { .. } => "model".to_string(),
-            Provenance::ModelCitingRule { rule, .. } => format!("model+rule:{rule}"),
-        }
-    }
-
-    /// The coarse bucket a scorecard groups by.
-    pub fn family(&self) -> &'static str {
-        match self {
-            Provenance::Rule { .. } => "rule",
-            Provenance::Model { .. } => "model",
-            Provenance::ModelCitingRule { .. } => "model+rule",
-        }
-    }
 }
 
 /// One judgement, as written.

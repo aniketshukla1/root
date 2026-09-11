@@ -9,6 +9,7 @@ import type {
   FixVerdict,
   Recall,
   ProblemVerdict,
+  Provenance,
   RecordedVerdict,
   Redaction,
   Severity,
@@ -93,6 +94,11 @@ function FindingCard({
       <div className="flex items-baseline gap-2">
         <span className="text-[13px] font-medium text-ink">{finding.title}</span>
         <Tag color={severity.color}>{severity.label}</Tag>
+        {/* A rule cannot invent a setting and the assistant can, so which one
+            is talking is part of how much to believe it. Rules carry no tag:
+            they are the default, and labelling both would make neither
+            stand out. */}
+        {source(finding.provenance) && <Tag>{source(finding.provenance)}</Tag>}
         {onOpenService && (
           <button
             type="button"
@@ -184,7 +190,11 @@ function VerdictStrip({
       findingId: finding.id,
       profileId: finding.profileId,
       profileName: finding.profileName,
-      provenance: { rule: { id: finding.rule } },
+      // The finding's own, not an assumed rule: filing a model claim as a
+      // rule verdict would credit the rules for work they did not do and
+      // leave the model's column empty, which is the failure this whole
+      // measurement exists to avoid.
+      provenance: finding.provenance,
       snapshot: finding,
       problem: decided,
       fix: next.fix ?? fix,
@@ -417,6 +427,21 @@ function Choice<T extends string>({
       ))}
     </div>
   );
+}
+
+/**
+ * What to call the thing that produced a finding.
+ *
+ * Empty for a rule, because rules are the baseline and a tag on everything is
+ * a tag on nothing. "Assistant" marks a claim that has not been checked by any
+ * rule; "assistant · rule" marks one restating a rule, which is worth knowing
+ * because it is the case where the assistant adds confidence rather than
+ * information.
+ */
+function source(provenance: Provenance): string | undefined {
+  if ("model" in provenance) return "assistant";
+  if ("modelCitingRule" in provenance) return "assistant · rule";
+  return undefined;
 }
 
 function EvidenceRow({ evidence }: { evidence: Evidence }) {

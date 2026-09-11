@@ -580,6 +580,12 @@ export interface Suggestion {
  */
 export interface Finding {
   id: string;
+  /**
+   * Where this came from — a rule, the assistant, or the assistant restating a
+   * rule. Carried on the finding so a verdict cannot be filed against the
+   * wrong engine.
+   */
+  provenance: Provenance;
   /** Which rule produced this, so a verdict attributes to one rule not "the rules". */
   rule: string;
   profileId: string;

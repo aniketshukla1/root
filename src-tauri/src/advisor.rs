@@ -42,7 +42,7 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::configsource::{ConfigDocument, Origin};
 use crate::forecast::Trend;
@@ -93,7 +93,7 @@ pub enum Evidence {
 }
 
 /// What to change, and how.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Suggestion {
     pub setting: String,
@@ -105,11 +105,58 @@ pub struct Suggestion {
     pub apply: Option<String>,
 }
 
+/// Where a finding came from.
+///
+/// Rules and the model fail differently — a rule never invents a setting but
+/// only finds what somebody encoded; the model reaches further and can be
+/// confidently wrong — so a score that mixes them describes neither. Kept as
+/// a string rather than an enum so a rule id (`redis.maxmemory-noeviction`)
+/// travels with it and a per-rule score is a `GROUP BY`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Provenance {
+    /// A deterministic rule, named.
+    Rule { id: String },
+    /// The assistant, unprompted by any rule.
+    Model { model: String },
+    /// The assistant restating a rule's finding. Scored apart from both,
+    /// because counting it as a model win would credit the model for the
+    /// rule's work.
+    ModelCitingRule { model: String, rule: String },
+}
+
+impl Provenance {
+    /// The column value: `rule:<id>`, `model:<name>`, `model+rule:<id>`.
+    pub fn tag(&self) -> String {
+        match self {
+            Provenance::Rule { id } => format!("rule:{id}"),
+            Provenance::Model { .. } => "model".to_string(),
+            Provenance::ModelCitingRule { rule, .. } => format!("model+rule:{rule}"),
+        }
+    }
+
+    /// The coarse bucket a scorecard groups by.
+    pub fn family(&self) -> &'static str {
+        match self {
+            Provenance::Rule { .. } => "rule",
+            Provenance::Model { .. } => "model",
+            Provenance::ModelCitingRule { .. } => "model+rule",
+        }
+    }
+}
+
 /// One thing wrong, or about to be.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Finding {
     pub id: String,
+    /// Where this came from — a rule, the assistant, or the assistant
+    /// restating a rule.
+    ///
+    /// Carried on the finding rather than attached when it is rated, so a
+    /// verdict cannot be filed against the wrong engine. The three fail
+    /// differently enough that a score mixing them describes none of them.
+    pub provenance: Provenance,
     /// Which rule produced this, as a stable name.
     ///
     /// Carried so a verdict can be attributed to one rule rather than to
@@ -382,9 +429,11 @@ fn finding(
     evidence: Vec<Evidence>,
     suggestion: Option<Suggestion>,
 ) -> Finding {
+    let rule = format!("{}.{slug}", snapshot.kind.label().to_ascii_lowercase());
     Finding {
         id: format!("{}:{slug}", snapshot.profile_id),
-        rule: format!("{}.{slug}", snapshot.kind.label().to_ascii_lowercase()),
+        provenance: Provenance::Rule { id: rule.clone() },
+        rule,
         profile_id: snapshot.profile_id.clone(),
         profile_name: snapshot.profile_name.clone(),
         severity,

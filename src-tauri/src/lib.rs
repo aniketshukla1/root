@@ -12,6 +12,7 @@
 
 pub mod agent;
 pub mod changes;
+pub mod claims;
 pub mod collectors;
 pub mod commands;
 pub mod config;
@@ -143,6 +144,7 @@ pub fn run() {
             commands::get_scorecard,
             commands::get_long_history,
             commands::run_backtest,
+            commands::clear_claims,
             commands::run_scenarios,
             commands::list_scenarios,
             commands::get_ingest_settings,

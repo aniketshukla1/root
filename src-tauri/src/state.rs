@@ -355,6 +355,9 @@ pub struct AppState {
     pub alerts: RwLock<AlertStore>,
     /// Deploys and other changes derived by diffing consecutive snapshots.
     pub changes: RwLock<crate::changes::ChangeStore>,
+    /// What the assistant says it found, so its claims can be rated beside the
+    /// rules instead of disappearing into a conversation.
+    pub claims: RwLock<crate::claims::ClaimStore>,
     /// Last log timestamp seen per profile, so each poll only asks for new lines.
     pub watermarks: RwLock<HashMap<String, DateTime<Utc>>>,
     /// Rolling metric history feeding sparklines, charts, and trend questions.
@@ -389,6 +392,7 @@ impl AppState {
             logs: RwLock::new(LogBuffer::new(capacity)),
             alerts: RwLock::new(AlertStore::default()),
             changes: RwLock::new(crate::changes::ChangeStore::new()),
+            claims: RwLock::new(crate::claims::ClaimStore::default()),
             watermarks: RwLock::new(HashMap::new()),
             history: RwLock::new(HistoryStore::default()),
             conversations: RwLock::new(HashMap::new()),

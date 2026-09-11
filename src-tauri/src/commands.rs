@@ -850,6 +850,19 @@ pub async fn get_findings(
         out.extend(crate::advisor::findings(&snapshot, &documents, &series));
     }
 
+    // What the assistant reported, alongside what the rules found.
+    //
+    // Together rather than in a separate list, because they are answers to the
+    // same question and the person rating them is deciding the same thing.
+    // Keeping the model's claims on their own screen would make them optional
+    // reading, and a claim nobody rates is a claim that never becomes a rule.
+    {
+        let claims = state.claims.read().await;
+        for profile in &profiles {
+            out.extend(claims.for_profile(&profile.id));
+        }
+    }
+
     out.sort_by(|a, b| b.severity.cmp(&a.severity));
     Ok(out)
 }
@@ -957,6 +970,18 @@ async fn long_history(
 
     out.sort_by(|a, b| a.key.cmp(&b.key));
     Ok(out)
+}
+
+/// Drop the assistant's claims for one connection.
+///
+/// For when a conversation went somewhere unhelpful and left findings nobody
+/// wants to rate. Clearing is not the same as rating something "not a
+/// problem" — that is a judgement worth recording, and this is a wastebasket.
+#[tauri::command]
+pub async fn clear_claims(state: Shared<'_>, profile_id: String) -> Result<()> {
+    let mut claims = state.claims.write().await;
+    claims.clear(&profile_id);
+    Ok(())
 }
 
 // ---------------------------------------------------------- scenario library

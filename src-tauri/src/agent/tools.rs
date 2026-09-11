@@ -294,6 +294,68 @@ pub fn catalog(mode: AgentMode) -> Vec<ToolDef> {
             false,
         ),
         tool(
+            "report_finding",
+            "Record a problem you have found, so it can be rated beside the deterministic \
+             rules and counted. Use this whenever you conclude something is wrong or about \
+             to be — not for answering a question, and not for restating what the operator \
+             already told you. A finding you only describe in prose cannot be scored, which \
+             means it never becomes a rule. If you are restating something config_findings \
+             already reported, say so in `restatesRule`: getting credited for a rule's work \
+             makes both of us look worse than we are.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "connection": connection_property(),
+                    "title": {
+                        "type": "string",
+                        "description": "One line, specific. `Replication lag is climbing on \
+                                        replica-2`, not `Database issue`."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "description": "What is wrong, why it matters, and what happens if \
+                                        nobody acts."
+                    },
+                    "severity": {
+                        "type": "string",
+                        "enum": ["now", "soon", "advisory"],
+                        "description": "`now` — already true or within hours. `soon` — lands \
+                                        inside a week. `advisory` — worth knowing, no deadline."
+                    },
+                    "evidence": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "The specific facts this rests on: a log line, a metric \
+                                        value, a setting, a timestamp. A finding whose evidence \
+                                        cannot be checked will be rated as unsure, which helps \
+                                        nobody."
+                    },
+                    "suggestion": {
+                        "type": "object",
+                        "description": "What to change, if you are confident enough to say.",
+                        "properties": {
+                            "setting": { "type": "string" },
+                            "current": { "type": "string" },
+                            "proposed": { "type": "string" },
+                            "apply": {
+                                "type": "string",
+                                "description": "The exact command, for a human to run. Nothing \
+                                                executes it."
+                            }
+                        },
+                        "required": ["setting", "current", "proposed"]
+                    },
+                    "restatesRule": {
+                        "type": "string",
+                        "description": "The rule id from config_findings you are restating, if \
+                                        any. Omit when this is your own observation."
+                    }
+                },
+                "required": ["connection", "title", "detail", "severity", "evidence"]
+            }),
+            false,
+        ),
+        tool(
             "propose_command",
             "Surface a remediation command for the operator to run themselves. Use this for \
              anything you cannot or should not execute directly. The command is shown in the \
@@ -437,6 +499,25 @@ pub async fn resolve_connection(state: &Arc<AppState>, args: &serde_json::Value)
 
 /// Run a read-only tool. Mutating tools are handled by the agent loop, which
 /// owns the approval step.
+/// The rule findings currently live for one connection.
+///
+/// Used only as the backstop for attribution — a model claim that names the
+/// same setting as a rule finding is the same claim, whatever wording it
+/// arrived in.
+async fn current_rule_findings(
+    state: &Arc<AppState>,
+    profile_id: &str,
+) -> Vec<crate::advisor::Finding> {
+    let Some(snapshot) = state.snapshots.read().await.get(profile_id).cloned() else {
+        return Vec::new();
+    };
+    let Ok(documents) = config_documents(state, profile_id).await else {
+        return Vec::new();
+    };
+    let series = state.history.read().await.series(profile_id, None);
+    crate::advisor::findings(&snapshot, &documents, &series)
+}
+
 /// Declared files and live config together, for whichever tool asked.
 ///
 /// A target that is down or cannot be asked contributes nothing rather than
@@ -670,6 +751,98 @@ pub async fn run_read_only(
             } else {
                 json!(found)
             }
+        }
+
+        "report_finding" => {
+            let id = resolve_connection(state, args).await?;
+            let field = |name: &str| {
+                args.get(name)
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                    .unwrap_or_default()
+            };
+
+            let title = field("title");
+            if title.trim().is_empty() {
+                return Err(AppError::Collector("a finding needs a title".into()));
+            }
+
+            let severity = match args.get("severity").and_then(|v| v.as_str()) {
+                Some("now") => crate::advisor::Severity::Now,
+                Some("soon") => crate::advisor::Severity::Soon,
+                _ => crate::advisor::Severity::Advisory,
+            };
+
+            let evidence: Vec<String> = args
+                .get("evidence")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let (profile_name, model) = {
+                let config = state.config.read().await;
+                (
+                    config
+                        .profiles
+                        .iter()
+                        .find(|p| p.id == id)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| id.clone()),
+                    config.llm.model.clone(),
+                )
+            };
+
+            // The live rule findings, so a restatement the model did not
+            // declare is still caught.
+            let rule_findings = current_rule_findings(state, &id).await;
+
+            let finding = crate::claims::attribute(
+                &id,
+                &profile_name,
+                &model,
+                crate::claims::Reported {
+                    title,
+                    detail: field("detail"),
+                    severity,
+                    evidence,
+                    suggestion: args
+                        .get("suggestion")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok()),
+                    restates_rule: args
+                        .get("restatesRule")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
+                },
+                &rule_findings,
+            );
+
+            let attribution = match &finding.provenance {
+                crate::advisor::Provenance::ModelCitingRule { rule, .. } => format!(
+                    "Recorded, attributed to the `{rule}` rule you are restating rather than \
+                     to you."
+                ),
+                _ => "Recorded as your own finding. It will be rated beside the rules."
+                    .to_string(),
+            };
+
+            let mut claims = state.claims.write().await;
+            claims.sweep();
+            claims.record(
+                &id,
+                crate::claims::Claim {
+                    finding: finding.clone(),
+                    at: chrono::Utc::now(),
+                    conversation_id: None,
+                },
+            );
+
+            json!({ "recorded": true, "findingId": finding.id, "note": attribution })
         }
 
         "get_metric_trend" => {

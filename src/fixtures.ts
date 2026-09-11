@@ -1420,6 +1420,7 @@ export function configDocuments(profileId: string): ConfigDocument[] {
 const FINDINGS: Finding[] = [
   {
     id: "session-cache:config-drift",
+    provenance: { rule: { id: "caching.config-drift" } },
     rule: "caching.config-drift",
     profileId: "session-cache",
     profileName: "session-cache",
@@ -1445,6 +1446,7 @@ const FINDINGS: Finding[] = [
   },
   {
     id: "session-cache:maxmemory-noeviction",
+    provenance: { rule: { id: "caching.maxmemory-noeviction" } },
     rule: "caching.maxmemory-noeviction",
     profileId: "session-cache",
     profileName: "session-cache",
@@ -1472,7 +1474,46 @@ const FINDINGS: Finding[] = [
     },
   },
   {
+    // The category the whole measurement exists to grow: something no rule
+    // covers, reported by the assistant, waiting to be confirmed or dismissed.
+    // Confirmed, it becomes the next rule; dismissed, it is why the model's
+    // column reads differently from the rules'.
+    id: "payments-db:model:replication-lag-is-climbing-on",
+    provenance: { model: { model: "claude-opus-5" } },
+    rule: "model",
+    profileId: "payments-db",
+    profileName: "payments-db",
+    severity: "soon",
+    title: "Replication lag is climbing on replica-2 after the 03:00 batch",
+    detail:
+      "Lag on replica-2 has risen at the same time on each of the last four nights and has " +
+      "not fully recovered before the next run, so the floor is drifting up. No rule covers " +
+      "this — there is no declared threshold on replication lag for this connection — but the " +
+      "pattern is consistent enough to be worth a look before it becomes a failover that " +
+      "cannot complete.",
+    evidence: [
+      {
+        kind: "setting",
+        key: "observed",
+        value: "lag peaked at 42s, 47s, 51s and 58s on the last four nights, each within 5 minutes of 03:00",
+        source: "assistant",
+      },
+      {
+        kind: "setting",
+        key: "observed",
+        value: "the overnight floor rose from 1.2s to 6.4s across the same window",
+        source: "assistant",
+      },
+    ],
+    suggestion: {
+      setting: "replication lag threshold",
+      current: "none declared",
+      proposed: "warn above 30s, so the drift is visible without reading four nights of charts",
+    },
+  },
+  {
     id: "orders-api:container-no-memory-limit",
+    provenance: { rule: { id: "docker.container-no-memory-limit" } },
     rule: "docker.container-no-memory-limit",
     profileId: "orders-api",
     profileName: "orders-api",

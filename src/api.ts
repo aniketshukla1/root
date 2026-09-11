@@ -41,6 +41,8 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_component_history: ({ profileId, sectionId, rowId }) =>
     fixtures.componentSeriesFor(profileId as string, sectionId as string, rowId as string),
   get_capacity_risks: ({ take }) => fixtures.capacityRisks((take as number) ?? 8),
+  get_config_documents: ({ profileId }) => fixtures.configDocuments(profileId as string),
+  get_findings: ({ profileId }) => fixtures.findings(profileId as string | undefined),
   get_health_runs: () => fixtures.healthRuns(),
   get_topology: () => fixtures.topology(),
   get_incidents: () => fixtures.incidents(),
@@ -107,7 +109,9 @@ import type {
   AppConfig,
   ChangeEvent,
   CapacityRisk,
+  ConfigDocument,
   ConnectionProfile,
+  Finding,
   Correlation,
   DashboardState,
   HealthRun,
@@ -182,6 +186,17 @@ export const api = {
    */
   getCapacityRisks: (take?: number) =>
     invoke<CapacityRisk[]>("get_capacity_risks", { take: take ?? null }),
+
+  /**
+   * Declared files and live config together. Bodies arrive redacted — there is
+   * no variant of this that returns the original bytes.
+   */
+  getConfigDocuments: (profileId: string) =>
+    invoke<ConfigDocument[]>("get_config_documents", { profileId }),
+
+  /** Omit `profileId` for the whole estate. */
+  getFindings: (profileId?: string) =>
+    invoke<Finding[]>("get_findings", { profileId: profileId ?? null }),
 
   getAllMetricHistory: (minutes?: number) =>
     invoke<Record<string, MetricSeries[]>>("get_all_metric_history", {

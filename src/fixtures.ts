@@ -33,6 +33,8 @@ import type {
   MetricSeries,
   Point,
   CapacityRisk,
+  ConfigDocument,
+  Finding,
   MetricUnit,
   ServiceDescriptor,
   TeamState,
@@ -1266,4 +1268,227 @@ export function componentSeriesFor(
       },
     ];
   });
+}
+
+// ------------------------------------------------------------------- config
+
+/**
+ * What the config layer returns, including the parts it refuses to return.
+ *
+ * The withheld cases are here on purpose. A demo estate where every document
+ * opens cleanly teaches the wrong thing about a tool whose most important
+ * behaviour is declining to read something.
+ */
+const TARGET_CONFIG: Record<string, ConfigDocument[]> = {
+  "session-cache": [
+    {
+      id: "cfg-redis-live",
+      profileId: "session-cache",
+      label: "Running configuration",
+      origin: { kind: "live", via: "CONFIG GET *" },
+      format: "json",
+      bytes: 412,
+      body: JSON.stringify(
+        {
+          maxmemory: "2147483648",
+          "maxmemory-policy": "noeviction",
+          appendonly: "yes",
+          save: "3600 1 300 100 60 10000",
+          timeout: "0",
+          "tcp-keepalive": "300",
+          requirepass: "«redacted»",
+        },
+        null,
+        2,
+      ),
+      redactions: [{ line: 0, key: "requirepass", reason: "keyName" }],
+      readAt: iso(0),
+    },
+    {
+      id: "cfg-redis-file",
+      profileId: "session-cache",
+      label: "redis.conf",
+      origin: { kind: "file", path: "/etc/redis/redis.conf" },
+      format: "ini",
+      bytes: 1184,
+      modified: iso(86_400_000 * 9),
+      // Deliberately disagrees with the live value above: the file says 4gb,
+      // the running process says 2gb. Somebody edited and never reloaded.
+      body: `# Managed by ops. Reload after editing.
+maxmemory 4gb
+maxmemory-policy allkeys-lru
+appendonly yes
+requirepass «redacted»
+bind 0.0.0.0
+protected-mode yes`,
+      redactions: [{ line: 5, key: "requirepass", reason: "keyName" }],
+      readAt: iso(0),
+    },
+    {
+      id: "cfg-redis-env",
+      profileId: "session-cache",
+      label: ".env",
+      origin: { kind: "file", path: "/etc/redis/.env" },
+      format: "text",
+      bytes: 208,
+      modified: iso(86_400_000 * 30),
+      withheld: { kind: "secret" },
+      readAt: iso(0),
+    },
+  ],
+  "orders-api": [
+    {
+      id: "cfg-docker-live",
+      profileId: "orders-api",
+      label: "Container limits",
+      origin: { kind: "live", via: "inspect (HostConfig)" },
+      format: "json",
+      bytes: 620,
+      body: JSON.stringify(
+        {
+          "orders-worker-1": { memoryLimitBytes: 2147483648, restartPolicy: "UnlessStopped" },
+          "orders-worker-3": { memoryLimitBytes: 0, restartPolicy: "UnlessStopped" },
+          "orders-api": { memoryLimitBytes: 0, restartPolicy: "UnlessStopped" },
+        },
+        null,
+        2,
+      ),
+      readAt: iso(0),
+    },
+    {
+      id: "cfg-compose",
+      profileId: "orders-api",
+      label: "docker-compose.yml",
+      origin: { kind: "file", path: "/srv/orders/docker-compose.yml" },
+      format: "yaml",
+      bytes: 964,
+      modified: iso(86_400_000 * 2),
+      body: `services:
+  api:
+    image: orders-api:2.14.3
+    environment:
+      DATABASE_URL: postgres://orders:«redacted credentials»@payments-db:5432/orders
+      REDIS_URL: redis://session-cache:6379
+      API_TOKEN: \${ORDERS_API_TOKEN}
+    restart: unless-stopped`,
+      redactions: [{ line: 5, reason: "urlCredentials" }],
+      readAt: iso(0),
+    },
+  ],
+  "payments-db": [
+    {
+      id: "cfg-pg-live",
+      profileId: "payments-db",
+      label: "Running parameters",
+      origin: { kind: "live", via: "pg_settings (non-default)" },
+      format: "json",
+      bytes: 380,
+      body: JSON.stringify(
+        {
+          max_connections: { value: "100", source: "configuration file" },
+          shared_buffers: { value: "2097152kB", source: "configuration file" },
+          work_mem: { value: "4096kB", source: "configuration file" },
+          password_encryption: { value: "scram-sha-256", source: "configuration file" },
+        },
+        null,
+        2,
+      ),
+      readAt: iso(0),
+    },
+  ],
+};
+
+export function configDocuments(profileId: string): ConfigDocument[] {
+  return TARGET_CONFIG[profileId] ?? [];
+}
+
+/**
+ * The findings the Rust rules produce for the estate above.
+ *
+ * Written out rather than reimplemented: the rules live in advisor.rs and
+ * porting them here would give two versions to keep honest. These match what
+ * that module returns for this config and these metrics.
+ */
+const FINDINGS: Finding[] = [
+  {
+    id: "session-cache:config-drift",
+    profileId: "session-cache",
+    profileName: "session-cache",
+    severity: "soon",
+    title: "2 settings on disk are not what is running",
+    detail:
+      "maxmemory, maxmemory-policy differ between the file and the running process. Usually " +
+      "this means an edit that nothing reloaded — the change is correct and has never taken " +
+      "effect, and anyone reading the file is reasoning about a service that does not match " +
+      "it. It also means a restart will adopt the file's values without anyone deciding to, " +
+      "so this is a change already scheduled for the next time this process comes up.",
+    evidence: [
+      { kind: "setting", key: "maxmemory", value: "4gb", source: "on disk" },
+      { kind: "setting", key: "maxmemory", value: "2147483648", source: "running" },
+      { kind: "setting", key: "maxmemory-policy", value: "allkeys-lru", source: "on disk" },
+      { kind: "setting", key: "maxmemory-policy", value: "noeviction", source: "running" },
+    ],
+    suggestion: {
+      setting: "reload",
+      current: "file and process disagree",
+      proposed: "reload to adopt the file, or correct the file to match the process",
+    },
+  },
+  {
+    id: "session-cache:maxmemory-noeviction",
+    profileId: "session-cache",
+    profileName: "session-cache",
+    severity: "now",
+    title: "Writes will start failing in about 3 hours",
+    detail:
+      "Memory is at 1.8 GB of a 2.0 GB ceiling and rising. `maxmemory-policy` is " +
+      "`noeviction`, so when it arrives Redis does not evict anything — it returns OOM on " +
+      "every write and keeps serving reads. Applications that treat Redis as a cache " +
+      "usually survive that badly, because a failed write looks like a bug rather than a " +
+      "full cache.",
+    evidence: [
+      { kind: "metric", key: "memory", label: "Memory", value: 1_932_735_283, unit: "bytes", limit: 2_147_483_648 },
+      { kind: "setting", key: "maxmemory", value: "2147483648", source: "CONFIG GET *" },
+      { kind: "setting", key: "maxmemory-policy", value: "noeviction", source: "CONFIG GET *" },
+      { kind: "projection", key: "memory", secondsToLimit: 10_800, fit: 0.91, windowSecs: 3585 },
+    ],
+    suggestion: {
+      setting: "maxmemory-policy",
+      current: "noeviction",
+      proposed: "allkeys-lru, if this instance is a cache",
+      apply:
+        "redis-cli CONFIG SET maxmemory-policy allkeys-lru   # cache semantics: evict rather than refuse\n" +
+        "redis-cli CONFIG SET maxmemory <larger>            # or raise the ceiling, if the data is not disposable",
+    },
+  },
+  {
+    id: "orders-api:container-no-memory-limit",
+    profileId: "orders-api",
+    profileName: "orders-api",
+    severity: "advisory",
+    title: "2 containers can use all the host's memory",
+    detail:
+      "orders-worker-3, orders-api run with no memory limit. A leak in any one of them is " +
+      "a host-wide event rather than a container-wide one: the kernel's OOM killer picks " +
+      "by score, and it regularly picks a healthy neighbour over the process that is " +
+      "actually growing. A limit turns that into a restart of the thing at fault.",
+    evidence: [
+      { kind: "setting", key: "HostConfig.Memory", value: "0 (unlimited)", source: "inspect (HostConfig)" },
+    ],
+    suggestion: {
+      setting: "memory limit",
+      current: "unlimited",
+      proposed: "a ceiling per container",
+      apply: "docker update --memory 2g --memory-swap 2g <container>   # or set mem_limit in the compose file",
+    },
+  },
+];
+
+/** Severity-ordered, the way advisor.rs returns them. */
+const SEVERITY_RANK: Record<Finding["severity"], number> = { now: 3, soon: 2, advisory: 1 };
+
+export function findings(profileId?: string): Finding[] {
+  return FINDINGS.filter((f) => !profileId || f.profileId === profileId).sort(
+    (a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
+  );
 }

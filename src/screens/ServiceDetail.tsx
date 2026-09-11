@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
@@ -7,12 +7,22 @@ import { formatDateTime, formatMetricValue, formatRelative, isBreaching } from "
 import { criticalityLabel, environmentLabel, type EstateModel } from "../model";
 import type { ServiceTab, View } from "../nav";
 import { spanOf } from "../ranges";
-import type { Incident, LogEvent, MetricSeries, Row, RowAction, TopologyView } from "../types";
+import type {
+  ConfigDocument,
+  Finding,
+  Incident,
+  LogEvent,
+  MetricSeries,
+  Row,
+  RowAction,
+  TopologyView,
+} from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { ServiceDashboard } from "./ServiceDashboard";
 import { AlertList } from "../ui/AlertList";
 import { levelColor, TimeSeries, type Domain } from "../ui/charts";
 import { Horizon, Rate } from "../ui/capacity";
+import { ConfigTab } from "../ui/config";
 import { SectionList } from "../ui/SectionTable";
 import {
   Button,
@@ -58,6 +68,39 @@ export function ServiceDetail({
   const [pending, setPending] = useState<{ action: RowAction; row: Row } | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const [documents, setDocuments] = useState<ConfigDocument[]>([]);
+  const [findings, setFindings] = useState<Finding[]>([]);
+  const [configLoading, setConfigLoading] = useState(false);
+
+  /**
+   * Read on demand rather than polled.
+   *
+   * Config is not telemetry: it changes when somebody changes it, and reading
+   * every declared file on every collection cycle would put the app in a hot
+   * loop over the operator's disk for a value that is the same every time.
+   */
+  const loadConfig = useCallback(async () => {
+    setConfigLoading(true);
+    try {
+      const [docs, found] = await Promise.all([
+        api.getConfigDocuments(profileId),
+        api.getFindings(profileId),
+      ]);
+      setDocuments(docs);
+      setFindings(found);
+    } catch (error) {
+      console.error("config load failed:", error);
+    } finally {
+      setConfigLoading(false);
+    }
+  }, [profileId]);
+
+  // The tab count has to be right before the tab is opened, so this runs on
+  // mount rather than when the tab is selected.
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
 
   const service = model.services.find((s) => s.snapshot.profileId === profileId);
 
@@ -233,7 +276,11 @@ export function ServiceDetail({
               { value: "alerts", label: "Alerts", count: counts.alerts },
               { value: "metrics", label: "Metrics", count: counts.metrics },
               { value: "logs", label: "Logs", count: counts.logs },
-              { value: "configuration", label: "Configuration" },
+              // Two different things called config, so neither is called that.
+              // "Config" is the target's own; "Connection" is root's record of
+              // how to reach it.
+              { value: "config", label: "Config", count: findings.length || undefined },
+              { value: "configuration", label: "Connection" },
             ]}
           />
 
@@ -285,6 +332,15 @@ export function ServiceDetail({
 
             {tab === "logs" && (
               <LogsTab logs={serviceLogs} onNavigate={onNavigate} />
+            )}
+
+            {tab === "config" && (
+              <ConfigTab
+                documents={documents}
+                findings={findings}
+                loading={configLoading}
+                onRefresh={loadConfig}
+              />
             )}
 
             {tab === "configuration" && (

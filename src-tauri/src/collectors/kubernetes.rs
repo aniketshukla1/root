@@ -623,6 +623,67 @@ impl Collector for KubernetesCollector {
     /// Warning events become log lines. Pod stdout is deliberately not tailed:
     /// a cluster has thousands of pods and following them all would be a
     /// different feature with a different cost model.
+    /// Replica counts and per-container resource requests and limits.
+    ///
+    /// This is the scaling question in its most literal form. Whether a
+    /// workload can absorb more load is decided by three numbers — replicas,
+    /// requests, limits — and the answer to "should we scale up" is different
+    /// depending on which of them is the binding one. A deployment at 3/3 with
+    /// no limits set is not the same problem as one at 3/3 being OOM-killed,
+    /// and the metrics look similar until you read this.
+    async fn config(&self) -> Result<Vec<crate::configsource::ConfigDocument>> {
+        use crate::configsource::ConfigDocument;
+
+        let deployments: Api<Deployment> = self.namespaced();
+        let statefulsets: Api<StatefulSet> = self.namespaced();
+        let params = self.params();
+        let (deploy_list, sts_list) =
+            tokio::join!(deployments.list(&params), statefulsets.list(&params));
+
+        let mut map = serde_json::Map::new();
+
+        if let Ok(list) = deploy_list {
+            for item in &list.items {
+                let name = item.metadata.name.clone().unwrap_or_default();
+                let spec = item.spec.as_ref();
+                map.insert(
+                    format!("Deployment/{name}"),
+                    serde_json::json!({
+                        "replicas": spec.and_then(|s| s.replicas),
+                        "strategy": spec.and_then(|s| s.strategy.as_ref()).and_then(|s| s.type_.clone()),
+                        "containers": spec
+                            .and_then(|s| s.template.spec.as_ref())
+                            .map(|p| container_resources(&p.containers)),
+                    }),
+                );
+            }
+        }
+
+        if let Ok(list) = sts_list {
+            for item in &list.items {
+                let name = item.metadata.name.clone().unwrap_or_default();
+                let spec = item.spec.as_ref();
+                map.insert(
+                    format!("StatefulSet/{name}"),
+                    serde_json::json!({
+                        "replicas": spec.and_then(|s| s.replicas),
+                        "containers": spec
+                            .map(|s| container_resources(&s.template.spec.as_ref()
+                                .map(|p| p.containers.clone())
+                                .unwrap_or_default())),
+                    }),
+                );
+            }
+        }
+
+        Ok(vec![ConfigDocument::live(
+            &self.profile_id,
+            "Workload sizing",
+            "apps/v1 specs",
+            &serde_json::Value::Object(map),
+        )])
+    }
+
     async fn fetch_logs(&self, since: DateTime<Utc>, limit: usize) -> Result<Vec<LogEvent>> {
         let events: Api<Event> = self.namespaced();
         let list = match events.list(&self.params()).await {
@@ -905,4 +966,36 @@ mod tests {
     fn fully_ready_workload_is_healthy() {
         assert_eq!(workload_state(3, 3, 3).health, Health::Healthy);
     }
+}
+
+/// Requests and limits per container, which is the whole of what sizing means
+/// here. A container with neither is scheduled as best-effort and is the first
+/// thing evicted when a node runs short — worth seeing as an explicit `null`
+/// rather than an absent key.
+fn container_resources(containers: &[k8s_openapi::api::core::v1::Container]) -> serde_json::Value {
+    serde_json::Value::Object(
+        containers
+            .iter()
+            .map(|c| {
+                let resources = c.resources.as_ref();
+                let quantity = |side: Option<&std::collections::BTreeMap<String, k8s_openapi::apimachinery::pkg::api::resource::Quantity>>, key: &str| {
+                    side.and_then(|m| m.get(key)).map(|q| q.0.clone())
+                };
+                (
+                    c.name.clone(),
+                    serde_json::json!({
+                        "image": c.image,
+                        "requests": {
+                            "cpu": quantity(resources.and_then(|r| r.requests.as_ref()), "cpu"),
+                            "memory": quantity(resources.and_then(|r| r.requests.as_ref()), "memory"),
+                        },
+                        "limits": {
+                            "cpu": quantity(resources.and_then(|r| r.limits.as_ref()), "cpu"),
+                            "memory": quantity(resources.and_then(|r| r.limits.as_ref()), "memory"),
+                        },
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>(),
+    )
 }

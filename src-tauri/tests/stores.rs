@@ -39,6 +39,7 @@ fn profile(kind: ServiceKind, endpoint: &str) -> ConnectionProfile {
             options
         },
         depends_on: Vec::new(),
+            config_sources: Vec::new(),
         metadata: ProfileOptions::default(),
     }
 }

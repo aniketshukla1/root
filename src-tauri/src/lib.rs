@@ -1,4 +1,9 @@
-//! InfraMonitor — agentic infrastructure monitoring.
+//! root — agentic infrastructure management.
+//!
+//! Monitoring is half of it. Watching tells you a thing is wrong; reading the
+//! configuration that governs it tells you why, and what number to change.
+//! `configsource` brings config in, `redact` keeps its secrets from leaving,
+//! and `advisor` reads the two against each other.
 //!
 //! The backend owns everything stateful: it polls each configured connection,
 //! keeps the latest health snapshots, a bounded log buffer, and the active
@@ -12,6 +17,9 @@ pub mod commands;
 pub mod config;
 pub mod error;
 pub mod forecast;
+pub mod advisor;
+pub mod configsource;
+pub mod redact;
 pub mod history;
 pub mod incidents;
 pub mod ingest;
@@ -118,6 +126,8 @@ pub fn run() {
             commands::get_change_events,
             commands::get_component_history,
             commands::get_capacity_risks,
+            commands::get_config_documents,
+            commands::get_findings,
             commands::get_ingest_settings,
             commands::save_ingest_settings,
             commands::rotate_ingest_token,

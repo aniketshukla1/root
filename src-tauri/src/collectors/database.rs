@@ -471,6 +471,72 @@ impl Collector for DatabaseCollector {
     /// statement, a duration, and a terminate action. Emitting them twice made
     /// the same fact appear in two places and pushed real container output out
     /// of the buffer.
+    /// The server's running parameters.
+    ///
+    /// `pg_settings` and `SHOW VARIABLES` are the effective values — after the
+    /// config file, after any `ALTER SYSTEM`, after command-line overrides.
+    /// The file on disk frequently disagrees, and when it does, the file is
+    /// the thing that is wrong.
+    ///
+    /// Only settings whose source is not the built-in default come back for
+    /// Postgres. Nine hundred defaults would bury the fifteen lines somebody
+    /// actually chose, and it is the chosen ones that explain behaviour.
+    async fn config(&self) -> Result<Vec<crate::configsource::ConfigDocument>> {
+        use crate::configsource::ConfigDocument;
+
+        let (via, map) = match &self.backend {
+            Backend::Postgres(pool) => {
+                let rows = sqlx::query(
+                    "SELECT name, setting, unit, source                      FROM pg_settings                      WHERE source <> 'default'                      ORDER BY name",
+                )
+                .fetch_all(pool)
+                .await?;
+
+                let mut map = serde_json::Map::new();
+                for row in &rows {
+                    let name: String = row.try_get("name").unwrap_or_default();
+                    let setting: String = row.try_get("setting").unwrap_or_default();
+                    let unit: Option<String> = row.try_get("unit").ok();
+                    let source: String = row.try_get("source").unwrap_or_default();
+                    // The source travels with the value: "this came from
+                    // ALTER SYSTEM" and "this came from postgresql.conf" send
+                    // an operator to different files.
+                    map.insert(
+                        name,
+                        serde_json::json!({
+                            "value": match unit {
+                                Some(u) if !u.is_empty() => format!("{setting}{u}"),
+                                _ => setting,
+                            },
+                            "source": source,
+                        }),
+                    );
+                }
+                ("pg_settings (non-default)", map)
+            }
+            Backend::MySql(pool) => {
+                let rows = sqlx::query("SHOW GLOBAL VARIABLES")
+                    .fetch_all(pool)
+                    .await?;
+
+                let mut map = serde_json::Map::new();
+                for row in &rows {
+                    let name: String = row.try_get(0).unwrap_or_default();
+                    let value: String = row.try_get(1).unwrap_or_default();
+                    map.insert(name, serde_json::Value::String(value));
+                }
+                ("SHOW GLOBAL VARIABLES", map)
+            }
+        };
+
+        Ok(vec![ConfigDocument::live(
+            &self.profile_id,
+            "Running parameters",
+            via,
+            &serde_json::Value::Object(map),
+        )])
+    }
+
     async fn fetch_logs(&self, _since: DateTime<Utc>, _limit: usize) -> Result<Vec<LogEvent>> {
         Ok(Vec::new())
     }
@@ -933,6 +999,7 @@ mod tests {
             poll_interval_secs: 10,
             options: ProfileOptions::default(),
             depends_on: Vec::new(),
+            config_sources: Vec::new(),
             metadata: ProfileOptions::default(),
         }
     }

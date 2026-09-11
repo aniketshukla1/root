@@ -70,6 +70,7 @@ fn profile(kind: ServiceKind, endpoint: String, options: ProfileOptions) -> Conn
         poll_interval_secs: 10,
         options,
         depends_on: Vec::new(),
+            config_sources: Vec::new(),
         metadata: ProfileOptions::default(),
     }
 }

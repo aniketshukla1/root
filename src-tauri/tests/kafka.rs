@@ -45,6 +45,7 @@ fn profile(endpoint: &str) -> ConnectionProfile {
         poll_interval_secs: 30,
         options: ProfileOptions::default(),
         depends_on: Vec::new(),
+            config_sources: Vec::new(),
         metadata: ProfileOptions::default(),
     }
 }

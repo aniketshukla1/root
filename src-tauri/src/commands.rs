@@ -765,6 +765,95 @@ pub async fn get_component_history(
         .entity_series(&profile_id, &section_id, &row_id, since))
 }
 
+/// Every piece of configuration root can see for one connection.
+///
+/// Both provenances together: the files an operator declared, and whatever the
+/// target itself can be asked for. They are listed side by side deliberately —
+/// a file and a live value disagreeing is the commonest config bug there is,
+/// and it is invisible unless you can see both at once.
+///
+/// Bodies are redacted before they reach this function. There is no variant of
+/// this command that returns the original bytes.
+#[tauri::command]
+pub async fn get_config_documents(
+    state: Shared<'_>,
+    profile_id: String,
+) -> Result<Vec<crate::configsource::ConfigDocument>> {
+    let profile = {
+        let config = state.config.read().await;
+        config
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .cloned()
+            .ok_or_else(|| crate::error::AppError::Collector("no such connection".into()))?
+    };
+
+    let mut documents = Vec::new();
+    for source in &profile.config_sources {
+        documents.extend(crate::configsource::read_source(&profile.id, source).await);
+    }
+
+    // A target that cannot be asked, or is currently down, must not fail the
+    // whole read — the declared files are still worth showing.
+    if let Ok(collector) = state.collector(&profile.id).await {
+        match collector.config().await {
+            Ok(live) => documents.extend(live),
+            Err(e) => tracing::debug!(profile = %profile.id, "live config unavailable: {e}"),
+        }
+    }
+
+    Ok(documents)
+}
+
+/// What config and telemetry say when read together.
+///
+/// Omit `profile_id` for the whole estate. Deterministic rules, not the
+/// assistant: every finding names the setting, the metric and the projection
+/// behind it, so the reasoning can be checked rather than trusted.
+#[tauri::command]
+pub async fn get_findings(
+    state: Shared<'_>,
+    profile_id: Option<String>,
+) -> Result<Vec<crate::advisor::Finding>> {
+    let profiles: Vec<crate::config::ConnectionProfile> = {
+        let config = state.config.read().await;
+        config
+            .profiles
+            .iter()
+            .filter(|p| p.enabled)
+            .filter(|p| profile_id.as_ref().is_none_or(|id| &p.id == id))
+            .cloned()
+            .collect()
+    };
+
+    let mut out = Vec::new();
+    for profile in &profiles {
+        let Some(snapshot) = state.snapshots.read().await.get(&profile.id).cloned() else {
+            continue;
+        };
+
+        let mut documents = Vec::new();
+        for source in &profile.config_sources {
+            documents.extend(crate::configsource::read_source(&profile.id, source).await);
+        }
+        if let Ok(collector) = state.collector(&profile.id).await {
+            if let Ok(live) = collector.config().await {
+                documents.extend(live);
+            }
+        }
+        if documents.is_empty() {
+            continue;
+        }
+
+        let series = state.history.read().await.series(&profile.id, None);
+        out.extend(crate::advisor::findings(&snapshot, &documents, &series));
+    }
+
+    out.sort_by(|a, b| b.severity.cmp(&a.severity));
+    Ok(out)
+}
+
 /// What in the estate is heading for a limit, and when it gets there.
 ///
 /// One call rather than one per connection per component, because the ranking

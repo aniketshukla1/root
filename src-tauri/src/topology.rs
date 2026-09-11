@@ -174,6 +174,7 @@ mod tests {
             poll_interval_secs: 15,
             options: Default::default(),
             depends_on: depends_on.iter().map(|s| (*s).into()).collect(),
+            config_sources: Vec::new(),
             metadata: Default::default(),
         }
     }

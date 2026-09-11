@@ -512,6 +512,63 @@ impl Collector for DockerCollector {
         Ok(events)
     }
 
+    /// Each running container's resource limits and restart policy.
+    ///
+    /// Only the parts that decide behaviour under load. A full `inspect` is
+    /// several hundred lines per container, almost all of it layer ids and
+    /// mount options, and burying `Memory: 0` — no limit at all, the default,
+    /// and the reason an OOM took the host rather than the container — in that
+    /// is the same as not reporting it.
+    async fn config(&self) -> Result<Vec<crate::configsource::ConfigDocument>> {
+        use crate::configsource::ConfigDocument;
+
+        let containers = self.running_containers().await?;
+        let mut map = serde_json::Map::new();
+
+        for container in &containers {
+            let Some(id) = &container.id else { continue };
+            let name = container
+                .names
+                .as_ref()
+                .and_then(|n| n.first())
+                .map(|n| n.trim_start_matches('/').to_string())
+                .unwrap_or_else(|| id.chars().take(12).collect());
+
+            let Ok(inspect) = self
+                .docker
+                .inspect_container(id, None::<bollard::query_parameters::InspectContainerOptions>)
+                .await
+            else {
+                continue;
+            };
+            let host = inspect.host_config.unwrap_or_default();
+
+            map.insert(
+                name,
+                serde_json::json!({
+                    "image": container.image,
+                    "memoryLimitBytes": host.memory,
+                    "memoryReservationBytes": host.memory_reservation,
+                    "memorySwapBytes": host.memory_swap,
+                    "nanoCpus": host.nano_cpus,
+                    "cpuShares": host.cpu_shares,
+                    "cpuQuota": host.cpu_quota,
+                    "pidsLimit": host.pids_limit,
+                    "restartPolicy": host.restart_policy.and_then(|p| p.name).map(|n| format!("{n:?}")),
+                    "readonlyRootfs": host.readonly_rootfs,
+                    "ulimits": host.ulimits,
+                }),
+            );
+        }
+
+        Ok(vec![ConfigDocument::live(
+            &self.profile_id,
+            "Container limits",
+            "inspect (HostConfig)",
+            &serde_json::Value::Object(map),
+        )])
+    }
+
     async fn detail(&self, query: &DetailQuery) -> Result<serde_json::Value> {
         match query {
             DetailQuery::Container { container } => {

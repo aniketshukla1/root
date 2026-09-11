@@ -10,6 +10,7 @@ import type {
   Alert,
   CapacityRisk,
   ChangeEvent,
+  Finding,
   Correlation,
   Health,
   HealthRun,
@@ -20,6 +21,7 @@ import type {
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { Horizon } from "../ui/capacity";
+import { FindingList } from "../ui/config";
 import { AlertList } from "../ui/AlertList";
 import { LogHistogram, levelColor, type Bucket } from "../ui/charts";
 import {
@@ -65,6 +67,7 @@ export function Overview({
   healthRuns,
   history,
   capacity,
+  findings,
   logs,
   loading,
   minutes,
@@ -87,6 +90,7 @@ export function Overview({
   healthRuns: Record<string, HealthRun[]>;
   history: Record<string, MetricSeries[]>;
   capacity: CapacityRisk[];
+  findings: Finding[];
   logs: LogEvent[];
   loading: boolean;
   minutes: number;
@@ -199,6 +203,7 @@ export function Overview({
             changes={changes}
             healthRuns={healthRuns}
             capacity={capacity}
+            findings={findings}
             minutes={minutes}
             onNavigate={onNavigate}
           />
@@ -365,6 +370,7 @@ function QuietState({
   changes,
   healthRuns,
   capacity,
+  findings,
   minutes,
   onNavigate,
 }: {
@@ -373,6 +379,7 @@ function QuietState({
   changes: ChangeEvent[];
   healthRuns: Record<string, HealthRun[]>;
   capacity: CapacityRisk[];
+  findings: Finding[];
   minutes: number;
   onNavigate: (view: View) => void;
 }) {
@@ -415,8 +422,9 @@ function QuietState({
             {clearFor !== undefined
               ? ` The last thing to leave healthy recovered ${formatRelative(new Date(clearFor).toISOString())}.`
               : ` Nothing has left healthy in the last ${minutes} minutes.`}{" "}
-            What follows is what is closest to a limit, and what changed while it was quiet — the
-            two things that decide whether this lasts.
+            {findings.length > 0
+              ? " What follows is what its own configuration says is coming, what is closest to a limit, and what changed while it was quiet."
+              : " What follows is what is closest to a limit, and what changed while it was quiet — the two things that decide whether this lasts."}
           </p>
         </div>
         <div className="flex w-full shrink-0 flex-col gap-1.5 @2xl:w-[168px]">
@@ -424,6 +432,33 @@ function QuietState({
           <Button onClick={() => onNavigate({ name: "logs" })}>Open logs</Button>
         </div>
       </section>
+
+      {/* Above capacity on purpose. A headroom row says something will become a
+          problem; a finding says what setting decides it and what to change.
+          The one with an action attached goes first. */}
+      {findings.length > 0 && (
+        <Panel
+          title="From configuration"
+          subtitle="read against this estate's own telemetry"
+          actions={
+            <Button variant="ghost" onClick={() => onNavigate({ name: "services" })}>
+              All connections
+            </Button>
+          }
+        >
+          <FindingList
+            findings={findings.slice(0, 3)}
+            onOpenService={(profileId) =>
+              onNavigate({ name: "service", profileId, tab: "config" })
+            }
+          />
+          {findings.length > 3 && (
+            <p className="num mt-2 text-2xs text-ink-4">
+              {findings.length - 3} more on their own connections.
+            </p>
+          )}
+        </Panel>
+      )}
 
       <div className="grid min-h-[240px] gap-3 @4xl:grid-cols-[1fr_340px]">
         <Panel

@@ -286,6 +286,100 @@ export interface Trend {
  * component ones — an NFS export, a container's volume, a single hot node —
  * are one row deep in a place no connection-level view reaches.
  */
+/** Where a connection's configuration lives. Declared, never discovered. */
+export interface ConfigSource {
+  id: string;
+  label?: string;
+  /** Absolute path to a file or a directory. */
+  path: string;
+  /** A glob applied under `path` when it is a directory. */
+  include?: string;
+}
+
+export type ConfigFormat = "ini" | "yaml" | "json" | "toml" | "xml" | "properties" | "text";
+
+export type RedactionReason =
+  | "keyName"
+  | "privateKey"
+  | "jwt"
+  | "urlCredentials"
+  | "providerToken"
+  | "authorizationHeader";
+
+export interface Redaction {
+  line: number;
+  key?: string;
+  reason: RedactionReason;
+}
+
+/**
+ * Why a document has no body.
+ *
+ * Withholding is a result, not a failure. "There is a .env here and it was not
+ * opened" is more useful to render than either its contents or its absence.
+ */
+export type Withheld =
+  | { kind: "secret" }
+  | { kind: "tooLarge"; bytes: number }
+  | { kind: "binary" }
+  | { kind: "unreadable"; message: string };
+
+/**
+ * Where a document came from.
+ *
+ * A file is what is on disk, which may not be what the process loaded. Live is
+ * what the target is actually running with. The two disagreeing is the
+ * commonest config bug there is.
+ */
+export type ConfigOrigin = { kind: "file"; path: string } | { kind: "live"; via: string };
+
+export interface ConfigDocument {
+  id: string;
+  profileId: string;
+  label: string;
+  origin: ConfigOrigin;
+  format: ConfigFormat;
+  bytes: number;
+  modified?: string;
+  /** Redacted before it ever left the backend. Absent when `withheld` says why. */
+  body?: string;
+  withheld?: Withheld;
+  redactions?: Redaction[];
+  readAt: string;
+}
+
+export type Severity = "advisory" | "soon" | "now";
+
+export type Evidence =
+  | { kind: "setting"; key: string; value: string; source: string }
+  | { kind: "metric"; key: string; label: string; value: number; unit: MetricUnit; limit?: number }
+  | { kind: "projection"; key: string; secondsToLimit: number; fit: number; windowSecs: number };
+
+export interface Suggestion {
+  setting: string;
+  current: string;
+  proposed: string;
+  /** Text for a human to run. Nothing in the app executes it. */
+  apply?: string;
+}
+
+/**
+ * One thing wrong, or about to be — found by reading config against telemetry.
+ *
+ * Deterministic rules, not the assistant. Every finding carries the evidence
+ * it rests on so the reasoning can be checked rather than trusted.
+ */
+export interface Finding {
+  id: string;
+  profileId: string;
+  profileName: string;
+  severity: Severity;
+  title: string;
+  detail: string;
+  evidence: Evidence[];
+  suggestion?: Suggestion;
+}
+
 export interface CapacityRisk {
   profileId: string;
   /** Absent for connection metrics; identifies the component otherwise. */
@@ -462,6 +556,14 @@ export interface ConnectionProfile {
   pollIntervalSecs: number;
   options: ProfileOptions;
   metadata: ProfileMetadata;
+  /**
+   * Where this connection's configuration lives on disk.
+   *
+   * Declared like `dependsOn` and for the same reason. Live config read back
+   * from the target itself needs no entry here — the collector already knows
+   * how to ask.
+   */
+  configSources: ConfigSource[];
 }
 
 export type LlmProviderKind = "anthropic" | "open_ai_compatible" | "ollama";

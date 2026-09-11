@@ -23,6 +23,7 @@ import type {
   Incident,
   LogEvent,
   CapacityRisk,
+  Finding,
   MetricSeries,
   PendingConfirmation,
   TeamState,
@@ -94,6 +95,7 @@ export default function App() {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [history, setHistory] = useState<Record<string, MetricSeries[]>>({});
   const [capacity, setCapacity] = useState<CapacityRisk[]>([]);
+  const [findings, setFindings] = useState<Finding[]>([]);
   const [buckets, setBuckets] = useState<HistogramBucket[]>([]);
   const [healthRuns, setHealthRuns] = useState<Record<string, HealthRun[]>>({});
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -215,6 +217,21 @@ export default function App() {
     }
   }, []);
 
+  /**
+   * Config findings, on the same slow cadence as capacity.
+   *
+   * Config is not telemetry — it changes when somebody changes it — so this
+   * does not need the dashboard's cadence. It does need to be loaded without
+   * being asked for: a finding nobody navigates to is a finding nobody has.
+   */
+  const refreshFindings = useCallback(async () => {
+    try {
+      setFindings(await api.getFindings());
+    } catch (error) {
+      console.error("findings load failed:", errorMessage(error));
+    }
+  }, []);
+
   const refreshHealthRuns = useCallback(async () => {
     try {
       setHealthRuns(await api.getHealthRuns(minutes));
@@ -286,7 +303,8 @@ export default function App() {
     refreshHistogram();
     refreshContext();
     refreshCapacity();
-  }, [refreshHistory, refreshHealthRuns, refreshHistogram, refreshContext, refreshCapacity]);
+    refreshFindings();
+  }, [refreshHistory, refreshHealthRuns, refreshHistogram, refreshContext, refreshCapacity, refreshFindings]);
 
   useEffect(() => {
     const dashboardTimer = setInterval(() => {
@@ -299,6 +317,7 @@ export default function App() {
       refreshHistogram();
       refreshContext();
       refreshCapacity();
+      refreshFindings();
     }, HISTORY_POLL_MS);
     return () => {
       clearInterval(dashboardTimer);
@@ -312,6 +331,7 @@ export default function App() {
     refreshHistogram,
     refreshContext,
     refreshCapacity,
+    refreshFindings,
   ]);
 
   /**
@@ -438,7 +458,8 @@ export default function App() {
     refreshHealthRuns();
     refreshHistogram();
     refreshCapacity();
-  }, [refreshDashboard, refreshHistory, refreshHealthRuns, refreshHistogram, refreshCapacity]);
+    refreshFindings();
+  }, [refreshDashboard, refreshHistory, refreshHealthRuns, refreshHistogram, refreshCapacity, refreshFindings]);
 
   const acknowledge = useCallback(
     (alertId: string) => {
@@ -590,6 +611,7 @@ export default function App() {
             healthRuns={healthRuns}
             history={history}
             capacity={capacity}
+            findings={findings}
             logs={logs}
             loading={loading}
             minutes={minutes}

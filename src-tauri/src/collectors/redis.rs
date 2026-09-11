@@ -398,6 +398,44 @@ impl Collector for RedisCollector {
         })
     }
 
+    /// `CONFIG GET *` — every parameter with its running value.
+    ///
+    /// This is the one that matters for Redis, because the two settings that
+    /// decide whether a full instance degrades or falls over — `maxmemory` and
+    /// `maxmemory-policy` — are routinely left at their defaults, and the
+    /// default policy is to stop accepting writes.
+    async fn config(&self) -> Result<Vec<crate::configsource::ConfigDocument>> {
+        use crate::configsource::ConfigDocument;
+
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| AppError::Collector(format!("redis unreachable: {e}")))?;
+
+        // Returns a flat [key, value, key, value, ...] array.
+        let pairs: Vec<String> = redis::cmd("CONFIG")
+            .arg("GET")
+            .arg("*")
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| AppError::Collector(format!("CONFIG GET failed: {e}")))?;
+
+        let mut map = serde_json::Map::new();
+        for pair in pairs.chunks(2) {
+            if let [key, value] = pair {
+                map.insert(key.clone(), serde_json::Value::String(value.clone()));
+            }
+        }
+
+        Ok(vec![ConfigDocument::live(
+            &self.profile_id,
+            "Running configuration",
+            "CONFIG GET *",
+            &serde_json::Value::Object(map),
+        )])
+    }
+
     async fn fetch_logs(&self, _since: DateTime<Utc>, limit: usize) -> Result<Vec<LogEvent>> {
         let Ok(mut conn) = self.client.get_multiplexed_async_connection().await else {
             return Ok(Vec::new());

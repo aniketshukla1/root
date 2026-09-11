@@ -5,6 +5,7 @@ import type { Catalog } from "../catalog";
 import { applyDensity, readDensity, type Density } from "../density";
 import { applyTheme, readTheme, watchSystemTheme, type Theme } from "../theme";
 import type {
+  ConfigSource,
   AgentMode,
   AppConfig,
   ConnectionProfile,
@@ -315,6 +316,7 @@ export function blankProfile(descriptor: ServiceDescriptor): ConnectionProfile {
     enabled: true,
     pollIntervalSecs: descriptor.defaultPollSecs,
     dependsOn: [],
+    configSources: [],
     options,
     metadata: {},
   };
@@ -578,6 +580,16 @@ export function ProfileForm({
                 })}
               </div>
             )}
+          </Field>
+
+          <Field
+            label="Configuration files"
+            help="Absolute paths to this connection's config. Declared, not discovered — root does not go looking for files that might be config, because a tool that goes looking eventually opens something it should not have. Credentials are stripped before anything leaves this machine, and files that are entirely secret (.env, private keys) are named but never opened."
+          >
+            <ConfigSources
+              sources={draft.configSources}
+              onChange={(configSources) => setDraft((d) => ({ ...d, configSources }))}
+            />
           </Field>
         </Fieldset>
 
@@ -1408,6 +1420,86 @@ function Modal({
           </footer>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The declared places a connection's config lives.
+ *
+ * A path and an optional glob, nothing more. There is no directory picker and
+ * no browse button on purpose: those invite pointing root at a home directory
+ * to see what it finds, and "what it finds" is the failure mode this whole
+ * feature is built to avoid. Typing a path is a deliberate act.
+ */
+function ConfigSources({
+  sources,
+  onChange,
+}: {
+  sources: ConfigSource[];
+  onChange: (sources: ConfigSource[]) => void;
+}) {
+  const update = (id: string, patch: Partial<ConfigSource>) =>
+    onChange(sources.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+
+  return (
+    <div className="flex flex-col gap-2">
+      {sources.map((source) => (
+        <div key={source.id} className="flex flex-col gap-1.5 rounded-md border border-line p-2">
+          <div className="flex gap-1.5">
+            <Input
+              value={source.path}
+              placeholder="/etc/nginx"
+              onChange={(e) => update(source.id, { path: e.target.value })}
+              className="flex-1"
+            />
+            <Button
+              variant="ghost"
+              onClick={() => onChange(sources.filter((s) => s.id !== source.id))}
+            >
+              Remove
+            </Button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="num w-[52px] shrink-0 text-2xs text-ink-4">include</span>
+            <Input
+              value={source.include ?? ""}
+              placeholder="*.conf — leave blank for a single file"
+              onChange={(e) =>
+                update(source.id, { include: e.target.value || undefined })
+              }
+              className="flex-1"
+            />
+          </div>
+          {!source.path.startsWith("/") && source.path.length > 0 && (
+            <p className="num text-2xs text-warn">
+              The path must be absolute — a relative one means whatever directory the app
+              happens to be running in.
+            </p>
+          )}
+        </div>
+      ))}
+
+      <div>
+        <Button
+          variant="ghost"
+          onClick={() =>
+            onChange([
+              ...sources,
+              { id: `src-${Date.now().toString(36)}`, path: "", include: undefined },
+            ])
+          }
+        >
+          Add a path
+        </Button>
+      </div>
+
+      {sources.length === 0 && (
+        <p className="num text-2xs leading-relaxed text-ink-4">
+          None declared. Many connections still report their running configuration directly —
+          Redis, Postgres, Docker and Kubernetes all do — and that needs no setup here.
+        </p>
+      )}
     </div>
   );
 }

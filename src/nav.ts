@@ -19,6 +19,7 @@ export type ServiceTab =
   | "alerts"
   | "metrics"
   | "logs"
+  | "config"
   | "configuration";
 
 /** Which nav entry should read as current, including for drill-downs. */

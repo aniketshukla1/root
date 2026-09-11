@@ -39,6 +39,7 @@ fn profile(kind: ServiceKind, endpoint: &str, username: Option<&str>) -> Connect
         poll_interval_secs: 20,
         options: ProfileOptions::default(),
         depends_on: Vec::new(),
+            config_sources: Vec::new(),
         metadata: ProfileOptions::default(),
     }
 }

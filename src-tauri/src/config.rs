@@ -113,6 +113,14 @@ pub struct ConnectionProfile {
     /// means collectors never become coupled to the operating model.
     #[serde(default)]
     pub metadata: ProfileOptions,
+    /// Where this connection's configuration lives on disk.
+    ///
+    /// DECLARED, like `depends_on` and for the same reason: a tool that goes
+    /// looking for things that might be config will eventually open something
+    /// it should not have. Live config read back from the target itself needs
+    /// no entry here — the collector already knows how to ask.
+    #[serde(default)]
+    pub config_sources: Vec<crate::configsource::ConfigSource>,
 }
 
 fn default_true() -> bool {
@@ -427,7 +435,7 @@ pub fn config_path(base: &Path) -> PathBuf {
 }
 
 /// Copy config from either previous product identifier on the first `root`
-/// launch. Candidates are newest-first so an actively used InfraMonitor config
+/// launch. Candidates are newest-first so an actively used root config
 /// wins over the original `.app` location. Old files remain rollback paths.
 pub fn migrate_legacy_config(current: &Path) -> Result<bool> {
     if current.exists() {

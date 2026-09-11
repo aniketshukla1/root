@@ -243,6 +243,57 @@ pub fn catalog(mode: AgentMode) -> Vec<ToolDef> {
             false,
         ),
         tool(
+            "list_config",
+            "List the configuration root can see for a connection: the files an operator \
+             declared, and whatever the running target itself can be asked for. Returns \
+             each document's label, where it came from, its size, and how many values \
+             were redacted — not the contents. Call read_config for a body. Start here \
+             when a question is about how something is set up rather than how it is \
+             behaving.",
+            json!({
+                "type": "object",
+                "properties": { "connection": connection_property() },
+                "required": ["connection"]
+            }),
+            false,
+        ),
+        tool(
+            "read_config",
+            "The contents of one configuration document, with every credential removed \
+             before it reaches you. Passwords, private keys, tokens and the password half \
+             of connection URLs are replaced with «redacted» markers; settings are intact. \
+             Do not ask the operator to paste an unredacted version, and do not treat a \
+             marker as a value. Some documents have no body at all — a `.env` is named but \
+             never opened — and the `withheld` field says why.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "connection": connection_property(),
+                    "document": {
+                        "type": "string",
+                        "description": "Document id or label, as listed by list_config."
+                    }
+                },
+                "required": ["connection", "document"]
+            }),
+            false,
+        ),
+        tool(
+            "config_findings",
+            "Problems found by reading a connection's configuration against its own \
+             telemetry — a memory ceiling a metric is climbing toward, a pool about to \
+             exhaust, containers with no limits. Each finding carries the setting, the \
+             metric and the projection it rests on, plus the change that would fix it. \
+             These are deterministic rules, not opinions: prefer them over your own \
+             reading of a config file, and cite the evidence when you repeat one. Omit \
+             `connection` for the whole estate.",
+            json!({
+                "type": "object",
+                "properties": { "connection": connection_property() }
+            }),
+            false,
+        ),
+        tool(
             "propose_command",
             "Surface a remediation command for the operator to run themselves. Use this for \
              anything you cannot or should not execute directly. The command is shown in the \
@@ -386,6 +437,37 @@ pub async fn resolve_connection(state: &Arc<AppState>, args: &serde_json::Value)
 
 /// Run a read-only tool. Mutating tools are handled by the agent loop, which
 /// owns the approval step.
+/// Declared files and live config together, for whichever tool asked.
+///
+/// A target that is down or cannot be asked contributes nothing rather than
+/// failing the call: the declared files are still worth returning, and an
+/// assistant that gets an error here will conclude there is no config at all.
+async fn config_documents(
+    state: &Arc<AppState>,
+    profile_id: &str,
+) -> Result<Vec<crate::configsource::ConfigDocument>> {
+    let sources = {
+        let config = state.config.read().await;
+        config
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .map(|p| p.config_sources.clone())
+            .unwrap_or_default()
+    };
+
+    let mut documents = Vec::new();
+    for source in &sources {
+        documents.extend(crate::configsource::read_source(profile_id, source).await);
+    }
+    if let Ok(collector) = state.collector(profile_id).await {
+        if let Ok(live) = collector.config().await {
+            documents.extend(live);
+        }
+    }
+    Ok(documents)
+}
+
 pub async fn run_read_only(
     state: &Arc<AppState>,
     name: &str,
@@ -505,6 +587,89 @@ pub async fn run_read_only(
         "refresh_connection" => {
             let id = resolve_connection(state, args).await?;
             json!(supervisor::poll_once(state, &id).await?)
+        }
+
+        "list_config" => {
+            let id = resolve_connection(state, args).await?;
+            let documents = config_documents(state, &id).await?;
+            json!(documents
+                .iter()
+                .map(|d| json!({
+                    "id": d.id,
+                    "label": d.label,
+                    "origin": d.origin,
+                    "format": d.format,
+                    "bytes": d.bytes,
+                    "modified": d.modified.map(|m| m.to_rfc3339()),
+                    "withheld": d.withheld,
+                    // The count rather than the list, so a document with forty
+                    // redactions does not crowd out the other nine documents.
+                    "redactedValues": d.redactions.len(),
+                }))
+                .collect::<Vec<_>>())
+        }
+
+        "read_config" => {
+            let id = resolve_connection(state, args).await?;
+            let wanted = args
+                .get("document")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| AppError::Collector("a document id or label is required".into()))?;
+
+            let documents = config_documents(state, &id).await?;
+            let document = documents
+                .iter()
+                .find(|d| d.id == wanted || d.label == wanted)
+                .ok_or_else(|| {
+                    AppError::Collector(format!(
+                        "no document `{wanted}` — list_config names what exists"
+                    ))
+                })?;
+
+            json!(document)
+        }
+
+        "config_findings" => {
+            let scope = match args.get("connection").and_then(|v| v.as_str()) {
+                Some(_) => Some(resolve_connection(state, args).await?),
+                None => None,
+            };
+
+            let profiles: Vec<crate::config::ConnectionProfile> = {
+                let config = state.config.read().await;
+                config
+                    .profiles
+                    .iter()
+                    .filter(|p| p.enabled)
+                    .filter(|p| scope.as_ref().is_none_or(|id| &p.id == id))
+                    .cloned()
+                    .collect()
+            };
+
+            let mut found = Vec::new();
+            for profile in &profiles {
+                let Some(snapshot) = state.snapshots.read().await.get(&profile.id).cloned() else {
+                    continue;
+                };
+                let documents = config_documents(state, &profile.id).await?;
+                if documents.is_empty() {
+                    continue;
+                }
+                let series = state.history.read().await.series(&profile.id, None);
+                found.extend(crate::advisor::findings(&snapshot, &documents, &series));
+            }
+            found.sort_by(|a, b| b.severity.cmp(&a.severity));
+
+            if found.is_empty() {
+                json!({
+                    "findings": [],
+                    "note": "Nothing found. Either no configuration is declared for these \
+                             connections, or the rules that exist had nothing to say — \
+                             absence here is not a clean bill of health."
+                })
+            } else {
+                json!(found)
+            }
         }
 
         "get_metric_trend" => {

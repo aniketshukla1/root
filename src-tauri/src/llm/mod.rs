@@ -154,7 +154,7 @@ pub fn build_provider(
 
     let client = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
-        .user_agent("InfraMonitor/0.1")
+        .user_agent("root/0.1")
         .build()
         .map_err(|e| AppError::Llm(format!("could not build the HTTP client: {e}")))?;
 

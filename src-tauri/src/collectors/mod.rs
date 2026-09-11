@@ -136,6 +136,23 @@ pub trait Collector: Send + Sync {
         Err(AppError::UnsupportedAction(self.kind().label().to_string()))
     }
 
+    /// The configuration the target is actually running with.
+    ///
+    /// Two things this has that a file on disk does not. It is the *effective*
+    /// config — after includes, after defaults, after whatever the last reload
+    /// did or did not pick up, which is where the commonest config bug in the
+    /// world lives. And it works for infrastructure this machine has no
+    /// filesystem access to, which is most of it.
+    ///
+    /// Default: nothing, because plenty of targets expose no way to ask. An
+    /// empty result is "this one cannot tell you", not an error.
+    ///
+    /// Implementations do NOT redact: the `ConfigDocument` constructors do it,
+    /// so a new collector cannot forget.
+    async fn config(&self) -> Result<Vec<crate::configsource::ConfigDocument>> {
+        Ok(Vec::new())
+    }
+
     /// State-changing operation. Default: unsupported. Callers are responsible
     /// for having obtained approval before calling this.
     async fn run_action(&self, _action: &CollectorAction) -> Result<String> {
@@ -190,7 +207,7 @@ pub(crate) fn http_client(insecure_tls: bool, timeout: Duration) -> Result<reqwe
     reqwest::Client::builder()
         .timeout(timeout)
         .danger_accept_invalid_certs(insecure_tls)
-        .user_agent("InfraMonitor/0.1")
+        .user_agent("root/0.1")
         .build()
         .map_err(|e| AppError::Collector(format!("could not build HTTP client: {e}")))
 }

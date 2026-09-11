@@ -5,12 +5,15 @@ import { formatHorizon } from "../format";
 import type { View } from "../nav";
 import type {
   Caveat,
+  Failure,
   FamilyScore,
   RecallScore,
   Replay,
   RuleBehaviour,
   RuleScore,
+  ScenarioOutcome,
   Scorecard as Card,
+  SuiteResult,
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { Button, Empty, Panel, Select, Tag, cx } from "../ui/primitives";
@@ -127,6 +130,7 @@ export function Scorecard({
                 measurement that does not have to wait for ratings to
                 accumulate — it reads history that is already there. Hiding it
                 until somebody has rated something had it exactly backwards. */}
+            <Scenarios />
             <Backtest connections={connections} />
           </>
         ) : (
@@ -182,6 +186,7 @@ export function Scorecard({
               )}
             </Panel>
 
+            <Scenarios />
             <Backtest connections={connections} />
 
             <p className="num max-w-[92ch] text-2xs leading-relaxed text-ink-4">
@@ -555,5 +560,188 @@ function describeCaveat(caveat: Caveat): string {
       return `Only ${caveat.samples} samples. Too few for a trend, so the rules that project could not have fired whatever the data did — which is not the same as nothing being wrong.`;
     case "noHistorySource":
       return "This connection declares no long-range history source, so there was nothing to replay. Point it at a Prometheus in Settings to make this work.";
+  }
+}
+
+/**
+ * The rules graded against situations we already agree on.
+ *
+ * The one measurement here that needs nothing — no connections, no history, no
+ * ratings. It answers the question a failing build cannot: after somebody
+ * widened a threshold or reworded a rule, is the product better or worse than
+ * it was? A stack trace says one case broke; "18 of 20, these two regressed"
+ * says what happened.
+ *
+ * Failures are split into missed and spurious, because a suite drifting
+ * blinder and one drifting noisier want opposite responses, and a single
+ * pass-rate hides which is happening.
+ */
+function Scenarios() {
+  const [suite, setSuite] = useState<SuiteResult>();
+  const [error, setError] = useState<string>();
+  const [running, setRunning] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+
+  const run = async () => {
+    setRunning(true);
+    setError(undefined);
+    try {
+      setSuite(await api.runScenarios());
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  // Cheap and dependency-free, so it runs on arrival rather than waiting to be
+  // asked — unlike the backtest, which reads somebody's production Prometheus.
+  useEffect(() => {
+    run();
+  }, []);
+
+  const failed = suite?.outcomes.filter((o) => !o.passed) ?? [];
+  const shown = showAll ? (suite?.outcomes ?? []) : failed;
+
+  return (
+    <Panel
+      title="Scenarios"
+      subtitle={
+        suite
+          ? `${suite.passed} of ${suite.total} — known situations, known right answers`
+          : "known situations, known right answers"
+      }
+      actions={
+        <>
+          {suite && suite.outcomes.length > failed.length && (
+            <Button variant="ghost" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? "Only failures" : "Show all"}
+            </Button>
+          )}
+          <Button variant="ghost" onClick={run} disabled={running}>
+            {running ? "Running…" : "Re-run"}
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <Empty title="Could not run" hint={error} />
+      ) : !suite ? (
+        <Empty title="Running" hint="Grading the rules against the built-in library." />
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          <div className="rounded-md border border-line bg-page p-2.5">
+            <div className="flex items-baseline gap-2">
+              <span className="num text-xs text-ink">
+                {suite.passed === suite.total ? "No regressions" : "Regressions"}
+              </span>
+              <span
+                className="num ml-auto text-[17px]"
+                style={{
+                  color:
+                    suite.passed === suite.total ? "var(--color-ok)" : "var(--color-warn)",
+                }}
+              >
+                {suite.passed}/{suite.total}
+              </span>
+            </div>
+
+            <Bar
+              segments={[
+                { value: suite.passed, color: "var(--color-ok)" },
+                { value: suite.total - suite.passed, color: "var(--color-warn)" },
+              ]}
+            />
+
+            {/* Split, because drifting blinder and drifting noisier want
+                opposite responses and a pass rate hides which it is. */}
+            <div className="num mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-2xs text-ink-4">
+              <Count label="missed" value={suite.missed} color="var(--color-down)" />
+              <Count label="spurious" value={suite.spurious} color="var(--color-warn)" />
+              <Count label="wrong urgency" value={suite.wrongSeverity} color="var(--color-accent)" />
+            </div>
+          </div>
+
+          {shown.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {shown.map((outcome) => (
+                <ScenarioRow key={outcome.id} outcome={outcome} />
+              ))}
+            </div>
+          )}
+
+          {suite.passed === suite.total && !showAll && (
+            <p className="num text-2xs leading-relaxed text-ink-4">
+              Every scenario in the library still gets the right answer. That is a statement
+              about the cases somebody thought to write down — a rule can be perfectly
+              well-behaved here and still miss the thing that breaks tomorrow, which is what
+              the backtest and the recall question are for.
+            </p>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function ScenarioRow({ outcome }: { outcome: ScenarioOutcome }) {
+  const [open, setOpen] = useState(!outcome.passed);
+
+  return (
+    <div
+      className="rounded-md border border-line bg-page p-2.5"
+      style={{
+        borderLeftColor: outcome.passed ? "var(--color-ok)" : "var(--color-warn)",
+        borderLeftWidth: 2,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-baseline gap-2 text-left"
+      >
+        <span className="text-xs text-ink">{outcome.title}</span>
+        <Tag>{outcome.kind}</Tag>
+        <span
+          className="num ml-auto shrink-0 text-2xs"
+          style={{ color: outcome.passed ? "var(--color-ok)" : "var(--color-warn)" }}
+        >
+          {outcome.passed ? "pass" : `${outcome.failures?.length ?? 0} failed`}
+        </span>
+      </button>
+
+      {open && (
+        <>
+          {/* The why, so a failure explains itself rather than being a name
+              somebody has to go and look up. */}
+          <p className="mt-1.5 max-w-[92ch] text-xs leading-relaxed text-ink-2">{outcome.why}</p>
+
+          {outcome.failures && outcome.failures.length > 0 && (
+            <div className="mt-1.5 flex flex-col gap-1 border-t border-line-soft pt-1.5">
+              {outcome.failures.map((failure, i) => (
+                <p key={i} className="num text-2xs text-ink-3">
+                  {describeFailure(failure)}
+                </p>
+              ))}
+            </div>
+          )}
+
+          <p className="num mt-1.5 text-2xs text-ink-4">
+            fired: {outcome.fired.length > 0 ? outcome.fired.join(", ") : "nothing"}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function describeFailure(failure: Failure): string {
+  switch (failure.kind) {
+    case "missed":
+      return `${failure.rule} did not fire — the dangerous regression: this used to be caught.`;
+    case "spurious":
+      return `${failure.rule} fired and should not have ("${failure.title}") — the noise regression.`;
+    case "wrongSeverity":
+      return `${failure.rule} fired at ${failure.actual}, expected ${failure.expected} — right problem, wrong urgency.`;
   }
 }

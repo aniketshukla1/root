@@ -41,6 +41,7 @@ import type {
   RecordedVerdict,
   Replay,
   RuleScore,
+  SuiteResult,
   Scorecard,
   Verdict,
   ServiceDescriptor,
@@ -1712,5 +1713,93 @@ export function backtest(profileId: string): Replay {
       },
     ],
     caveats: [{ kind: "configIsCurrent" }],
+  };
+}
+
+// --------------------------------------------------------- scenario library
+
+/**
+ * The scenario suite, as it stands against the current rules.
+ *
+ * A passing suite, because that is what a shipped baseline looks like — a
+ * library that fails on the code it ships with is not a baseline. The browser
+ * fixture reports the real library's shape rather than reimplementing the
+ * runner, which lives in Rust and is the only version worth having.
+ */
+export function scenarios(): SuiteResult {
+  const pass = (id: string, title: string, why: string, kind: string, fired: string[]) => ({
+    id,
+    title,
+    why,
+    kind,
+    engine: "rules" as const,
+    passed: true,
+    fired,
+  });
+
+  return {
+    total: 17,
+    passed: 17,
+    missed: 0,
+    spurious: 0,
+    wrongSeverity: 0,
+    outcomes: [
+      pass(
+        "redis-fills-noeviction",
+        "Cache filling with eviction disabled",
+        "The commonest way a cache becomes an outage. maxmemory-policy defaults to noeviction, so when the ceiling arrives Redis stops accepting writes rather than evicting — and a failed write looks like an application bug to everyone downstream.",
+        "redis",
+        ["redis.maxmemory-noeviction"],
+      ),
+      pass(
+        "redis-fills-with-eviction",
+        "Cache filling with LRU eviction",
+        "The same fill with a policy that evicts. The service stays up and the hit rate falls, so this must read as a capacity note rather than an outage — reporting the two identically is what teaches people to ignore both.",
+        "redis",
+        ["redis.maxmemory-eviction"],
+      ),
+      pass(
+        "redis-sawtooth",
+        "Cache that sawtooths without trending",
+        "Memory swinging between a third and two thirds of the ceiling all day. A straight line through it has a slope and yields a confident date that is pure artefact — this is the case the forecaster's fit gate exists to refuse, and the scenario that proves it still does.",
+        "redis",
+        [],
+      ),
+      pass(
+        "redis-already-over",
+        "Cache already past its ceiling, and erratic",
+        "Over the limit right now, with history too ragged to fit. Being past a threshold is a reading of the present rather than a projection, so it must still be reported — an earlier version gated this behind the fit and reported nothing at all on an instance that was already refusing writes.",
+        "redis",
+        ["redis.maxmemory-noeviction"],
+      ),
+      pass(
+        "config-drift",
+        "File and running process disagree",
+        "An edit nothing reloaded. The file is right and has never taken effect, so everyone reading it is reasoning about a service that does not match it — and a restart will silently adopt the file's values without anyone deciding to.",
+        "redis",
+        ["redis.config-drift"],
+      ),
+      pass(
+        "config-same-size-two-ways",
+        "The same ceiling written two ways",
+        "2147483648 and 2gb are the same number. A drift rule that called this a disagreement would fire on every Redis in existence and be switched off within a day, taking the real drift detection with it.",
+        "redis",
+        [],
+      ),
+      pass(
+        "k8s-besteffort",
+        "Workload scheduled as BestEffort",
+        "A container with neither CPU nor memory requests is placed wherever there is room and evicted first when a node comes under pressure, regardless of how important it is.",
+        "kubernetes",
+        ["kubernetes.workload-besteffort", "kubernetes.workload-no-memory-limit"],
+      ),
+      pass(
+        "no-config-at-all",
+        "A connection with no configuration declared",
+        "Metrics climbing toward a threshold with nothing known about how the service is set up. Nothing may fire: every finding here rests on a setting, and inventing one would be exactly the guess the whole module is built to avoid.",
+        "redis",
+        [],
+      ),
+    ],
   };
 }

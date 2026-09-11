@@ -959,6 +959,27 @@ async fn long_history(
     Ok(out)
 }
 
+// ---------------------------------------------------------- scenario library
+
+/// Run the built-in scenarios against the rules as they stand.
+///
+/// Answers the question a red build cannot: after a threshold was widened or a
+/// rule reworded, is the product better or worse than it was? Pure computation
+/// over embedded fixtures — it touches no infrastructure and needs nothing
+/// configured, so it works on a fresh install with no connections at all.
+#[tauri::command]
+pub async fn run_scenarios() -> Result<crate::scenarios::SuiteResult> {
+    let library = crate::scenarios::library()
+        .map_err(crate::error::AppError::Collector)?;
+    Ok(crate::scenarios::run_all(&library))
+}
+
+/// The scenarios themselves, for reading rather than running.
+#[tauri::command]
+pub async fn list_scenarios() -> Result<Vec<crate::scenarios::Scenario>> {
+    crate::scenarios::library().map_err(crate::error::AppError::Collector)
+}
+
 // ------------------------------------------------------------------ backtest
 
 /// Replay the current rules across a connection's stored history.

@@ -50,7 +50,9 @@ use crate::history::MetricSeries;
 use crate::model::{HealthSnapshot, MetricUnit, ServiceKind};
 
 /// How much attention a finding deserves, and on what timescale.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum Severity {
     /// Worth knowing. No deadline.

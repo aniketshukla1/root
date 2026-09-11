@@ -448,6 +448,41 @@ export interface Scorecard {
   rulesVersion: string;
 }
 
+// --------------------------------------------------------- scenario library
+
+/**
+ * Why a scenario did not pass.
+ *
+ * `missed` and `spurious` are counted apart for the same reason precision and
+ * recall are: a suite drifting blinder and one drifting noisier need opposite
+ * responses.
+ */
+export type Failure =
+  | { kind: "missed"; rule: string }
+  | { kind: "spurious"; rule: string; title: string }
+  | { kind: "wrongSeverity"; rule: string; expected: Severity; actual: Severity };
+
+export interface ScenarioOutcome {
+  id: string;
+  title: string;
+  /** Why this case matters — so a failure explains itself. */
+  why: string;
+  kind: string;
+  engine: "rules";
+  passed: boolean;
+  failures?: Failure[];
+  fired: string[];
+}
+
+export interface SuiteResult {
+  total: number;
+  passed: number;
+  missed: number;
+  spurious: number;
+  wrongSeverity: number;
+  outcomes: ScenarioOutcome[];
+}
+
 // ------------------------------------------------------------------ backtest
 
 /**

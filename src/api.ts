@@ -50,6 +50,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_scorecard: () => fixtures.scorecard(),
   get_long_history: () => [],
   run_backtest: ({ profileId }) => fixtures.backtest(profileId as string),
+  run_scenarios: () => fixtures.scenarios(),
   get_health_runs: () => fixtures.healthRuns(),
   get_topology: () => fixtures.topology(),
   get_incidents: () => fixtures.incidents(),
@@ -123,6 +124,7 @@ import type {
   RecordedVerdict,
   Replay,
   Scorecard,
+  SuiteResult,
   Verdict,
   Correlation,
   DashboardState,
@@ -242,6 +244,14 @@ export const api = {
    * miss". Uses the long-range source when one is declared, and says so in its
    * caveats when it had to fall back to root's own short ring.
    */
+  /**
+   * Run the built-in scenarios against the rules as they stand.
+   *
+   * Touches no infrastructure and needs nothing configured — it grades the
+   * rules against embedded fixtures, so it works on a fresh install.
+   */
+  runScenarios: () => invoke<SuiteResult>("run_scenarios"),
+
   runBacktest: (profileId: string, days?: number, stepMinutes?: number) =>
     invoke<Replay>("run_backtest", {
       profileId,

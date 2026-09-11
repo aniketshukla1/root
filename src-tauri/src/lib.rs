@@ -30,6 +30,7 @@ pub mod model;
 pub mod patterns;
 pub mod promquery;
 pub mod registry;
+pub mod scenarios;
 pub mod secrets;
 pub mod state;
 pub mod team;
@@ -142,6 +143,8 @@ pub fn run() {
             commands::get_scorecard,
             commands::get_long_history,
             commands::run_backtest,
+            commands::run_scenarios,
+            commands::list_scenarios,
             commands::get_ingest_settings,
             commands::save_ingest_settings,
             commands::rotate_ingest_token,

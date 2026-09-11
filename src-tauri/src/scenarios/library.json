@@ -1,0 +1,497 @@
+[
+  {
+    "id": "redis-fills-noeviction",
+    "title": "Cache filling with eviction disabled",
+    "why": "The commonest way a cache becomes an outage. maxmemory-policy defaults to noeviction, so when the ceiling arrives Redis stops accepting writes rather than evicting — and a failed write looks like an application bug to everyone downstream.",
+    "kind": "redis",
+    "config": {
+      "maxmemory": "2147483648",
+      "maxmemory-policy": "noeviction"
+    },
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "warnAbove": 2147483648,
+        "from": 500000000,
+        "to": 2100000000,
+        "shape": "linear",
+        "hours": 48
+      }
+    ],
+    "expect": {
+      "fires": [
+        {
+          "rule": "maxmemory-noeviction",
+          "severity": "now"
+        }
+      ],
+      "silent": [
+        "maxmemory-unset"
+      ]
+    }
+  },
+  {
+    "id": "redis-fills-with-eviction",
+    "title": "Cache filling with LRU eviction",
+    "why": "The same fill with a policy that evicts. The service stays up and the hit rate falls, so this must read as a capacity note rather than an outage — reporting the two identically is what teaches people to ignore both.",
+    "kind": "redis",
+    "config": {
+      "maxmemory": "2147483648",
+      "maxmemory-policy": "allkeys-lru"
+    },
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "warnAbove": 2147483648,
+        "from": 500000000,
+        "to": 1950000000,
+        "shape": "linear",
+        "hours": 48
+      }
+    ],
+    "expect": {
+      "fires": [
+        {
+          "rule": "maxmemory-eviction"
+        }
+      ],
+      "silent": [
+        "maxmemory-noeviction",
+        "maxmemory-unset"
+      ]
+    }
+  },
+  {
+    "id": "redis-unbounded",
+    "title": "Cache with no memory ceiling",
+    "why": "maxmemory 0 means unbounded. The instance grows until the host runs out and the kernel's OOM killer picks a process, which on a shared host is regularly a healthy neighbour rather than the one that grew. Worth reporting whatever the metrics currently say.",
+    "kind": "redis",
+    "config": {
+      "maxmemory": "0",
+      "maxmemory-policy": "noeviction"
+    },
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "from": 100000000,
+        "to": 120000000,
+        "shape": "flat",
+        "hours": 24
+      }
+    ],
+    "expect": {
+      "fires": [
+        {
+          "rule": "maxmemory-unset",
+          "severity": "advisory"
+        }
+      ],
+      "silent": [
+        "maxmemory-noeviction"
+      ]
+    }
+  },
+  {
+    "id": "redis-healthy",
+    "title": "Cache well inside its ceiling",
+    "why": "A quarter full and not moving. Nothing should fire — a rule that shouts at a healthy estate gets switched off, and then it is not there for the day it matters.",
+    "kind": "redis",
+    "config": {
+      "maxmemory": "8589934592",
+      "maxmemory-policy": "noeviction"
+    },
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "warnAbove": 8589934592,
+        "from": 2000000000,
+        "to": 2100000000,
+        "shape": "flat",
+        "hours": 48
+      }
+    ],
+    "expect": {
+      "nothingFires": true
+    }
+  },
+  {
+    "id": "redis-sawtooth",
+    "title": "Cache that sawtooths without trending",
+    "why": "Memory swinging between a third and two thirds of the ceiling all day. A straight line through it has a slope and yields a confident date that is pure artefact — this is the case the forecaster's fit gate exists to refuse, and the scenario that proves it still does.",
+    "kind": "redis",
+    "config": {
+      "maxmemory": "2147483648",
+      "maxmemory-policy": "noeviction"
+    },
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "warnAbove": 2147483648,
+        "from": 700000000,
+        "to": 1400000000,
+        "shape": "sawtooth",
+        "hours": 48
+      }
+    ],
+    "expect": {
+      "nothingFires": true
+    }
+  },
+  {
+    "id": "redis-already-over",
+    "title": "Cache already past its ceiling, and erratic",
+    "why": "Over the limit right now, with history too ragged to fit. Being past a threshold is a reading of the present rather than a projection, so it must still be reported — an earlier version gated this behind the fit and reported nothing at all on an instance that was already refusing writes.",
+    "kind": "redis",
+    "config": {
+      "maxmemory": "1073741824",
+      "maxmemory-policy": "noeviction"
+    },
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "warnAbove": 1073741824,
+        "from": 1200000000,
+        "to": 1900000000,
+        "shape": "sawtooth",
+        "hours": 48
+      }
+    ],
+    "expect": {
+      "fires": [
+        {
+          "rule": "maxmemory-noeviction",
+          "severity": "now"
+        }
+      ]
+    }
+  },
+  {
+    "id": "postgres-connections-exhausting",
+    "title": "Connection slots running out",
+    "why": "Exhausting the pool is not a slow degradation: at the ceiling new sessions are refused, including the psql somebody opens to find out what is happening. The remedy branches on engine, so the fix text matters as much as the detection.",
+    "kind": "postgres",
+    "config": {
+      "max_connections": "100"
+    },
+    "series": [
+      {
+        "key": "connections",
+        "label": "Connections",
+        "unit": "count",
+        "warnAbove": 100,
+        "from": 40,
+        "to": 92,
+        "shape": "linear",
+        "hours": 24
+      }
+    ],
+    "expect": {
+      "fires": [
+        {
+          "rule": "max-connections"
+        }
+      ]
+    }
+  },
+  {
+    "id": "postgres-connections-steady",
+    "title": "Connection count steady well below the limit",
+    "why": "Half the slots in use and flat for a day. Nothing should fire. A connection rule that fires on normal load is the fastest way to make every later connection warning invisible.",
+    "kind": "postgres",
+    "config": {
+      "max_connections": "200"
+    },
+    "series": [
+      {
+        "key": "connections",
+        "label": "Connections",
+        "unit": "count",
+        "warnAbove": 200,
+        "from": 95,
+        "to": 100,
+        "shape": "flat",
+        "hours": 48
+      }
+    ],
+    "expect": {
+      "nothingFires": true
+    }
+  },
+  {
+    "id": "config-drift",
+    "title": "File and running process disagree",
+    "why": "An edit nothing reloaded. The file is right and has never taken effect, so everyone reading it is reasoning about a service that does not match it — and a restart will silently adopt the file's values without anyone deciding to. Nothing except reading both halves can see this.",
+    "kind": "redis",
+    "config": {
+      "maxmemory": "2147483648",
+      "maxmemory-policy": "noeviction"
+    },
+    "configOnDisk": {
+      "maxmemory": "8gb",
+      "maxmemory-policy": "allkeys-lru"
+    },
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "warnAbove": 2147483648,
+        "from": 400000000,
+        "to": 450000000,
+        "shape": "flat",
+        "hours": 24
+      }
+    ],
+    "expect": {
+      "fires": [
+        {
+          "rule": "config-drift",
+          "severity": "soon"
+        }
+      ]
+    }
+  },
+  {
+    "id": "config-same-size-two-ways",
+    "title": "The same ceiling written two ways",
+    "why": "2147483648 and 2gb are the same number. A drift rule that called this a disagreement would fire on every Redis in existence and be switched off within a day, taking the real drift detection with it.",
+    "kind": "redis",
+    "config": {
+      "maxmemory": "2147483648",
+      "maxmemory-policy": "allkeys-lru"
+    },
+    "configOnDisk": {
+      "maxmemory": "2gb",
+      "maxmemory-policy": "allkeys-lru"
+    },
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "warnAbove": 2147483648,
+        "from": 400000000,
+        "to": 450000000,
+        "shape": "flat",
+        "hours": 24
+      }
+    ],
+    "expect": {
+      "nothingFires": true
+    }
+  },
+  {
+    "id": "docker-unlimited-memory",
+    "title": "Containers with no memory limit",
+    "why": "A leak in any one of them is a host-wide event rather than a container-wide one: the OOM killer picks by score and regularly picks a healthy neighbour over the process that is actually growing. A limit turns that into a restart of the thing at fault.",
+    "kind": "docker",
+    "configVia": "inspect (HostConfig)",
+    "config": {
+      "api": {
+        "memoryLimitBytes": 0,
+        "restartPolicy": "UnlessStopped"
+      },
+      "worker": {
+        "memoryLimitBytes": 2147483648,
+        "restartPolicy": "UnlessStopped"
+      }
+    },
+    "series": [],
+    "expect": {
+      "fires": [
+        {
+          "rule": "container-no-memory-limit",
+          "severity": "advisory"
+        }
+      ]
+    }
+  },
+  {
+    "id": "docker-all-limited",
+    "title": "Every container has a limit and a restart policy",
+    "why": "A host set up the way the previous scenario asks for. It must produce nothing, or the advice in that scenario is advice to swap one warning for another.",
+    "kind": "docker",
+    "configVia": "inspect (HostConfig)",
+    "config": {
+      "api": {
+        "memoryLimitBytes": 2147483648,
+        "restartPolicy": "UnlessStopped"
+      },
+      "worker": {
+        "memoryLimitBytes": 1073741824,
+        "restartPolicy": "Always"
+      }
+    },
+    "series": [],
+    "expect": {
+      "nothingFires": true
+    }
+  },
+  {
+    "id": "k8s-besteffort",
+    "title": "Workload scheduled as BestEffort",
+    "why": "A container with neither CPU nor memory requests is placed wherever there is room and evicted first when a node comes under pressure, regardless of how important it is. This is the setting that decides whether a squeezed node takes out a batch job or the checkout service.",
+    "kind": "kubernetes",
+    "configVia": "apps/v1 specs",
+    "config": {
+      "Deployment/checkout": {
+        "replicas": 3,
+        "containers": {
+          "web": {
+            "requests": {
+              "cpu": null,
+              "memory": null
+            },
+            "limits": {
+              "cpu": null,
+              "memory": null
+            }
+          }
+        }
+      }
+    },
+    "series": [],
+    "expect": {
+      "fires": [
+        {
+          "rule": "workload-besteffort",
+          "severity": "soon"
+        },
+        {
+          "rule": "workload-no-memory-limit"
+        }
+      ],
+      "silent": [
+        "workload-single-replica"
+      ]
+    }
+  },
+  {
+    "id": "k8s-fully-specified",
+    "title": "Workload with requests, limits and replicas set",
+    "why": "The shape the previous scenario is asking for. Nothing should fire — otherwise following root's own advice still leaves a warning on the screen, which is how people learn the warnings do not mean anything.",
+    "kind": "kubernetes",
+    "configVia": "apps/v1 specs",
+    "config": {
+      "Deployment/checkout": {
+        "replicas": 3,
+        "containers": {
+          "web": {
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            }
+          }
+        }
+      }
+    },
+    "series": [],
+    "expect": {
+      "nothingFires": true
+    }
+  },
+  {
+    "id": "k8s-single-replica",
+    "title": "Workload running one replica",
+    "why": "A node drain, an eviction or a rolling update is a full outage of that workload rather than a reduction in capacity. Fine for something genuinely singleton, worth knowing when it is not — so this is advisory, not urgent.",
+    "kind": "kubernetes",
+    "configVia": "apps/v1 specs",
+    "config": {
+      "StatefulSet/ledger": {
+        "replicas": 1,
+        "containers": {
+          "db": {
+            "requests": {
+              "cpu": "500m",
+              "memory": "1Gi"
+            },
+            "limits": {
+              "cpu": "1",
+              "memory": "2Gi"
+            }
+          }
+        }
+      }
+    },
+    "series": [],
+    "expect": {
+      "fires": [
+        {
+          "rule": "workload-single-replica",
+          "severity": "advisory"
+        }
+      ],
+      "silent": [
+        "workload-besteffort",
+        "workload-no-memory-limit"
+      ]
+    }
+  },
+  {
+    "id": "no-config-at-all",
+    "title": "A connection with no configuration declared",
+    "why": "Metrics climbing toward a threshold with nothing known about how the service is set up. Nothing may fire: every finding here rests on a setting, and inventing one would be exactly the guess the whole module is built to avoid.",
+    "kind": "redis",
+    "config": null,
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "warnAbove": 2147483648,
+        "from": 500000000,
+        "to": 1950000000,
+        "shape": "linear",
+        "hours": 48
+      }
+    ],
+    "expect": {
+      "nothingFires": true
+    }
+  },
+  {
+    "id": "redis-noisy-but-real-climb",
+    "title": "Cache climbing through real noise",
+    "why": "A genuine trend buried in the scatter a real metric actually has — a fit around 0.4, well above the forecaster's floor and well below a tidy line. This is the scenario that brackets the fit gate from below: without it the library cannot tell a gate at 0.25 from a gate at 0.9, and the second one only warns about immaculate metrics, which do not exist.",
+    "kind": "redis",
+    "config": {
+      "maxmemory": "2147483648",
+      "maxmemory-policy": "noeviction"
+    },
+    "series": [
+      {
+        "key": "memory",
+        "label": "Memory",
+        "unit": "bytes",
+        "warnAbove": 2147483648,
+        "from": 600000000,
+        "to": 2050000000,
+        "shape": "noisyClimb",
+        "hours": 48
+      }
+    ],
+    "expect": {
+      "fires": [
+        {
+          "rule": "maxmemory-noeviction"
+        }
+      ]
+    }
+  }
+]

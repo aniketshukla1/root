@@ -38,7 +38,10 @@ subtle = "2.6"
 bollard = "0.21.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "mysql", "chrono", "json"] }
+# `sqlite` is here for root's OWN storage, not for a collector: the judgement
+# journal. The other backends are clients for databases an operator monitors;
+# this one is a local file the app writes.
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "mysql", "sqlite", "chrono", "json"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "stream", "http2", "charset", "query"] }
 # The `v1` feature (the default) is what selects the per-platform credential
 # store and exposes the `Entry` API: keychain on macOS, the credential manager

@@ -367,6 +367,15 @@ pub struct AppState {
     pub pollers: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     /// The deploy-ingest listener, so toggling it off actually closes the port.
     pub ingest: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// The judgement record — the one thing here that outlives the process.
+    ///
+    /// `None` when the store could not be opened. A journal that will not open
+    /// must not stop the app from monitoring: losing the ability to rate
+    /// findings is a bad day, and losing the ability to see the estate is an
+    /// outage. The UI is told, rather than the failure being swallowed.
+    pub journal: RwLock<Option<Arc<crate::journal::Journal>>>,
+    /// Why the journal is unavailable, when it is.
+    pub journal_error: RwLock<Option<String>>,
 }
 
 impl AppState {
@@ -387,7 +396,49 @@ impl AppState {
             pending_meta: RwLock::new(HashMap::new()),
             pollers: Mutex::new(HashMap::new()),
             ingest: Mutex::new(None),
+            journal: RwLock::new(None),
+            journal_error: RwLock::new(None),
         }
+    }
+
+    /// Open the judgement record beside the config file.
+    ///
+    /// Deliberately fallible and deliberately non-fatal — see the field.
+    pub async fn open_journal(&self) {
+        let path = self
+            .config_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("journal.db");
+
+        match crate::journal::Journal::open(&path).await {
+            Ok(journal) => {
+                *self.journal.write().await = Some(Arc::new(journal));
+                *self.journal_error.write().await = None;
+                tracing::info!(path = %path.display(), "judgement record opened");
+            }
+            Err(e) => {
+                let message = e.to_string();
+                tracing::error!(path = %path.display(), "judgement record unavailable: {message}");
+                *self.journal_error.write().await = Some(message);
+            }
+        }
+    }
+
+    /// The journal, or an error naming why there is not one.
+    pub async fn journal(&self) -> Result<Arc<crate::journal::Journal>> {
+        if let Some(journal) = self.journal.read().await.clone() {
+            return Ok(journal);
+        }
+        let reason = self
+            .journal_error
+            .read()
+            .await
+            .clone()
+            .unwrap_or_else(|| "not opened yet".to_string());
+        Err(crate::error::AppError::Collector(format!(
+            "the judgement record is unavailable: {reason}"
+        )))
     }
 
     pub async fn save_config(&self) -> Result<()> {

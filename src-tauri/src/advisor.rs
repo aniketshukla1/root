@@ -108,6 +108,13 @@ pub struct Suggestion {
 #[serde(rename_all = "camelCase")]
 pub struct Finding {
     pub id: String,
+    /// Which rule produced this, as a stable name.
+    ///
+    /// Carried so a verdict can be attributed to one rule rather than to
+    /// "the rules": "rules are 80% precise" names nothing to fix, and "this
+    /// one rule is 30% precise" names the thing. Stable across rewording —
+    /// it is the rule's identity, not its current text.
+    pub rule: String,
     pub profile_id: String,
     pub profile_name: String,
     pub severity: Severity,
@@ -375,6 +382,7 @@ fn finding(
 ) -> Finding {
     Finding {
         id: format!("{}:{slug}", snapshot.profile_id),
+        rule: format!("{}.{slug}", snapshot.kind.label().to_ascii_lowercase()),
         profile_id: snapshot.profile_id.clone(),
         profile_name: snapshot.profile_name.clone(),
         severity,

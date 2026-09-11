@@ -71,6 +71,7 @@ fn profile(kind: ServiceKind, endpoint: String, options: ProfileOptions) -> Conn
         options,
         depends_on: Vec::new(),
             config_sources: Vec::new(),
+            history_source: None,
         metadata: ProfileOptions::default(),
     }
 }

@@ -854,6 +854,156 @@ pub async fn get_findings(
     Ok(out)
 }
 
+// ------------------------------------------------------- long-range history
+
+/// Metric history from the estate's own Prometheus, over a window root's ring
+/// buffer cannot reach.
+///
+/// Returns the same `MetricSeries` shape as the in-memory store so every chart
+/// and every forecast reads it without knowing where it came from. The trend
+/// is recomputed over the long window, which is the entire point: a volume
+/// filling in three weeks is invisible to a few hours of samples, and root
+/// currently refuses that projection honestly but uselessly.
+#[tauri::command]
+pub async fn get_long_history(
+    state: Shared<'_>,
+    profile_id: String,
+    hours: Option<i64>,
+) -> Result<Vec<crate::history::MetricSeries>> {
+    let hours = hours.unwrap_or(24 * 14).clamp(1, 24 * 365);
+    let end = chrono::Utc::now();
+    let start = end - chrono::Duration::hours(hours);
+    long_history(&state, &profile_id, start, end).await
+}
+
+/// Build long-range series for one profile, or nothing if it declares no source.
+async fn long_history(
+    state: &std::sync::Arc<crate::state::AppState>,
+    profile_id: &str,
+    start: chrono::DateTime<chrono::Utc>,
+    end: chrono::DateTime<chrono::Utc>,
+) -> Result<Vec<crate::history::MetricSeries>> {
+    let (source, server) = {
+        let config = state.config.read().await;
+        let profile = config
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .ok_or_else(|| crate::error::AppError::Collector("no such connection".into()))?;
+
+        let Some(source) = profile.history_source.clone().filter(|s| s.is_configured()) else {
+            return Ok(Vec::new());
+        };
+        let server = config
+            .profiles
+            .iter()
+            .find(|p| p.id == source.prometheus_profile_id)
+            .cloned()
+            .ok_or_else(|| {
+                crate::error::AppError::Collector(
+                    "this connection points at a Prometheus that is no longer configured"
+                        .into(),
+                )
+            })?;
+        (source, server)
+    };
+
+    // The metric's label, unit and threshold come from the live snapshot, not
+    // from Prometheus: the series is the same measure root already knows about
+    // and re-deriving a unit from a PromQL expression would be guesswork.
+    let snapshot = state.snapshots.read().await.get(profile_id).cloned();
+
+    let auth = crate::promquery::Auth {
+        username: server.username.clone(),
+        secret: crate::secrets::get_secret(&server.secret_key())
+            .await
+            .unwrap_or(None),
+    };
+    let client = crate::collectors::http_client(
+        server.options.bool("insecureTls"),
+        std::time::Duration::from_secs(30),
+    )?;
+
+    let mut out = Vec::new();
+    for query in &source.queries {
+        let points =
+            crate::promquery::range(&client, &server.endpoint, &auth, &query.expr, start, end)
+                .await?;
+        if points.is_empty() {
+            continue;
+        }
+
+        let known = snapshot
+            .as_ref()
+            .and_then(|s| s.metrics.iter().find(|m| m.key == query.metric_key));
+        let warn_above = known.and_then(|m| m.warn_above);
+        let values: Vec<f64> = points.iter().map(|p| p.v).collect();
+
+        out.push(crate::history::MetricSeries {
+            key: query.metric_key.clone(),
+            label: known
+                .map(|m| m.label.clone())
+                .unwrap_or_else(|| query.metric_key.clone()),
+            unit: known.map(|m| m.unit).unwrap_or(crate::model::MetricUnit::Count),
+            warn_above,
+            change_pct: None,
+            min: values.iter().copied().fold(f64::INFINITY, f64::min),
+            max: values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            latest: *values.last().unwrap_or(&0.0),
+            trend: crate::forecast::trend(&points, warn_above),
+            points,
+        });
+    }
+
+    out.sort_by(|a, b| a.key.cmp(&b.key));
+    Ok(out)
+}
+
+// ------------------------------------------------------ the judgement record
+
+/// Record what an operator thought of a finding.
+///
+/// Always an insert. Changing a rating writes a second row and leaves the
+/// first — the history of a mind changing is itself a signal, and a score that
+/// can be edited cannot answer "did root get better".
+#[tauri::command]
+pub async fn record_verdict(
+    state: Shared<'_>,
+    verdict: crate::journal::Verdict,
+) -> Result<i64> {
+    state.journal().await?.record_verdict(&verdict).await
+}
+
+/// Record whether root called an incident before it happened.
+///
+/// The half of the measurement that ratings on findings cannot produce: if
+/// root never mentioned the thing that broke, there was no card to rate.
+#[tauri::command]
+pub async fn record_recall(state: Shared<'_>, recall: crate::journal::Recall) -> Result<i64> {
+    state.journal().await?.record_recall(&recall).await
+}
+
+/// The latest judgement per finding, so the UI can show what is already rated.
+#[tauri::command]
+pub async fn get_verdicts(
+    state: Shared<'_>,
+    limit: Option<i64>,
+) -> Result<Vec<crate::journal::RecordedVerdict>> {
+    state.journal().await?.verdicts(limit.unwrap_or(500)).await
+}
+
+/// Incidents already judged, so nobody is asked the same question twice.
+#[tauri::command]
+pub async fn get_judged_incidents(state: Shared<'_>) -> Result<Vec<String>> {
+    state.journal().await?.judged_incidents().await
+}
+
+/// Precision by provenance and by rule, and recall from the incident side.
+#[tauri::command]
+pub async fn get_scorecard(state: Shared<'_>) -> Result<crate::journal::Scorecard> {
+    state.journal().await?.scorecard().await
+}
+
 /// What in the estate is heading for a limit, and when it gets there.
 ///
 /// One call rather than one per connection per component, because the ranking
@@ -864,11 +1014,71 @@ pub async fn get_capacity_risks(
     state: Shared<'_>,
     take: Option<usize>,
 ) -> Result<Vec<crate::history::CapacityRisk>> {
-    Ok(state
+    let mut risks = state
         .history
         .read()
         .await
-        .capacity_risks(take.unwrap_or(8).clamp(1, 100)))
+        .capacity_risks(take.unwrap_or(8).clamp(1, 100));
+
+    // Re-fit anything whose connection declares a long-range source.
+    //
+    // The in-memory ring holds hours, and a projection fitted over hours can
+    // only see problems that arrive in hours. That is why an estate full of
+    // slowly-filling disks reads as "unclear" everywhere: not because the
+    // answer does not exist, but because root was looking through a window
+    // too narrow to contain it. Where weeks of history are available, the
+    // trend is refitted over weeks and the row is re-sorted on the result.
+    let end = chrono::Utc::now();
+    let start = end - chrono::Duration::days(30);
+    let profiles: Vec<String> = {
+        let mut ids: Vec<String> = risks.iter().map(|r| r.profile_id.clone()).collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    };
+
+    for profile_id in profiles {
+        // A Prometheus that is unreachable, or a query that has gone stale,
+        // must not empty the panel. The short-window answer is worse but it is
+        // still an answer, and losing the whole capacity view because one
+        // exporter moved would be a poor trade.
+        let long = match long_history(&state, &profile_id, start, end).await {
+            Ok(series) => series,
+            Err(e) => {
+                tracing::debug!(profile = %profile_id, "long history unavailable: {e}");
+                continue;
+            }
+        };
+        if long.is_empty() {
+            continue;
+        }
+
+        for risk in risks.iter_mut().filter(|r| r.profile_id == profile_id) {
+            // Connection-level metrics only. A component series is keyed by
+            // section and row, and a PromQL mapping declared per metric key
+            // cannot say which container it meant.
+            if risk.component.is_some() {
+                continue;
+            }
+            if let Some(series) = long.iter().find(|s| s.key == risk.key) {
+                risk.trend = series.trend;
+            }
+        }
+    }
+
+    risks.sort_by(|a, b| {
+        match (
+            a.trend.as_ref().and_then(|t| t.seconds_to_limit),
+            b.trend.as_ref().and_then(|t| t.seconds_to_limit),
+        ) {
+            (Some(x), Some(y)) => x.total_cmp(&y),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => b.used.total_cmp(&a.used),
+        }
+    });
+
+    Ok(risks)
 }
 
 /// History for every connection at once, so the dashboard can draw a sparkline

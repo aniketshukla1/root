@@ -32,6 +32,7 @@ fn profile(context: &str) -> ConnectionProfile {
         options: ProfileOptions::default(),
         depends_on: Vec::new(),
             config_sources: Vec::new(),
+            history_source: None,
         metadata: ProfileOptions::default(),
     }
 }

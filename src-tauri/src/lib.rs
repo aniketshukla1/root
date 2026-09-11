@@ -22,10 +22,12 @@ pub mod configsource;
 pub mod redact;
 pub mod history;
 pub mod incidents;
+pub mod journal;
 pub mod ingest;
 pub mod llm;
 pub mod model;
 pub mod patterns;
+pub mod promquery;
 pub mod registry;
 pub mod secrets;
 pub mod state;
@@ -93,6 +95,10 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                // Before the pollers, so a verdict recorded in the first
+                // seconds of a session has somewhere to land.
+                state.open_journal().await;
+
                 // The ingest listener is a no-op unless it was explicitly
                 // enabled and a token exists, so this is safe to always call.
                 if let Err(e) = ingest::restart(&state, &handle).await {
@@ -128,6 +134,12 @@ pub fn run() {
             commands::get_capacity_risks,
             commands::get_config_documents,
             commands::get_findings,
+            commands::record_verdict,
+            commands::record_recall,
+            commands::get_verdicts,
+            commands::get_judged_incidents,
+            commands::get_scorecard,
+            commands::get_long_history,
             commands::get_ingest_settings,
             commands::save_ingest_settings,
             commands::rotate_ingest_token,

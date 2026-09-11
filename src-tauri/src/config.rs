@@ -121,6 +121,16 @@ pub struct ConnectionProfile {
     /// no entry here — the collector already knows how to ask.
     #[serde(default)]
     pub config_sources: Vec<crate::configsource::ConfigSource>,
+    /// Where this connection's long-range history lives, when somewhere other
+    /// than root's own ring buffer.
+    ///
+    /// root keeps hours; a forecast that matters needs weeks. Most estates
+    /// already have a Prometheus holding them, and this says which one and how
+    /// its series map onto this connection's metrics. Declared, because
+    /// `memory` and `redis_memory_used_bytes` cannot be matched up by
+    /// inference and a wrong guess forecasts the wrong number convincingly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_source: Option<crate::promquery::HistorySource>,
 }
 
 fn default_true() -> bool {

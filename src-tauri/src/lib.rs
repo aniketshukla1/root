@@ -18,6 +18,7 @@ pub mod config;
 pub mod error;
 pub mod forecast;
 pub mod advisor;
+pub mod backtest;
 pub mod configsource;
 pub mod redact;
 pub mod history;
@@ -140,6 +141,7 @@ pub fn run() {
             commands::get_judged_incidents,
             commands::get_scorecard,
             commands::get_long_history,
+            commands::run_backtest,
             commands::get_ingest_settings,
             commands::save_ingest_settings,
             commands::rotate_ingest_token,

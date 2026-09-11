@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, errorMessage } from "../api";
+import { formatHorizon } from "../format";
 import type { View } from "../nav";
-import type { FamilyScore, RecallScore, RuleScore, Scorecard as Card } from "../types";
+import type {
+  Caveat,
+  FamilyScore,
+  RecallScore,
+  Replay,
+  RuleBehaviour,
+  RuleScore,
+  Scorecard as Card,
+} from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
-import { Button, Empty, Panel, Tag, cx } from "../ui/primitives";
+import { Button, Empty, Panel, Select, Tag, cx } from "../ui/primitives";
 
 /**
  * Is root any good yet?
@@ -34,9 +43,12 @@ import { Button, Empty, Panel, Tag, cx } from "../ui/primitives";
 const ENOUGH_TO_MEAN_SOMETHING = 20;
 
 export function Scorecard({
+  connections,
   onNavigate,
   onRefresh,
 }: {
+  /** Connections a replay can be run against. */
+  connections: { id: string; name: string }[];
   onNavigate: (view: View) => void;
   onRefresh: () => void;
 }) {
@@ -100,15 +112,23 @@ export function Scorecard({
             <Empty title="Reading" hint="Opening the judgement record." />
           </Panel>
         ) : judged === 0 && (card?.recall.incidents ?? 0) === 0 ? (
-          <Panel title="Nothing judged yet">
-            <Empty
-              title="No ratings recorded"
-              hint="Rate a finding on the overview or a connection's Config tab, and answer the question that appears on an incident. Both are needed: findings measure what root got right, incidents measure what it missed, and the second cannot be inferred from the first."
-            />
-            <div className="mt-3 flex gap-1.5">
-              <Button onClick={() => onNavigate({ name: "overview" })}>Go to findings</Button>
-            </div>
-          </Panel>
+          <>
+            <Panel title="Nothing judged yet">
+              <Empty
+                title="No ratings recorded"
+                hint="Rate a finding on the overview or a connection's Config tab, and answer the question that appears on an incident. Both are needed: findings measure what root got right, incidents measure what it missed, and the second cannot be inferred from the first."
+              />
+              <div className="mt-3 flex gap-1.5">
+                <Button onClick={() => onNavigate({ name: "overview" })}>Go to findings</Button>
+              </div>
+            </Panel>
+
+            {/* Available from the first day, on purpose. A backtest is the one
+                measurement that does not have to wait for ratings to
+                accumulate — it reads history that is already there. Hiding it
+                until somebody has rated something had it exactly backwards. */}
+            <Backtest connections={connections} />
+          </>
         ) : (
           <>
             <div className="grid gap-3 @4xl:grid-cols-2">
@@ -161,6 +181,8 @@ export function Scorecard({
                 </div>
               )}
             </Panel>
+
+            <Backtest connections={connections} />
 
             <p className="num max-w-[92ch] text-2xs leading-relaxed text-ink-4">
               Precision and recall are kept apart on purpose and never averaged into one
@@ -363,5 +385,175 @@ function label(family: string): string {
       return "Assistant citing a rule";
     default:
       return family;
+  }
+}
+
+/**
+ * Replay today's rules over stored history.
+ *
+ * Ratings arrive at the speed of incidents — a handful a month on one estate,
+ * which is nowhere near enough to gate a decision on. The history is already
+ * there, and the judgement record already says which incidents were missed, so
+ * the most useful question can be asked immediately: **would the rules as they
+ * stand now have caught the thing we recorded as a miss?**
+ *
+ * Run on demand rather than on a schedule. A replay reads weeks of data out of
+ * somebody's production Prometheus, and doing that every few minutes because a
+ * screen happens to be open is a poor way to treat infrastructure you are also
+ * claiming to look after.
+ */
+function Backtest({ connections }: { connections: { id: string; name: string }[] }) {
+  const [profileId, setProfileId] = useState(connections[0]?.id ?? "");
+  const [days, setDays] = useState(14);
+  const [replay, setReplay] = useState<Replay>();
+  const [error, setError] = useState<string>();
+  const [running, setRunning] = useState(false);
+
+  const run = async () => {
+    if (!profileId) return;
+    setRunning(true);
+    setError(undefined);
+    try {
+      setReplay(await api.runBacktest(profileId, days));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const newlyCaught = replay?.coverage.filter((c) => c.newlyCaught) ?? [];
+
+  return (
+    <Panel
+      title="Backtest"
+      subtitle="today's rules over stored history"
+      actions={
+        <>
+          <Select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+            {connections.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+          <Select value={String(days)} onChange={(e) => setDays(Number(e.target.value))}>
+            <option value="7">7 days</option>
+            <option value="14">14 days</option>
+            <option value="30">30 days</option>
+          </Select>
+          <Button onClick={run} disabled={running || !profileId}>
+            {running ? "Replaying…" : "Replay"}
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <Empty title="Could not replay" hint={error} />
+      ) : !replay ? (
+        <Empty
+          title="Not run"
+          hint="Replays the rules as they stand now across this connection's stored history, and scores the result against the incidents you have already judged. Reads from the estate's own Prometheus where one is declared, so it is run on demand rather than on a timer."
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {/* The headline, and the only reason this panel exists. */}
+          {newlyCaught.length > 0 && (
+            <div
+              className="rounded-md border border-line bg-page p-3"
+              style={{ borderLeftColor: "var(--color-ok)", borderLeftWidth: 2 }}
+            >
+              <div className="text-[13px] font-medium text-ink">
+                {newlyCaught.length} recorded miss{newlyCaught.length === 1 ? "" : "es"} the
+                current rules would catch
+              </div>
+              <div className="mt-2 flex flex-col gap-1">
+                {newlyCaught.map((c) => (
+                  <div key={c.incidentId} className="num flex items-baseline gap-2 text-2xs">
+                    <span className="min-w-0 flex-1 truncate text-ink-2">{c.headline}</span>
+                    <span className="shrink-0 text-ink-3">{c.rule}</span>
+                    <span className="w-20 shrink-0 text-right" style={{ color: "var(--color-ok)" }}>
+                      {c.leadSecs !== undefined ? `${formatHorizon(c.leadSecs)} ahead` : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="num flex flex-wrap gap-x-4 gap-y-1 text-2xs text-ink-4">
+            <span>
+              {replay.samples.toLocaleString()} samples over{" "}
+              {Math.round(
+                (Date.parse(replay.to) - Date.parse(replay.from)) / 3_600_000,
+              )}
+              h
+            </span>
+            <span>{replay.evaluations} evaluations</span>
+            <span>{replay.episodes.length} episodes</span>
+          </div>
+
+          {replay.behaviour.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              {replay.behaviour.map((b) => (
+                <BehaviourRow key={b.rule} behaviour={b} />
+              ))}
+            </div>
+          ) : (
+            <p className="num text-2xs leading-relaxed text-ink-4">
+              Nothing fired across the window. That is a statement about these rules on this
+              history, not a clean bill of health — read it beside the caveats below.
+            </p>
+          )}
+
+          {/* Never optional. A replay that does not say what it could not see
+              is a number people would over-trust. */}
+          <div className="flex flex-col gap-1 border-t border-line pt-2">
+            {replay.caveats.map((caveat, i) => (
+              <p key={i} className="num text-2xs leading-relaxed text-ink-4">
+                {describeCaveat(caveat)}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function BehaviourRow({ behaviour }: { behaviour: RuleBehaviour }) {
+  // Above a third of the window, a rule has stopped being a warning and become
+  // part of the background — correct or not, nobody sees the one time it
+  // matters.
+  const wallpaper = behaviour.dutyCycle > 0.33;
+
+  return (
+    <div className="flex items-baseline gap-2 rounded-sm px-1 py-1">
+      <span className="num min-w-0 flex-1 truncate text-2xs text-ink-2" title={behaviour.rule}>
+        {behaviour.rule}
+      </span>
+      {wallpaper && <Tag color="var(--color-warn)">always on</Tag>}
+      <span className="num w-20 shrink-0 text-right text-2xs text-ink-3">
+        {behaviour.episodes} episode{behaviour.episodes === 1 ? "" : "s"}
+      </span>
+      <span
+        className="num w-24 shrink-0 text-right text-2xs"
+        style={{ color: wallpaper ? "var(--color-warn)" : "var(--color-ink-3)" }}
+        title="Share of the window this rule spent firing"
+      >
+        {(behaviour.dutyCycle * 100).toFixed(1)}% of window
+      </span>
+    </div>
+  );
+}
+
+function describeCaveat(caveat: Caveat): string {
+  switch (caveat.kind) {
+    case "configIsCurrent":
+      return "Configuration has no history, so this measured past metrics against today's settings. If a limit was changed during the window, the result is wrong about everything before the change.";
+    case "thinHistory":
+      return `Only ${caveat.samples} samples. Too few for a trend, so the rules that project could not have fired whatever the data did — which is not the same as nothing being wrong.`;
+    case "noHistorySource":
+      return "This connection declares no long-range history source, so there was nothing to replay. Point it at a Prometheus in Settings to make this work.";
   }
 }

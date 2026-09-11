@@ -300,3 +300,147 @@ async fn live_rejects_a_query_matching_many_series() {
         }
     }
 }
+
+/// The whole chain on real data: pull a week from a live Prometheus, replay
+/// today's rules across it, and report what would have fired and when.
+///
+/// Uses `prometheus_tsdb_head_series` — a genuinely monotonic series on any
+/// live server, which is the exact shape a capacity rule exists for. It is
+/// framed here as a Redis `memory` metric with a ceiling just above its
+/// current value, because the point being tested is the replay machinery over
+/// real data rather than the Redis rule's own logic, which has its own tests.
+#[tokio::test]
+#[ignore]
+async fn live_backtest_over_real_history() {
+    use chrono::Utc;
+    use inframonitoring_lib::backtest::{replay, DEFAULT_STEP, DEFAULT_TRAILING};
+    use inframonitoring_lib::configsource::ConfigDocument;
+    use inframonitoring_lib::history::MetricSeries;
+    use inframonitoring_lib::journal::Called;
+    use inframonitoring_lib::model::{
+        Health, HealthSnapshot, Metric, MetricUnit, ServiceKind,
+    };
+
+    let base = std::env::var("PROMETHEUS_URL").expect("set PROMETHEUS_URL");
+    let end = Utc::now();
+    let points = range(
+        &client(),
+        &base,
+        &Auth::default(),
+        "prometheus_tsdb_head_series",
+        end - Duration::days(7),
+        end,
+    )
+    .await
+    .expect("a week of real history");
+
+    assert!(points.len() > 100, "need real history to replay over");
+
+    let values: Vec<f64> = points.iter().map(|p| p.v).collect();
+    let peak = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    // A ceiling the series genuinely approaches, so there is something to find.
+    let ceiling = peak * 1.05;
+
+    let series = MetricSeries {
+        key: "memory".into(),
+        label: "Head series".into(),
+        unit: MetricUnit::Count,
+        warn_above: Some(ceiling),
+        change_pct: None,
+        min: values.iter().copied().fold(f64::INFINITY, f64::min),
+        max: peak,
+        latest: *values.last().unwrap(),
+        trend: None,
+        points,
+    };
+
+    let snapshot = HealthSnapshot {
+        profile_id: "live".into(),
+        profile_name: "live-prometheus".into(),
+        kind: ServiceKind::Redis,
+        health: Health::Healthy,
+        summary: String::new(),
+        metrics: vec![
+            Metric::new("memory", "Head series", 0.0, MetricUnit::Count).warn_above(ceiling),
+        ],
+        sections: Vec::new(),
+        checked_at: end,
+        latency_ms: 1,
+        error: None,
+    };
+
+    let config = ConfigDocument::live(
+        "live",
+        "Running configuration",
+        "CONFIG GET *",
+        &serde_json::json!({
+            "maxmemory": format!("{}", ceiling as u64),
+            "maxmemory-policy": "noeviction",
+        }),
+    );
+
+    // One known incident, recorded as a miss, two hours back.
+    let incidents = vec![(
+        "live-i1".to_string(),
+        "something broke".to_string(),
+        end - Duration::hours(2),
+        Called::No,
+    )];
+
+    let out = replay(
+        &snapshot,
+        &[config],
+        &[series],
+        &incidents,
+        DEFAULT_STEP,
+        DEFAULT_TRAILING,
+    );
+
+    println!(
+        "live backtest: {} samples, {} evaluations over {:.1}h",
+        out.samples,
+        out.evaluations,
+        out.window_secs() / 3600.0,
+    );
+    for episode in &out.episodes {
+        println!(
+            "  episode {} [{:?}] {} → {} ({} evals): {}",
+            episode.rule,
+            episode.severity,
+            episode.from,
+            episode.to,
+            episode.evaluations,
+            episode.title,
+        );
+    }
+    for behaviour in &out.behaviour {
+        println!(
+            "  behaviour {}: {} episodes, duty cycle {:.1}%",
+            behaviour.rule,
+            behaviour.episodes,
+            behaviour.duty_cycle * 100.0,
+        );
+    }
+    for coverage in &out.coverage {
+        println!(
+            "  coverage {}: rule={:?} lead={:?}h newlyCaught={}",
+            coverage.incident_id,
+            coverage.rule,
+            coverage.lead_secs.map(|s| (s / 3600.0 * 10.0).round() / 10.0),
+            coverage.newly_caught,
+        );
+    }
+    println!("  caveats: {:?}", out.caveats);
+
+    // It actually ran over real data, and admitted the one thing it cannot do.
+    assert!(out.evaluations > 20, "a week should be many evaluations");
+    assert!(out
+        .caveats
+        .contains(&inframonitoring_lib::backtest::Caveat::ConfigIsCurrent));
+    // Every episode must sit inside the window it replayed.
+    for episode in &out.episodes {
+        assert!(episode.from >= out.from && episode.to <= out.to, "{episode:?}");
+    }
+    // Coverage is reported for the incident regardless of whether it fired.
+    assert_eq!(out.coverage.len(), 1);
+}

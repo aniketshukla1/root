@@ -49,6 +49,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_judged_incidents: () => fixtures.judgedIncidents(),
   get_scorecard: () => fixtures.scorecard(),
   get_long_history: () => [],
+  run_backtest: ({ profileId }) => fixtures.backtest(profileId as string),
   get_health_runs: () => fixtures.healthRuns(),
   get_topology: () => fixtures.topology(),
   get_incidents: () => fixtures.incidents(),
@@ -120,6 +121,7 @@ import type {
   Finding,
   Recall,
   RecordedVerdict,
+  Replay,
   Scorecard,
   Verdict,
   Correlation,
@@ -231,6 +233,21 @@ export const api = {
   getJudgedIncidents: () => invoke<string[]>("get_judged_incidents"),
 
   getScorecard: () => invoke<Scorecard>("get_scorecard"),
+
+  /**
+   * Replay the current rules across stored history.
+   *
+   * Scored against incidents already judged: the useful output is not "these
+   * rules fire" but "these would have fired before the thing recorded as a
+   * miss". Uses the long-range source when one is declared, and says so in its
+   * caveats when it had to fall back to root's own short ring.
+   */
+  runBacktest: (profileId: string, days?: number, stepMinutes?: number) =>
+    invoke<Replay>("run_backtest", {
+      profileId,
+      days: days ?? null,
+      stepMinutes: stepMinutes ?? null,
+    }),
 
   /**
    * Metric history from the estate's own Prometheus, over a window root's own

@@ -448,6 +448,63 @@ export interface Scorecard {
   rulesVersion: string;
 }
 
+// ------------------------------------------------------------------ backtest
+
+/**
+ * Something the reader must know before believing a backtest number.
+ *
+ * `configIsCurrent` is always present: config has no history, so a replay
+ * measures yesterday's metrics against today's settings.
+ */
+export type Caveat =
+  | { kind: "configIsCurrent" }
+  | { kind: "thinHistory"; samples: number }
+  | { kind: "noHistorySource" };
+
+/** One stretch during which a rule would have been saying something. */
+export interface Episode {
+  rule: string;
+  title: string;
+  severity: Severity;
+  from: string;
+  to: string;
+  evaluations: number;
+}
+
+export interface RuleBehaviour {
+  rule: string;
+  episodes: number;
+  firingSecs: number;
+  /** Above roughly a third, a rule has stopped being a warning. */
+  dutyCycle: number;
+  worst: Severity;
+}
+
+export interface Coverage {
+  incidentId: string;
+  headline: string;
+  startedAt: string;
+  /** What a human recorded at the time — the label this is scored against. */
+  recorded: Called;
+  rule?: string;
+  leadSecs?: number;
+  /** A recorded miss the current rules would now catch. */
+  newlyCaught: boolean;
+}
+
+export interface Replay {
+  profileId: string;
+  profileName: string;
+  from: string;
+  to: string;
+  evaluations: number;
+  samples: number;
+  episodes: Episode[];
+  behaviour: RuleBehaviour[];
+  coverage: Coverage[];
+  caveats: Caveat[];
+}
+
 // -------------------------------------------------------- long-range history
 
 /** One metric key, and the PromQL that produces it. */

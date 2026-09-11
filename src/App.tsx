@@ -779,7 +779,14 @@ export default function App() {
         )}
 
         {view.name === "scorecard" && (
-          <Scorecard onNavigate={setView} onRefresh={refreshJudgements} />
+          <Scorecard
+            connections={model.services.map((s) => ({
+              id: s.snapshot.profileId,
+              name: s.snapshot.profileName,
+            }))}
+            onNavigate={setView}
+            onRefresh={refreshJudgements}
+          />
         )}
 
         {view.name === "assistant" && (

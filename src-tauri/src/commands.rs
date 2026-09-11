@@ -959,6 +959,106 @@ async fn long_history(
     Ok(out)
 }
 
+// ------------------------------------------------------------------ backtest
+
+/// Replay the current rules across a connection's stored history.
+///
+/// Uses the long-range source where one is declared, and root's own in-memory
+/// ring otherwise — which is usually too short to say anything, and the result
+/// says so rather than reporting a quiet window as a clean one.
+///
+/// Scored against the incidents somebody has already judged: the useful output
+/// is not "these rules fire" but "these rules would have fired before the
+/// thing we recorded as a miss".
+#[tauri::command]
+pub async fn run_backtest(
+    state: Shared<'_>,
+    profile_id: String,
+    days: Option<i64>,
+    step_minutes: Option<i64>,
+) -> Result<crate::backtest::Replay> {
+    let days = days.unwrap_or(14).clamp(1, 365);
+    let end = chrono::Utc::now();
+    let start = end - chrono::Duration::days(days);
+
+    let snapshot = state
+        .snapshots
+        .read()
+        .await
+        .get(&profile_id)
+        .cloned()
+        .ok_or_else(|| {
+            crate::error::AppError::Collector(
+                "that connection has not been polled yet, so there is no metric metadata to                  replay against"
+                    .into(),
+            )
+        })?;
+
+    let documents = collect_config(&state, &profile_id).await?;
+
+    // Prefer the estate's own long history. The in-memory ring is the fallback
+    // and is rarely long enough to fit anything — which the caveats say.
+    let series = match long_history(&state, &profile_id, start, end).await {
+        Ok(series) if !series.is_empty() => series,
+        Ok(_) => state.history.read().await.series(&profile_id, Some(start)),
+        Err(e) => {
+            tracing::debug!(profile = %profile_id, "long history unavailable: {e}");
+            state.history.read().await.series(&profile_id, Some(start))
+        }
+    };
+
+    // Only the incidents this connection was actually part of. Scoring a Redis
+    // replay against a Jenkins outage would be noise in both directions.
+    let labels: Vec<_> = match state.journal().await {
+        Ok(journal) => journal
+            .incident_labels()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+
+    let step = chrono::Duration::minutes(step_minutes.unwrap_or(60).clamp(5, 1440));
+
+    Ok(crate::backtest::replay(
+        &snapshot,
+        &documents,
+        &series,
+        &labels,
+        step,
+        crate::backtest::DEFAULT_TRAILING,
+    ))
+}
+
+/// Declared files and live config for one profile, shared by the readers that
+/// need both.
+async fn collect_config(
+    state: &std::sync::Arc<crate::state::AppState>,
+    profile_id: &str,
+) -> Result<Vec<crate::configsource::ConfigDocument>> {
+    let sources = {
+        let config = state.config.read().await;
+        config
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .map(|p| p.config_sources.clone())
+            .unwrap_or_default()
+    };
+
+    let mut documents = Vec::new();
+    for source in &sources {
+        documents.extend(crate::configsource::read_source(profile_id, source).await);
+    }
+    if let Ok(collector) = state.collector(profile_id).await {
+        if let Ok(live) = collector.config().await {
+            documents.extend(live);
+        }
+    }
+    Ok(documents)
+}
+
 // ------------------------------------------------------ the judgement record
 
 /// Record what an operator thought of a finding.

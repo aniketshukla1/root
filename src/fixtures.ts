@@ -39,6 +39,7 @@ import type {
   MetricUnit,
   Recall,
   RecordedVerdict,
+  Replay,
   RuleScore,
   Scorecard,
   Verdict,
@@ -1611,5 +1612,105 @@ export function scorecard(): Scorecard {
       partly: recalls.filter((r) => r.called === "partly").length,
     },
     rulesVersion: "1",
+  };
+}
+
+// ------------------------------------------------------------------ backtest
+
+/**
+ * A replay result shaped like the real one.
+ *
+ * Written out rather than simulated: reimplementing the sliding-window replay
+ * in the browser would give two versions of the machinery to keep honest, and
+ * the interesting part — what it looks like when a rule turns out to have had
+ * seventeen hours of lead time on something nobody was warned about — is a
+ * shape, not an algorithm.
+ *
+ * The numbers are the ones a live Prometheus actually produced for a week of
+ * a monotonically climbing series.
+ */
+export function backtest(profileId: string): Replay {
+  const end = Date.now();
+  const at = (hoursAgo: number) => new Date(end - hoursAgo * 3_600_000).toISOString();
+  const name = SNAPSHOTS.find((s) => s.profileId === profileId)?.profileName ?? profileId;
+
+  if (profileId !== "session-cache") {
+    // Most connections declare no long-range source, and the honest result is
+    // that there was nothing to replay — not a clean bill of health.
+    return {
+      profileId,
+      profileName: name,
+      from: at(0),
+      to: at(0),
+      evaluations: 0,
+      samples: 0,
+      episodes: [],
+      behaviour: [],
+      coverage: [],
+      caveats: [{ kind: "configIsCurrent" }, { kind: "noHistorySource" }],
+    };
+  }
+
+  return {
+    profileId,
+    profileName: name,
+    from: at(168),
+    to: at(0),
+    evaluations: 162,
+    samples: 6709,
+    episodes: [
+      {
+        rule: "caching.maxmemory-noeviction",
+        title: "Writes will start failing in about 12 hours",
+        severity: "soon",
+        from: at(41),
+        to: at(37),
+        evaluations: 5,
+      },
+      {
+        rule: "caching.maxmemory-noeviction-near",
+        title: "Close to the ceiling, and configured to refuse writes",
+        severity: "soon",
+        from: at(29),
+        to: at(29),
+        evaluations: 1,
+      },
+      {
+        rule: "caching.maxmemory-noeviction",
+        title: "Writes will start failing in about 3 hours",
+        severity: "now",
+        from: at(28),
+        to: at(24),
+        evaluations: 5,
+      },
+    ],
+    behaviour: [
+      {
+        rule: "caching.maxmemory-noeviction",
+        episodes: 2,
+        firingSecs: 8 * 3600,
+        dutyCycle: 0.048,
+        worst: "now",
+      },
+      {
+        rule: "caching.maxmemory-noeviction-near",
+        episodes: 1,
+        firingSecs: 0,
+        dutyCycle: 0,
+        worst: "soon",
+      },
+    ],
+    coverage: [
+      {
+        incidentId: "i-past-1",
+        headline: "session-cache stopped accepting writes",
+        startedAt: at(24),
+        recorded: "no",
+        rule: "caching.maxmemory-noeviction",
+        leadSecs: 17 * 3600,
+        newlyCaught: true,
+      },
+    ],
+    caveats: [{ kind: "configIsCurrent" }],
   };
 }

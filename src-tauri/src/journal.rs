@@ -434,6 +434,34 @@ impl Journal {
             .collect()
     }
 
+    /// Every incident ever judged, as the backtest wants them: id, headline,
+    /// when it started, and what a human said at the time.
+    ///
+    /// These are the labels a replay is scored against. The recorded `Called`
+    /// is what makes a result meaningful — "the current rules would have fired
+    /// here" is interesting only next to "and we recorded that they did not".
+    pub async fn incident_labels(&self) -> Result<Vec<(String, String, DateTime<Utc>, Called)>> {
+        let rows = sqlx::query(
+            "SELECT incident_id, headline, started_at, called FROM recalls
+             WHERE id IN (SELECT MAX(id) FROM recalls GROUP BY incident_id)
+             ORDER BY started_at",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.iter()
+            .map(|r| {
+                Ok((
+                    r.try_get::<String, _>("incident_id")?,
+                    r.try_get::<String, _>("headline")?,
+                    parse_time(r.try_get::<String, _>("started_at")?),
+                    serde_json::from_str(&r.try_get::<String, _>("called")?)
+                        .unwrap_or(Called::Partly),
+                ))
+            })
+            .collect()
+    }
+
     /// Precision by provenance and by rule, and recall from the incident side.
     pub async fn scorecard(&self) -> Result<Scorecard> {
         // Only the latest judgement per finding counts toward a score. The
@@ -902,6 +930,56 @@ mod tests {
         assert_eq!(card.recall.incidents, 0);
         // Not Some(0.0) — no data is not a bad score.
         assert_eq!(card.recall.recall(), None);
+    }
+
+    /// The labels a replay is scored against.
+    #[tokio::test]
+    async fn incident_labels_carry_what_the_human_said() {
+        let journal = Journal::ephemeral().await.unwrap();
+        let started = Utc::now() - chrono::Duration::hours(6);
+        journal
+            .record_recall(&Recall {
+                incident_id: "i1".into(),
+                headline: "session-cache stopped accepting writes".into(),
+                profile_ids: vec!["p1".into()],
+                started_at: started,
+                called: Called::No,
+                finding_id: None,
+                note: Some("nothing warned".into()),
+            })
+            .await
+            .unwrap();
+
+        let labels = journal.incident_labels().await.unwrap();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].0, "i1");
+        assert_eq!(labels[0].1, "session-cache stopped accepting writes");
+        assert_eq!(labels[0].3, Called::No);
+        assert!((labels[0].2 - started).num_seconds().abs() < 2);
+    }
+
+    /// A re-judged incident contributes one label, not two — otherwise a
+    /// single much-revisited incident would dominate a coverage report.
+    #[tokio::test]
+    async fn a_re_judged_incident_contributes_one_label() {
+        let journal = Journal::ephemeral().await.unwrap();
+        for called in [Called::No, Called::Yes] {
+            journal
+                .record_recall(&Recall {
+                    incident_id: "i1".into(),
+                    headline: "x".into(),
+                    profile_ids: vec![],
+                    started_at: Utc::now(),
+                    called,
+                    finding_id: None,
+                    note: None,
+                })
+                .await
+                .unwrap();
+        }
+        let labels = journal.incident_labels().await.unwrap();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].3, Called::Yes, "the latest judgement wins");
     }
 
     #[tokio::test]

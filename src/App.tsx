@@ -25,6 +25,9 @@ import type {
   CapacityRisk,
   Finding,
   MetricSeries,
+  Recall,
+  RecordedVerdict,
+  Verdict,
   PendingConfirmation,
   TeamState,
   TopologyView,
@@ -48,6 +51,7 @@ import { Metrics } from "./screens/Metrics";
 import { Onboarding } from "./screens/Onboarding";
 import { SignIn } from "./screens/SignIn";
 import { Overview } from "./screens/Overview";
+import { Scorecard } from "./screens/Scorecard";
 import { ServiceDetail } from "./screens/ServiceDetail";
 import { Services } from "./screens/Services";
 import { Settings } from "./screens/Settings";
@@ -96,6 +100,8 @@ export default function App() {
   const [history, setHistory] = useState<Record<string, MetricSeries[]>>({});
   const [capacity, setCapacity] = useState<CapacityRisk[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [verdicts, setVerdicts] = useState<Record<string, RecordedVerdict>>({});
+  const [judgedIncidents, setJudgedIncidents] = useState<string[]>([]);
   const [buckets, setBuckets] = useState<HistogramBucket[]>([]);
   const [healthRuns, setHealthRuns] = useState<Record<string, HealthRun[]>>({});
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -232,6 +238,51 @@ export default function App() {
     }
   }, []);
 
+  /**
+   * What has already been judged.
+   *
+   * Loaded separately from findings because it outlives them: a verdict
+   * recorded last month is still the reason a card shows as rated today, and
+   * the findings themselves are recomputed on every read.
+   */
+  const refreshJudgements = useCallback(async () => {
+    try {
+      const [recorded, incidents] = await Promise.all([
+        api.getVerdicts(),
+        api.getJudgedIncidents(),
+      ]);
+      setVerdicts(Object.fromEntries(recorded.map((v) => [v.findingId, v])));
+      setJudgedIncidents(incidents);
+    } catch (error) {
+      // A journal that will not open must not stop the estate being watched.
+      console.error("judgement record unavailable:", errorMessage(error));
+    }
+  }, []);
+
+  const judge = useCallback(
+    async (verdict: Verdict) => {
+      try {
+        await api.recordVerdict(verdict);
+        await refreshJudgements();
+      } catch (error) {
+        console.error("could not record that verdict:", errorMessage(error));
+      }
+    },
+    [refreshJudgements],
+  );
+
+  const judgeIncident = useCallback(
+    async (recall: Recall) => {
+      try {
+        await api.recordRecall(recall);
+        await refreshJudgements();
+      } catch (error) {
+        console.error("could not record that:", errorMessage(error));
+      }
+    },
+    [refreshJudgements],
+  );
+
   const refreshHealthRuns = useCallback(async () => {
     try {
       setHealthRuns(await api.getHealthRuns(minutes));
@@ -304,7 +355,8 @@ export default function App() {
     refreshContext();
     refreshCapacity();
     refreshFindings();
-  }, [refreshHistory, refreshHealthRuns, refreshHistogram, refreshContext, refreshCapacity, refreshFindings]);
+    refreshJudgements();
+  }, [refreshHistory, refreshHealthRuns, refreshHistogram, refreshContext, refreshCapacity, refreshFindings, refreshJudgements]);
 
   useEffect(() => {
     const dashboardTimer = setInterval(() => {
@@ -612,6 +664,10 @@ export default function App() {
             history={history}
             capacity={capacity}
             findings={findings}
+            verdicts={verdicts}
+            judgedIncidents={judgedIncidents}
+            onJudge={judge}
+            onJudgeIncident={judgeIncident}
             logs={logs}
             loading={loading}
             minutes={minutes}
@@ -720,6 +776,10 @@ export default function App() {
 
         {view.name === "correlate" && (
           <Correlate at={view.at} catalog={catalog} onNavigate={setView} />
+        )}
+
+        {view.name === "scorecard" && (
+          <Scorecard onNavigate={setView} onRefresh={refreshJudgements} />
         )}
 
         {view.name === "assistant" && (

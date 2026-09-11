@@ -43,6 +43,12 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_capacity_risks: ({ take }) => fixtures.capacityRisks((take as number) ?? 8),
   get_config_documents: ({ profileId }) => fixtures.configDocuments(profileId as string),
   get_findings: ({ profileId }) => fixtures.findings(profileId as string | undefined),
+  record_verdict: ({ verdict }) => fixtures.recordVerdict(verdict as Verdict),
+  record_recall: ({ recall }) => fixtures.recordRecall(recall as Recall),
+  get_verdicts: () => fixtures.verdicts(),
+  get_judged_incidents: () => fixtures.judgedIncidents(),
+  get_scorecard: () => fixtures.scorecard(),
+  get_long_history: () => [],
   get_health_runs: () => fixtures.healthRuns(),
   get_topology: () => fixtures.topology(),
   get_incidents: () => fixtures.incidents(),
@@ -112,6 +118,10 @@ import type {
   ConfigDocument,
   ConnectionProfile,
   Finding,
+  Recall,
+  RecordedVerdict,
+  Scorecard,
+  Verdict,
   Correlation,
   DashboardState,
   HealthRun,
@@ -197,6 +207,37 @@ export const api = {
   /** Omit `profileId` for the whole estate. */
   getFindings: (profileId?: string) =>
     invoke<Finding[]>("get_findings", { profileId: profileId ?? null }),
+
+  /**
+   * Record a judgement. Always an insert — changing a rating writes a second
+   * row and leaves the first, because a score that can be edited cannot
+   * answer "did root get better".
+   */
+  recordVerdict: (verdict: Verdict) => invoke<number>("record_verdict", { verdict }),
+
+  /**
+   * Record whether root called an incident.
+   *
+   * The half ratings on findings cannot produce: if root never mentioned the
+   * thing that broke, there was no card to rate.
+   */
+  recordRecall: (recall: Recall) => invoke<number>("record_recall", { recall }),
+
+  /** The latest judgement per finding, so the UI knows what is already rated. */
+  getVerdicts: (limit?: number) =>
+    invoke<RecordedVerdict[]>("get_verdicts", { limit: limit ?? null }),
+
+  /** Incidents already judged, so nobody is asked the same question twice. */
+  getJudgedIncidents: () => invoke<string[]>("get_judged_incidents"),
+
+  getScorecard: () => invoke<Scorecard>("get_scorecard"),
+
+  /**
+   * Metric history from the estate's own Prometheus, over a window root's own
+   * ring buffer cannot reach. Empty when the connection declares no source.
+   */
+  getLongHistory: (profileId: string, hours?: number) =>
+    invoke<MetricSeries[]>("get_long_history", { profileId, hours: hours ?? null }),
 
   getAllMetricHistory: (minutes?: number) =>
     invoke<Record<string, MetricSeries[]>>("get_all_metric_history", {

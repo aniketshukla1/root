@@ -350,6 +350,123 @@ export interface ConfigDocument {
 
 export type Severity = "advisory" | "soon" | "now";
 
+// ------------------------------------------------------- the judgement record
+
+/**
+ * Was it a real problem?
+ *
+ * Four answers rather than a thumb, because "bad" collapses three unrelated
+ * failures into one number and each is fixed somewhere different.
+ */
+export type ProblemVerdict = "real" | "notAProblem" | "alreadyKnew" | "unsure";
+
+/**
+ * Was the suggested fix the right one?
+ *
+ * Separate from the problem verdict: a single rating cannot say which half
+ * failed, and a wrong detection and a wrong remedy are fixed in different
+ * places.
+ */
+export type FixVerdict = "right" | "wrong" | "partlyRight" | "unsure";
+
+/**
+ * Where a finding came from.
+ *
+ * Rules never invent a setting but only find what someone encoded; the model
+ * reaches further and can be confidently wrong. A score that mixes them
+ * describes neither.
+ */
+export type Provenance =
+  | { rule: { id: string } }
+  | { model: { model: string } }
+  | { modelCitingRule: { model: string; rule: string } };
+
+export interface Verdict {
+  findingId: string;
+  profileId: string;
+  profileName: string;
+  provenance: Provenance;
+  /** The finding as judged, stored whole so the score stays interpretable. */
+  snapshot: unknown;
+  problem: ProblemVerdict;
+  fix?: FixVerdict;
+  note?: string;
+}
+
+export interface RecordedVerdict extends Omit<Verdict, "provenance"> {
+  id: number;
+  at: string;
+  provenance: string;
+  family: string;
+  fingerprint: string;
+  rulesVersion: string;
+}
+
+/** Did root see this coming? `no` is the miss — the measurement thumbs can't produce. */
+export type Called = "yes" | "no" | "partly";
+
+export interface Recall {
+  incidentId: string;
+  headline: string;
+  profileIds: string[];
+  startedAt: string;
+  called: Called;
+  findingId?: string;
+  note?: string;
+}
+
+export interface FamilyScore {
+  family: string;
+  judged: number;
+  real: number;
+  notAProblem: number;
+  alreadyKnew: number;
+  unsure: number;
+  fixRight: number;
+  fixWrong: number;
+  fixPartly: number;
+}
+
+export interface RuleScore {
+  rule: string;
+  judged: number;
+  real: number;
+  notAProblem: number;
+}
+
+export interface RecallScore {
+  incidents: number;
+  called: number;
+  missed: number;
+  partly: number;
+}
+
+export interface Scorecard {
+  byFamily: FamilyScore[];
+  byRule: RuleScore[];
+  recall: RecallScore;
+  rulesVersion: string;
+}
+
+// -------------------------------------------------------- long-range history
+
+/** One metric key, and the PromQL that produces it. */
+export interface MetricQuery {
+  metricKey: string;
+  expr: string;
+}
+
+/**
+ * Where a connection's long-range history lives.
+ *
+ * root keeps hours; a forecast that matters needs weeks. Declared, because
+ * `memory` and `redis_memory_used_bytes` cannot be matched up by inference.
+ */
+export interface HistorySource {
+  prometheusProfileId: string;
+  queries: MetricQuery[];
+}
+
 export type Evidence =
   | { kind: "setting"; key: string; value: string; source: string }
   | { kind: "metric"; key: string; label: string; value: number; unit: MetricUnit; limit?: number }
@@ -371,6 +488,8 @@ export interface Suggestion {
  */
 export interface Finding {
   id: string;
+  /** Which rule produced this, so a verdict attributes to one rule not "the rules". */
+  rule: string;
   profileId: string;
   profileName: string;
   severity: Severity;
@@ -564,6 +683,7 @@ export interface ConnectionProfile {
    * how to ask.
    */
   configSources: ConfigSource[];
+  historySource?: HistorySource;
 }
 
 export type LlmProviderKind = "anthropic" | "open_ai_compatible" | "ollama";

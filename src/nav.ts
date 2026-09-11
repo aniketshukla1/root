@@ -6,6 +6,8 @@ export type View =
   | { name: "metrics" }
   | { name: "logs" }
   | { name: "assistant" }
+  /** Is root any good yet — precision from findings, recall from incidents. */
+  | { name: "scorecard" }
   /** `profileId` opens that connection's editor straight away. */
   | { name: "settings"; profileId?: string }
   | { name: "service"; profileId: string; tab?: ServiceTab }

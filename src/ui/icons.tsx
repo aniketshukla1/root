@@ -70,6 +70,14 @@ export const AssistantIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const ScorecardIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3v18M3 7h18" />
+    <path d="M6 7 3 14a3 3 0 0 0 6 0Z" />
+    <path d="M18 7l-3 7a3 3 0 0 0 6 0Z" />
+  </Icon>
+);
+
 export const SettingsIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 6h16M4 12h16M4 18h16" />

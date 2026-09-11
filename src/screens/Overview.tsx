@@ -11,6 +11,9 @@ import type {
   CapacityRisk,
   ChangeEvent,
   Finding,
+  Recall,
+  RecordedVerdict,
+  Verdict,
   Correlation,
   Health,
   HealthRun,
@@ -21,7 +24,7 @@ import type {
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { Horizon } from "../ui/capacity";
-import { FindingList } from "../ui/config";
+import { FindingList, RecallStrip } from "../ui/config";
 import { AlertList } from "../ui/AlertList";
 import { LogHistogram, levelColor, type Bucket } from "../ui/charts";
 import {
@@ -68,6 +71,10 @@ export function Overview({
   history,
   capacity,
   findings,
+  verdicts,
+  judgedIncidents,
+  onJudge,
+  onJudgeIncident,
   logs,
   loading,
   minutes,
@@ -91,6 +98,10 @@ export function Overview({
   history: Record<string, MetricSeries[]>;
   capacity: CapacityRisk[];
   findings: Finding[];
+  verdicts: Record<string, RecordedVerdict>;
+  judgedIncidents: string[];
+  onJudge: (verdict: Verdict) => void;
+  onJudgeIncident: (recall: Recall) => void;
   logs: LogEvent[];
   loading: boolean;
   minutes: number;
@@ -204,6 +215,8 @@ export function Overview({
             healthRuns={healthRuns}
             capacity={capacity}
             findings={findings}
+            verdicts={verdicts}
+            onJudge={onJudge}
             minutes={minutes}
             onNavigate={onNavigate}
           />
@@ -245,6 +258,22 @@ export function Overview({
 
             {state !== "triage" && selected && (
               <IncidentHero incident={selected} context={context} actions={actions} />
+            )}
+
+            {/* Under the hero, above the evidence: after somebody has read
+                what happened and before they start working it. */}
+            {selected && (
+              <RecallStrip
+                incident={{
+                  id: selected.id,
+                  headline: selected.title,
+                  profileIds: selected.profileIds,
+                  startedAt: selected.started,
+                }}
+                findings={findings}
+                judged={judgedIncidents.includes(selected.id)}
+                onJudge={onJudgeIncident}
+              />
             )}
 
             {selected && (
@@ -371,6 +400,8 @@ function QuietState({
   healthRuns,
   capacity,
   findings,
+  verdicts,
+  onJudge,
   minutes,
   onNavigate,
 }: {
@@ -380,6 +411,8 @@ function QuietState({
   healthRuns: Record<string, HealthRun[]>;
   capacity: CapacityRisk[];
   findings: Finding[];
+  verdicts: Record<string, RecordedVerdict>;
+  onJudge: (verdict: Verdict) => void;
   minutes: number;
   onNavigate: (view: View) => void;
 }) {
@@ -448,6 +481,8 @@ function QuietState({
         >
           <FindingList
             findings={findings.slice(0, 3)}
+            verdicts={verdicts}
+            onJudge={onJudge}
             onOpenService={(profileId) =>
               onNavigate({ name: "service", profileId, tab: "config" })
             }

@@ -8,6 +8,7 @@ import { cx, Kbd, ServiceMark } from "../ui/primitives";
 import {
   AlertsIcon,
   AssistantIcon,
+  ScorecardIcon,
   LogsIcon,
   MetricsIcon,
   OverviewIcon,
@@ -58,6 +59,7 @@ export function CommandPalette({
       { id: "metrics", label: "Metrics", group: "Go to", icon: <MetricsIcon size={14} />, run: go({ name: "metrics" }) },
       { id: "logs", label: "Logs", group: "Go to", icon: <LogsIcon size={14} />, run: go({ name: "logs" }) },
       { id: "assistant", label: "Assistant", group: "Go to", icon: <AssistantIcon size={14} />, run: go({ name: "assistant" }) },
+      { id: "scorecard", label: "Scorecard", group: "Go to", icon: <ScorecardIcon size={14} />, run: go({ name: "scorecard" }) },
       { id: "settings", label: "Settings", group: "Go to", icon: <SettingsIcon size={14} />, run: go({ name: "settings" }) },
     ];
 

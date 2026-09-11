@@ -2,11 +2,17 @@ import { useState } from "react";
 
 import { formatBytes, formatHorizon, formatMetricValue, formatRelative } from "../format";
 import type {
+  Called,
   ConfigDocument,
   Evidence,
   Finding,
+  FixVerdict,
+  Recall,
+  ProblemVerdict,
+  RecordedVerdict,
   Redaction,
   Severity,
+  Verdict,
   Withheld,
 } from "../types";
 import { Button, cx, Empty, Panel, Tag } from "../ui/primitives";
@@ -31,9 +37,14 @@ const SEVERITY: Record<Severity, { label: string; color: string; rank: number }>
 
 export function FindingList({
   findings,
+  verdicts,
+  onJudge,
   onOpenService,
 }: {
   findings: Finding[];
+  /** Latest judgement per finding id, so a rated card shows as rated. */
+  verdicts?: Record<string, RecordedVerdict>;
+  onJudge?: (verdict: Verdict) => void;
   onOpenService?: (profileId: string) => void;
 }) {
   if (findings.length === 0) {
@@ -48,7 +59,13 @@ export function FindingList({
   return (
     <div className="flex flex-col gap-2.5">
       {findings.map((finding) => (
-        <FindingCard key={finding.id} finding={finding} onOpenService={onOpenService} />
+        <FindingCard
+          key={finding.id}
+          finding={finding}
+          verdict={verdicts?.[finding.id]}
+          onJudge={onJudge}
+          onOpenService={onOpenService}
+        />
       ))}
     </div>
   );
@@ -56,9 +73,13 @@ export function FindingList({
 
 function FindingCard({
   finding,
+  verdict,
+  onJudge,
   onOpenService,
 }: {
   finding: Finding;
+  verdict?: RecordedVerdict;
+  onJudge?: (verdict: Verdict) => void;
   onOpenService?: (profileId: string) => void;
 }) {
   const [showEvidence, setShowEvidence] = useState(false);
@@ -121,6 +142,279 @@ function FindingCard({
           ))}
         </div>
       )}
+
+      {/* Last, because rating something is what you do after reading it. */}
+      {onJudge && <VerdictStrip finding={finding} verdict={verdict} onJudge={onJudge} />}
+    </div>
+  );
+}
+
+/**
+ * Two questions, not a thumb.
+ *
+ * A single rating cannot say whether the detection or the remedy failed, and
+ * those get fixed in completely different places — one is a rule that fires
+ * wrongly, the other is a rule that is right about the problem and wrong about
+ * what to do. Collapsing them loses the only part that tells you what to
+ * change.
+ *
+ * "Already knew" is a correct answer, not a bad one: root was right, and being
+ * second to know is a usefulness problem rather than an accuracy one. It is
+ * separate from "real" so the difference stays visible — a tool that is always
+ * right and always late has a specific, fixable failure.
+ */
+function VerdictStrip({
+  finding,
+  verdict,
+  onJudge,
+}: {
+  finding: Finding;
+  verdict?: RecordedVerdict;
+  onJudge: (verdict: Verdict) => void;
+}) {
+  const [problem, setProblem] = useState<ProblemVerdict | undefined>(verdict?.problem);
+  const [fix, setFix] = useState<FixVerdict | undefined>(verdict?.fix);
+  const [note, setNote] = useState(verdict?.note ?? "");
+  const [open, setOpen] = useState(false);
+
+  const send = (next: { problem?: ProblemVerdict; fix?: FixVerdict; note?: string }) => {
+    const decided = next.problem ?? problem;
+    if (!decided) return;
+    onJudge({
+      findingId: finding.id,
+      profileId: finding.profileId,
+      profileName: finding.profileName,
+      provenance: { rule: { id: finding.rule } },
+      snapshot: finding,
+      problem: decided,
+      fix: next.fix ?? fix,
+      note: (next.note ?? note).trim() || undefined,
+    });
+  };
+
+  return (
+    <div className="mt-2 border-t border-line-soft pt-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="num shrink-0 text-2xs text-ink-4">Real problem?</span>
+        <Choice
+          value={problem}
+          options={[
+            ["real", "yes"],
+            ["alreadyKnew", "yes, knew"],
+            ["notAProblem", "no"],
+            ["unsure", "unsure"],
+          ]}
+          onChange={(v) => {
+            setProblem(v);
+            send({ problem: v });
+          }}
+        />
+
+        {/* Only askable when there is a fix to ask about. */}
+        {finding.suggestion && (
+          <>
+            <span className="num shrink-0 text-2xs text-ink-4">Right fix?</span>
+            <Choice
+              value={fix}
+              options={[
+                ["right", "yes"],
+                ["partlyRight", "nearly"],
+                ["wrong", "no"],
+                ["unsure", "unsure"],
+              ]}
+              onChange={(v) => {
+                setFix(v);
+                send({ fix: v });
+              }}
+            />
+          </>
+        )}
+
+        {verdict && (
+          <span className="num ml-auto shrink-0 text-2xs text-ink-4">
+            rated {formatRelative(verdict.at)}
+          </span>
+        )}
+      </div>
+
+      {problem && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="num mt-1.5 text-2xs text-ink-4 underline-offset-2 hover:underline"
+        >
+          {open ? "Hide note" : note ? "Edit note" : "Add a note"}
+        </button>
+      )}
+
+      {/* Free text, because the four buttons cannot hold the reason a finding
+          was wrong, and the reason is what makes the next rule better. */}
+      {open && (
+        <div className="mt-1.5 flex gap-1.5">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Why? — this is what turns a score into a change"
+            className="h-7 min-w-0 flex-1 rounded-md border border-line bg-sunk px-2 font-mono text-xs text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
+          />
+          <Button
+            variant="ghost"
+            onClick={() => {
+              send({ note });
+              setOpen(false);
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Did root call this one?
+ *
+ * The half of the measurement that thumbs on findings structurally cannot
+ * produce. A rating on what root *said* measures precision — of the things it
+ * raised, how many were real. It is silent on the failure that matters most:
+ * root never mentioned the thing that actually broke, so there was no card to
+ * rate and no signal that anything was missed.
+ *
+ * Asked here, at the incident, because this is the one moment somebody has the
+ * answer in their head and is already looking at the evidence. A question
+ * asked anywhere else gets guessed at or skipped.
+ *
+ * Asked once. A judged incident does not ask again, because a question that
+ * reappears gets clicked through rather than considered.
+ */
+export function RecallStrip({
+  incident,
+  findings,
+  judged,
+  onJudge,
+}: {
+  incident: { id: string; headline: string; profileIds: string[]; startedAt: string };
+  /** Findings for the connections involved, as candidate answers. */
+  findings: Finding[];
+  judged: boolean;
+  onJudge: (recall: Recall) => void;
+}) {
+  const [note, setNote] = useState("");
+  const [pending, setPending] = useState<Called>();
+
+  if (judged) return null;
+
+  const send = (called: Called, findingId?: string) =>
+    onJudge({
+      incidentId: incident.id,
+      headline: incident.headline,
+      profileIds: incident.profileIds,
+      startedAt: incident.startedAt,
+      called,
+      findingId,
+      note: note.trim() || undefined,
+    });
+
+  const candidates = findings.filter((f) => incident.profileIds.includes(f.profileId));
+
+  return (
+    <div className="panel flex flex-col gap-2 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="text-xs text-ink-2">Did root see this coming?</span>
+        <Choice
+          value={pending}
+          options={[
+            ["yes", "yes"],
+            ["partly", "partly"],
+            ["no", "no"],
+          ]}
+          onChange={(called) => {
+            setPending(called);
+            // "Yes" with exactly one candidate needs no follow-up — there is
+            // only one thing it can have been.
+            if (called === "no" || (called === "yes" && candidates.length === 1)) {
+              send(called, called === "yes" ? candidates[0]?.id : undefined);
+            }
+          }}
+        />
+        <span className="num text-2xs text-ink-4">
+          {/* Says why the question is being asked at all, because "rate this"
+              with no reason reads as telemetry collection. */}
+          the only way to measure what root misses
+        </span>
+      </div>
+
+      {/* Which finding called it — so a rule can be credited by name, and the
+          ones that never catch anything become visible. */}
+      {pending && pending !== "no" && candidates.length > 1 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="num text-2xs text-ink-4">Which one?</span>
+          <div className="flex flex-wrap gap-1">
+            {candidates.map((finding) => (
+              <button
+                key={finding.id}
+                type="button"
+                onClick={() => send(pending, finding.id)}
+                className="inline-flex h-[20px] items-center rounded-sm border border-line bg-panel px-1.5 font-mono text-2xs text-ink-3 transition-colors hover:border-accent hover:text-accent"
+              >
+                {finding.title}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => send(pending)}
+              className="inline-flex h-[20px] items-center rounded-sm border border-line bg-panel px-1.5 font-mono text-2xs text-ink-4 transition-colors hover:border-accent hover:text-accent"
+            >
+              none of these
+            </button>
+          </div>
+        </div>
+      )}
+
+      {pending === "no" && (
+        <div className="flex gap-1.5">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="What would have shown it? — this is the next rule"
+            className="h-7 min-w-0 flex-1 rounded-md border border-line bg-sunk px-2 font-mono text-xs text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
+          />
+          <Button variant="ghost" onClick={() => send("no")}>
+            Save
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Choice<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value?: T;
+  options: [T, string][];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map(([option, label]) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onChange(option)}
+          className={cx(
+            "inline-flex h-[20px] items-center rounded-sm border px-1.5 font-mono text-2xs transition-colors",
+            value === option
+              ? "border-accent bg-accent text-on-accent"
+              : "border-line bg-panel text-ink-3 hover:border-accent hover:text-accent",
+          )}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

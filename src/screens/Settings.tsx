@@ -6,6 +6,7 @@ import { applyDensity, readDensity, type Density } from "../density";
 import { applyTheme, readTheme, watchSystemTheme, type Theme } from "../theme";
 import type {
   ConfigSource,
+  HistorySource,
   AgentMode,
   AppConfig,
   ConnectionProfile,
@@ -385,6 +386,32 @@ export function ProfileForm({
 }) {
   const [draft, setDraft] = useState<ConnectionProfile>(profile);
   const [secret, setSecret] = useState("");
+
+  /**
+   * Metric keys this connection actually reports.
+   *
+   * Read from the last poll rather than offered as free text: a mapping typed
+   * against a key that does not exist produces no series and no error, which
+   * is the worst of both. Empty for a connection that has never been polled,
+   * and the editor falls back to accepting anything.
+   */
+  const [metricKeys, setMetricKeys] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    api
+      .getDashboard()
+      .then((dashboard) => {
+        if (!live) return;
+        const snapshot = dashboard.snapshots.find((s) => s.profileId === profile.id);
+        setMetricKeys(snapshot?.metrics.map((m) => m.key) ?? []);
+      })
+      .catch(() => {
+        /* A form that cannot reach the backend still has to open. */
+      });
+    return () => {
+      live = false;
+    };
+  }, [profile.id]);
   const [advanced, setAdvanced] = useState(false);
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState<{ ok: boolean; snapshot?: HealthSnapshot; error?: string } | null>(
@@ -589,6 +616,18 @@ export function ProfileForm({
             <ConfigSources
               sources={draft.configSources}
               onChange={(configSources) => setDraft((d) => ({ ...d, configSources }))}
+            />
+          </Field>
+
+          <Field
+            label="Long-range history"
+            help="root keeps a few hours in memory, which is enough for a chart and not enough for a forecast — a volume that fills in three weeks is invisible to it. If you already run Prometheus, point this at it and say which PromQL produces each metric. Read-only; nothing is written there."
+          >
+            <PrometheusHistory
+              source={draft.historySource}
+              metricKeys={metricKeys}
+              candidates={siblings.filter((s) => s.kind === "prometheus")}
+              onChange={(historySource) => setDraft((d) => ({ ...d, historySource }))}
             />
           </Field>
         </Fieldset>
@@ -1499,6 +1538,132 @@ function ConfigSources({
           None declared. Many connections still report their running configuration directly —
           Redis, Postgres, Docker and Kubernetes all do — and that needs no setup here.
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Which Prometheus holds this connection's long history, and how its series
+ * map onto root's metrics.
+ *
+ * The mapping is typed out rather than guessed. `memory` and
+ * `redis_memory_used_bytes` are not the same series and nothing can infer that
+ * they correspond — a wrong guess would forecast the wrong number
+ * convincingly, which is worse than forecasting nothing.
+ */
+function PrometheusHistory({
+  source,
+  metricKeys,
+  candidates,
+  onChange,
+}: {
+  source?: HistorySource;
+  /** Metric keys this connection actually reports, so the mapping is checkable. */
+  metricKeys: string[];
+  candidates: ConnectionProfile[];
+  onChange: (source: HistorySource | undefined) => void;
+}) {
+  if (candidates.length === 0) {
+    return (
+      <p className="num text-2xs leading-relaxed text-ink-4">
+        No Prometheus connection is configured. Add one and it can serve as the history
+        source for everything else.
+      </p>
+    );
+  }
+
+  const current = source ?? { prometheusProfileId: "", queries: [] };
+  const update = (patch: Partial<HistorySource>) => {
+    const next = { ...current, ...patch };
+    // Clearing the server clears the whole thing rather than leaving orphan
+    // queries pointed at nothing.
+    onChange(next.prometheusProfileId ? next : undefined);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Select
+        value={current.prometheusProfileId}
+        onChange={(e) => update({ prometheusProfileId: e.target.value })}
+      >
+        <option value="">Not set — use root's own history</option>
+        {candidates.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name || c.id}
+          </option>
+        ))}
+      </Select>
+
+      {current.prometheusProfileId && (
+        <>
+          {current.queries.map((query, i) => (
+            <div key={i} className="flex gap-1.5">
+              {metricKeys.length > 0 ? (
+                <Select
+                  value={query.metricKey}
+                  onChange={(e) => {
+                    const queries = [...current.queries];
+                    queries[i] = { ...query, metricKey: e.target.value };
+                    update({ queries });
+                  }}
+                  className="w-[140px] shrink-0"
+                >
+                  <option value="">metric…</option>
+                  {metricKeys.map((key) => (
+                    <option key={key} value={key}>
+                      {key}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <Input
+                  value={query.metricKey}
+                  placeholder="metric key"
+                  onChange={(e) => {
+                    const queries = [...current.queries];
+                    queries[i] = { ...query, metricKey: e.target.value };
+                    update({ queries });
+                  }}
+                  className="w-[140px] shrink-0"
+                />
+              )}
+              <Input
+                value={query.expr}
+                placeholder={'redis_memory_used_bytes{instance="10.0.0.2:9121"}'}
+                onChange={(e) => {
+                  const queries = [...current.queries];
+                  queries[i] = { ...query, expr: e.target.value };
+                  update({ queries });
+                }}
+                className="flex-1"
+              />
+              <Button
+                variant="ghost"
+                onClick={() => update({ queries: current.queries.filter((_, j) => j !== i) })}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+
+          <div>
+            <Button
+              variant="ghost"
+              onClick={() =>
+                update({ queries: [...current.queries, { metricKey: "", expr: "" }] })
+              }
+            >
+              Map a metric
+            </Button>
+          </div>
+
+          <p className="num text-2xs leading-relaxed text-ink-4">
+            Each expression must resolve to a single series — a query matching several is
+            refused rather than having one picked for you, because a forecast for the wrong
+            host looks exactly like a forecast for the right one.
+          </p>
+        </>
       )}
     </div>
   );

@@ -34,8 +34,14 @@ import type {
   Point,
   CapacityRisk,
   ConfigDocument,
+  FamilyScore,
   Finding,
   MetricUnit,
+  Recall,
+  RecordedVerdict,
+  RuleScore,
+  Scorecard,
+  Verdict,
   ServiceDescriptor,
   TeamState,
   Trend,
@@ -1412,6 +1418,7 @@ export function configDocuments(profileId: string): ConfigDocument[] {
 const FINDINGS: Finding[] = [
   {
     id: "session-cache:config-drift",
+    rule: "caching.config-drift",
     profileId: "session-cache",
     profileName: "session-cache",
     severity: "soon",
@@ -1436,6 +1443,7 @@ const FINDINGS: Finding[] = [
   },
   {
     id: "session-cache:maxmemory-noeviction",
+    rule: "caching.maxmemory-noeviction",
     profileId: "session-cache",
     profileName: "session-cache",
     severity: "now",
@@ -1463,6 +1471,7 @@ const FINDINGS: Finding[] = [
   },
   {
     id: "orders-api:container-no-memory-limit",
+    rule: "docker.container-no-memory-limit",
     profileId: "orders-api",
     profileName: "orders-api",
     severity: "advisory",
@@ -1491,4 +1500,116 @@ export function findings(profileId?: string): Finding[] {
   return FINDINGS.filter((f) => !profileId || f.profileId === profileId).sort(
     (a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
   );
+}
+
+// ------------------------------------------------------- the judgement record
+
+/**
+ * An in-memory stand-in for journal.db.
+ *
+ * Append-only like the real thing, so the browser exercises the same
+ * behaviour: rating something twice leaves both rows and only the latest one
+ * counts. It does NOT persist — that is the whole difference between the
+ * fixture and the product, and pretending otherwise in a preview would hide
+ * the one property the real store exists to provide.
+ */
+const VERDICT_LOG: RecordedVerdict[] = [];
+const RECALL_LOG: Recall[] = [];
+
+export function recordVerdict(verdict: Verdict): number {
+  const id = VERDICT_LOG.length + 1;
+  const provenance =
+    "rule" in verdict.provenance
+      ? `rule:${verdict.provenance.rule.id}`
+      : "model" in verdict.provenance
+        ? "model"
+        : `model+rule:${verdict.provenance.modelCitingRule.rule}`;
+  const family = provenance.startsWith("rule:")
+    ? "rule"
+    : provenance === "model"
+      ? "model"
+      : "model+rule";
+
+  VERDICT_LOG.push({
+    ...verdict,
+    id,
+    at: iso(0),
+    provenance,
+    family,
+    fingerprint: String(id).padStart(16, "0"),
+    rulesVersion: "1",
+  });
+  return id;
+}
+
+export function recordRecall(recall: Recall): number {
+  RECALL_LOG.push(recall);
+  return RECALL_LOG.length;
+}
+
+/** Latest per finding, matching the store's own view. */
+export function verdicts(): RecordedVerdict[] {
+  const latest = new Map<string, RecordedVerdict>();
+  for (const v of VERDICT_LOG) latest.set(v.findingId, v);
+  return [...latest.values()].reverse();
+}
+
+export function judgedIncidents(): string[] {
+  return [...new Set(RECALL_LOG.map((r) => r.incidentId))];
+}
+
+export function scorecard(): Scorecard {
+  const latest = verdicts();
+  const families = new Map<string, FamilyScore>();
+
+  for (const v of latest) {
+    const score =
+      families.get(v.family) ??
+      {
+        family: v.family,
+        judged: 0,
+        real: 0,
+        notAProblem: 0,
+        alreadyKnew: 0,
+        unsure: 0,
+        fixRight: 0,
+        fixWrong: 0,
+        fixPartly: 0,
+      };
+    score.judged += 1;
+    if (v.problem === "real") score.real += 1;
+    if (v.problem === "notAProblem") score.notAProblem += 1;
+    if (v.problem === "alreadyKnew") score.alreadyKnew += 1;
+    if (v.problem === "unsure") score.unsure += 1;
+    if (v.fix === "right") score.fixRight += 1;
+    if (v.fix === "wrong") score.fixWrong += 1;
+    if (v.fix === "partlyRight") score.fixPartly += 1;
+    families.set(v.family, score);
+  }
+
+  const rules = new Map<string, RuleScore>();
+  for (const v of latest.filter((x) => x.family === "rule")) {
+    const name = v.provenance.replace(/^rule:/, "");
+    const score = rules.get(name) ?? { rule: name, judged: 0, real: 0, notAProblem: 0 };
+    score.judged += 1;
+    if (v.problem === "real") score.real += 1;
+    if (v.problem === "notAProblem") score.notAProblem += 1;
+    rules.set(name, score);
+  }
+
+  const byIncident = new Map<string, Recall>();
+  for (const r of RECALL_LOG) byIncident.set(r.incidentId, r);
+  const recalls = [...byIncident.values()];
+
+  return {
+    byFamily: [...families.values()].sort((a, b) => a.family.localeCompare(b.family)),
+    byRule: [...rules.values()].sort((a, b) => b.notAProblem - a.notAProblem || b.judged - a.judged),
+    recall: {
+      incidents: recalls.length,
+      called: recalls.filter((r) => r.called === "yes").length,
+      missed: recalls.filter((r) => r.called === "no").length,
+      partly: recalls.filter((r) => r.called === "partly").length,
+    },
+    rulesVersion: "1",
+  };
 }

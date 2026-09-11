@@ -9,6 +9,7 @@ import { cx, Dot, Kbd, RootMark } from "../ui/primitives";
 import {
   AlertsIcon,
   AssistantIcon,
+  ScorecardIcon,
   ChevronLeft,
   LogsIcon,
   MetricsIcon,
@@ -70,6 +71,9 @@ export function Sidebar({
     { key: "metrics", label: "Metrics", icon: MetricsIcon, view: { name: "metrics" } },
     { key: "logs", label: "Logs", icon: LogsIcon, view: { name: "logs" } },
     { key: "assistant", label: "Assistant", icon: AssistantIcon, view: { name: "assistant" } },
+    // Last in the list rather than promoted: it is how the tool is doing, not
+    // how the estate is doing, and the estate is what somebody opened this for.
+    { key: "scorecard", label: "Scorecard", icon: ScorecardIcon, view: { name: "scorecard" } },
   ];
 
   const item = (entry: Entry) => {

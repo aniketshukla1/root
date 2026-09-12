@@ -185,3 +185,64 @@ services:
           for _ in 1 2 3 4 5; do curl -s -o /dev/null http://proxy/ || true; done
           sleep 3
         done
+
+  # ------------------------------------------------------------------- aws
+  #
+  # Floci — a local AWS emulator, one container, one port, no auth. Root has
+  # no AWS collector yet, so today this is a target to build one against
+  # rather than something root can read.
+  #
+  # An emulator gives you API surface, not telemetry. A fresh one has no
+  # history, no load and no drift, so the parts of root that matter most —
+  # the forecast, the advisor, the backtest — have nothing to work on until
+  # something is actually using these services. The seeder below is the start
+  # of that: it creates resources and keeps traffic flowing through them.
+  aws:
+    image: floci/floci:latest
+    container_name: root-demo-aws
+    ports:
+      - "4566:4566"
+    restart: unless-stopped
+
+  # Creates AWS resources and keeps them moving, so an AWS collector has
+  # something with a shape rather than an empty account.
+  aws-seeder:
+    image: amazon/aws-cli:latest
+    container_name: root-demo-aws-seeder
+    depends_on: [aws]
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://aws:4566
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - |
+        sleep 25
+        # Idempotent: the container restarts and these must not fail on a
+        # second run.
+        aws s3 mb s3://root-demo-uploads 2>/dev/null || true
+        aws s3 mb s3://root-demo-archive 2>/dev/null || true
+        aws sqs create-queue --queue-name root-demo-jobs 2>/dev/null || true
+        aws sqs create-queue --queue-name root-demo-jobs-dlq 2>/dev/null || true
+        aws dynamodb create-table \
+          --table-name root-demo-sessions \
+          --attribute-definitions AttributeName=id,AttributeType=S \
+          --key-schema AttributeName=id,KeyType=HASH \
+          --billing-mode PAY_PER_REQUEST 2>/dev/null || true
+
+        i=0
+        while true; do
+          # A bucket that grows, so a capacity forecast has a slope. The
+          # queue is deliberately filled faster than anything drains it,
+          # which is the backlog shape a queue rule would exist to catch.
+          head -c 65536 /dev/zero | tr '\0' 'x' > /tmp/object
+          aws s3 cp /tmp/object "s3://root-demo-uploads/pad/$$i" >/dev/null 2>&1 || true
+          aws sqs send-message \
+            --queue-url "http://aws:4566/000000000000/root-demo-jobs" \
+            --message-body "job $$i" >/dev/null 2>&1 || true
+          i=$$((i + 1))
+          sleep 5
+        done

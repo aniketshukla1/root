@@ -8,6 +8,7 @@
 //! one failed request instead of leaking a task per container.
 
 pub mod apache;
+pub mod aws;
 pub mod haproxy;
 pub mod clickhouse;
 pub mod consul;
@@ -170,6 +171,7 @@ pub async fn build_collector(
         ServiceKind::Docker | ServiceKind::Podman => {
             Arc::new(docker::DockerCollector::new(profile)?)
         }
+        ServiceKind::Aws => Arc::new(aws::AwsCollector::new(profile, secret).await?),
         ServiceKind::LinuxHost => Arc::new(linux_host::LinuxHostCollector::new(profile, secret)?),
         ServiceKind::Nfs => Arc::new(nfs::NfsCollector::new(profile, secret)?),
         ServiceKind::Jenkins => Arc::new(jenkins::JenkinsCollector::new(profile, secret)?),

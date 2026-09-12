@@ -40,6 +40,7 @@ pub enum ServiceKind {
     Nats,
     Clickhouse,
     Kafka,
+    Aws,
 }
 
 impl ServiceKind {
@@ -72,10 +73,12 @@ impl ServiceKind {
         ServiceKind::Nats,
         ServiceKind::Clickhouse,
         ServiceKind::Kafka,
+        ServiceKind::Aws,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
+            ServiceKind::Aws => "AWS",
             ServiceKind::Docker => "Docker",
             ServiceKind::Podman => "Podman",
             ServiceKind::LinuxHost => "Linux host",

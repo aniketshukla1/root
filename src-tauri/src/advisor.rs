@@ -360,6 +360,7 @@ pub fn findings(
             container_rules(snapshot, documents, &mut out)
         }
         ServiceKind::Kubernetes => workload_rules(snapshot, documents, &mut out),
+        ServiceKind::Aws => aws_rules(snapshot, documents, series, &mut out),
         _ => {}
     }
 
@@ -1115,6 +1116,214 @@ fn workload_rules(
                 current: "1".to_string(),
                 proposed: "2 or more, with a PodDisruptionBudget".to_string(),
                 apply: Some("kubectl scale deployment/<name> --replicas=2".to_string()),
+            }),
+        ));
+    }
+}
+
+// ----------------------------------------------------------------------- aws
+
+fn aws_rules(
+    snapshot: &HealthSnapshot,
+    documents: &[ConfigDocument],
+    series: &[MetricSeries],
+    out: &mut Vec<Finding>,
+) {
+    let Some(body) = documents
+        .iter()
+        .find(|d| matches!(&d.origin, Origin::Live { via } if via.contains("s3/sqs")))
+        .and_then(|d| d.body.as_deref())
+    else {
+        return;
+    };
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(body) else {
+        return;
+    };
+
+    // ---- storage that only grows ------------------------------------------
+    //
+    // The strongest config-and-telemetry pairing AWS has. A bucket's size is
+    // a number; a bucket's lifecycle policy is a setting; together they are
+    // "this grows and nothing will ever remove any of it", which is a bill
+    // rather than a capacity problem — and one nobody notices until it is
+    // twelve months old.
+    let forever: Vec<String> = parsed["buckets"]
+        .as_object()
+        .map(|buckets| {
+            buckets
+                .iter()
+                .filter(|(_, b)| b["lifecycleRules"].as_u64() == Some(0))
+                .filter(|(_, b)| b["bytes"].as_u64().unwrap_or(0) > 0)
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if !forever.is_empty() {
+        let stored = metric(snapshot, "stored_bytes");
+        let trend = trend_for(series, "stored_bytes");
+
+        let mut evidence: Vec<Evidence> = vec![Evidence::Setting {
+            key: "lifecycleRules".to_string(),
+            value: "none".to_string(),
+            source: "s3/sqs attributes".to_string(),
+        }];
+        if let Some(stored) = stored {
+            evidence.push(Evidence::Metric {
+                key: "stored_bytes".to_string(),
+                label: "Stored".to_string(),
+                value: stored.value,
+                unit: MetricUnit::Bytes,
+                limit: stored.warn_above,
+            });
+        }
+
+        // The rate is the point here, not a deadline: most buckets have no
+        // declared ceiling, and "grows 40 GB a day for ever" is actionable
+        // without one.
+        let rate = trend
+            .filter(|t| t.is_reliable() && t.per_second > 0.0)
+            .map(|t| format!(" Growing about {} a day.", human_bytes(t.per_second * 86_400.0)))
+            .unwrap_or_default();
+
+        if let Some(t) = trend {
+            evidence.push(Evidence::Projection {
+                key: "stored_bytes".to_string(),
+                seconds_to_limit: t.seconds_to_limit.unwrap_or(0.0),
+                fit: t.fit,
+                window_secs: t.window_secs,
+            });
+        }
+
+        out.push(finding(
+            snapshot,
+            "bucket-no-lifecycle",
+            Severity::Advisory,
+            format!(
+                "{} bucket{} keep{} everything for ever",
+                forever.len(),
+                if forever.len() == 1 { "" } else { "s" },
+                if forever.len() == 1 { "s" } else { "" },
+            ),
+            format!(
+                "{} ha{} no lifecycle configuration, so nothing in {} is ever expired, \
+                 transitioned to cheaper storage, or removed.{rate} This is not a capacity \
+                 problem — S3 will accept objects indefinitely — it is a cost that compounds \
+                 quietly and is usually first noticed as a bill somebody cannot explain.",
+                join_with_overflow(&forever, 6),
+                if forever.len() == 1 { "s" } else { "ve" },
+                if forever.len() == 1 { "it" } else { "them" },
+            ),
+            evidence,
+            Some(Suggestion {
+                setting: "lifecycle configuration".to_string(),
+                current: "none".to_string(),
+                proposed: "expire or transition objects past an age the data is useful for"
+                    .to_string(),
+                apply: Some(
+                    "aws s3api put-bucket-lifecycle-configuration --bucket <name> \\\n  \
+                     --lifecycle-configuration file://lifecycle.json"
+                        .to_string(),
+                ),
+            }),
+        ));
+    }
+
+    // ---- queues nothing is reading ----------------------------------------
+    //
+    // Depth alone is normal. Depth with nothing in flight means no consumer is
+    // even trying, which is the state that turns into a backlog nobody
+    // notices until it is hours deep.
+    let unattended: Vec<String> = parsed["queues"]
+        .as_object()
+        .map(|queues| {
+            queues
+                .iter()
+                .filter(|(_, q)| q["isDeadLetterQueue"].as_bool() != Some(true))
+                .filter(|(_, q)| {
+                    q["visible"].as_f64().unwrap_or(0.0) > 0.0
+                        && q["inFlight"].as_f64().unwrap_or(0.0) == 0.0
+                })
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if !unattended.is_empty() {
+        let waiting = metric(snapshot, "unattended_messages").map(|m| m.value).unwrap_or(0.0);
+        out.push(finding(
+            snapshot,
+            "queue-unattended",
+            Severity::Soon,
+            format!(
+                "{} queue{} with no consumer reading",
+                unattended.len(),
+                if unattended.len() == 1 { "" } else { "s" },
+            ),
+            format!(
+                "{} ha{} messages waiting and nothing in flight, so no worker is even \
+                 attempting them — {waiting:.0} message(s) in total. A deep queue that is \
+                 moving is normal; one where nothing is in flight means the consumer is down, \
+                 scaled to zero, or pointed somewhere else.",
+                join_with_overflow(&unattended, 6),
+                if unattended.len() == 1 { "s" } else { "ve" },
+            ),
+            vec![Evidence::Metric {
+                key: "unattended_messages".to_string(),
+                label: "Waiting, nothing consuming".to_string(),
+                value: waiting,
+                unit: MetricUnit::Count,
+                limit: None,
+            }],
+            None,
+        ));
+    }
+
+    // ---- queues that will retry a poison message for ever ------------------
+    let no_dlq: Vec<String> = parsed["queues"]
+        .as_object()
+        .map(|queues| {
+            queues
+                .iter()
+                .filter(|(_, q)| q["isDeadLetterQueue"].as_bool() != Some(true))
+                .filter(|(_, q)| q["hasDeadLetterQueue"].as_bool() != Some(true))
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if !no_dlq.is_empty() {
+        out.push(finding(
+            snapshot,
+            "queue-no-dlq",
+            Severity::Advisory,
+            format!(
+                "{} queue{} with no dead-letter target",
+                no_dlq.len(),
+                if no_dlq.len() == 1 { "" } else { "s" },
+            ),
+            format!(
+                "{} ha{} no redrive policy. A message that cannot be processed goes back on \
+                 the queue and is retried indefinitely — burning consumer capacity on work \
+                 that will never succeed, and hiding the failure from anybody watching depth, \
+                 because the depth does not change.",
+                join_with_overflow(&no_dlq, 6),
+                if no_dlq.len() == 1 { "s" } else { "ve" },
+            ),
+            vec![Evidence::Setting {
+                key: "RedrivePolicy".to_string(),
+                value: "unset".to_string(),
+                source: "s3/sqs attributes".to_string(),
+            }],
+            Some(Suggestion {
+                setting: "RedrivePolicy".to_string(),
+                current: "unset".to_string(),
+                proposed: "a dead-letter queue with a maxReceiveCount of 3 to 5".to_string(),
+                apply: Some(
+                    "aws sqs set-queue-attributes --queue-url <url> --attributes \\\n  \
+                     RedrivePolicy='{\"deadLetterTargetArn\":\"<dlq-arn>\",\"maxReceiveCount\":\"5\"}'"
+                        .to_string(),
+                ),
             }),
         ));
     }

@@ -1105,6 +1105,71 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             },
         },
         ServiceDescriptor {
+            kind: ServiceKind::Aws,
+            label: "AWS".to_string(),
+            monogram: "AW".to_string(),
+            // Accents are assigned sequentially with no gaps; this is the next
+            // free slot, and a test enforces it.
+            accent: 26,
+            category: "Cloud".to_string(),
+            blurb: "S3 bucket growth and lifecycle policy, SQS depth and dead-letter \
+                    configuration. One connection is an account and region; buckets and \
+                    queues are components inside it."
+                .to_string(),
+            // Empty for real AWS, which resolves endpoints itself. A value
+            // here means an emulator or a private gateway, and also switches
+            // S3 to path-style addressing — virtual-hosted style would try to
+            // resolve `bucket.localhost` and fail.
+            endpoint: FieldSpec::new("endpoint", "Endpoint URL", FieldKind::Text)
+                .placeholder("leave empty for real AWS")
+                .help(
+                    "Only for an emulator or a private gateway — http://localhost:4566 for \
+                     LocalStack or Floci. Empty uses AWS's own endpoints.",
+                ),
+            username: Some(
+                FieldSpec::new("__username", "Access key id", FieldKind::Text)
+                    .placeholder("leave empty to use the default credential chain")
+                    .help(
+                        "Empty is usually right: on EC2 or in a pod, the instance or service \
+                         account role should provide credentials rather than root holding a \
+                         key.",
+                    ),
+            ),
+            credential: Some(token(
+                "Secret access key",
+                "Stored in the keychain. Leave empty to use the environment, a shared \
+                 credentials file, or an instance role.",
+            )),
+            fields: vec![
+                FieldSpec::new("region", "Region", FieldKind::Text)
+                    .default(serde_json::json!("us-east-1"))
+                    .help("One connection covers one region."),
+                FieldSpec::new("queueDepthWarn", "Queue backlog warning", FieldKind::Number)
+                    .default(serde_json::json!(1000))
+                    .range(1.0, 10_000_000.0)
+                    .help("Total messages waiting across all queues before this is degraded."),
+                FieldSpec::new("queueStalledWarn", "Unattended warning", FieldKind::Number)
+                    .default(serde_json::json!(1))
+                    .range(1.0, 1_000_000.0)
+                    .help(
+                        "Messages waiting with nothing in flight means no consumer is reading. \
+                         Worse than a deep queue that is moving, so the threshold is lower.",
+                    ),
+                FieldSpec::new("bucketBytesWarn", "Storage warning", FieldKind::Number)
+                    .help(
+                        "Total stored bytes worth warning about. Leave empty for none — a \
+                         number with no limit still gets a growth rate, just no deadline.",
+                    ),
+            ],
+            default_poll_secs: 60,
+            capabilities: Capabilities {
+                // CloudTrail is a different service with a different design.
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
             kind: ServiceKind::Kafka,
             label: "Kafka".to_string(),
             monogram: "KF".to_string(),

@@ -68,6 +68,14 @@ k8s-openapi = { version = "0.28.0", default-features = false, features = ["v1_33
 # `install_crypto_provider()` in lib.rs resolves it once at startup.
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 redis = { version = "1.5.0", default-features = false, features = ["tokio-comp"] }
+# AWS. The SDK rather than hand-rolled HTTP: S3 and SQS are simple enough to
+# call directly, but SigV4 signing is not, and getting request signing subtly
+# wrong is the kind of bug that fails closed in testing and open in production.
+# `behavior-version-latest` is mandatory — the SDK panics at construction
+# without it rather than picking a default that could change underneath us.
+aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "rustls"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "rustls"] }
+aws-sdk-sqs = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "rustls"] }
 # `compat-3-3-0` and a bson major are mandatory, not optional: the crate has a
 # compile_error! for each. Turning default features off drops them, so they are
 # named here rather than pulling in the default OpenSSL-backed TLS stack.

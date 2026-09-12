@@ -42,7 +42,9 @@ fn profile(id: &str, kind: ServiceKind, endpoint: &str) -> ConnectionProfile {
         name: id.to_string(),
         kind,
         endpoint: endpoint.to_string(),
-        username: None,
+        // AWS reads this as the access key id; every other collector here
+        // authenticates with the secret alone and ignores it.
+        username: matches!(kind, ServiceKind::Aws).then(|| "test".to_string()),
         has_secret: true,
         enabled: true,
         poll_interval_secs: 15,
@@ -329,4 +331,242 @@ async fn the_containers_show_which_have_no_memory_limit() {
         "the unlimited demo cache should be named: {}",
         unlimited.detail
     );
+}
+
+// ----------------------------------------------------------------------- aws
+
+const AWS: &str = "http://localhost:4566";
+
+/// Root's AWS collector against a running emulator.
+///
+/// The point is not that Floci works — it is that the collector reads a real
+/// AWS API surface, over a real signed request, and produces the components
+/// and configuration the rules will later need. A collector that only ever
+/// ran against a mocked HTTP response would not have proved that SigV4, path
+/// style addressing or the SDK's error shapes are right.
+#[tokio::test]
+#[ignore]
+async fn aws_reports_buckets_and_queues_from_a_live_emulator() {
+    let (_collector, snapshot) = connect("demo-aws", ServiceKind::Aws, AWS, Some("test"))
+        .await
+        .expect("the AWS emulator should be up — `docker compose -f demo/compose.yml up -d`");
+
+    println!("demo aws: {:?} — {}", snapshot.health, snapshot.summary);
+    for metric in &snapshot.metrics {
+        println!("  metric {} = {}", metric.key, metric.value);
+    }
+
+    let buckets = snapshot
+        .sections
+        .iter()
+        .find(|s| s.id == "buckets")
+        .expect("a buckets section");
+    let queues = snapshot
+        .sections
+        .iter()
+        .find(|s| s.id == "queues")
+        .expect("a queues section");
+
+    for row in &buckets.rows {
+        println!("  bucket {} — {}", row.name, row.summary);
+    }
+    for row in &queues.rows {
+        println!("  queue {} — {}", row.name, row.summary);
+    }
+
+    assert!(
+        buckets.rows.iter().any(|r| r.name == "root-demo-uploads"),
+        "the seeder creates this bucket"
+    );
+    assert!(
+        queues.rows.iter().any(|r| r.name == "root-demo-jobs"),
+        "the seeder creates this queue"
+    );
+
+    // The seeder writes objects continuously, so this must be non-zero — a
+    // zero here means the walk is not actually reading the bucket.
+    let stored = snapshot
+        .metrics
+        .iter()
+        .find(|m| m.key == "stored_bytes")
+        .map(|m| m.value)
+        .expect("a stored bytes metric");
+    assert!(stored > 0.0, "the seeder has been uploading objects");
+
+    // Both sections are tracked, which is what gives each bucket and queue its
+    // own series — the level at which a capacity answer is actionable.
+    assert!(buckets.tracked, "per-bucket growth is the useful series");
+    assert!(queues.tracked);
+}
+
+/// The config half. Lifecycle rules and dead-letter targets are facts no
+/// metric shows, and they are what turn a growing bucket or a deep queue from
+/// a number into a decision.
+#[tokio::test]
+#[ignore]
+async fn aws_config_carries_the_facts_no_metric_shows() {
+    let (collector, _snapshot) = connect("demo-aws", ServiceKind::Aws, AWS, Some("test"))
+        .await
+        .expect("the AWS emulator should be up");
+
+    let documents = collector.config().await.expect("s3/sqs attributes");
+    let body = documents[0].body.as_deref().expect("a body");
+    println!("{body}");
+
+    let parsed: serde_json::Value = serde_json::from_str(body).expect("json");
+
+    // The seeder creates buckets with no lifecycle configuration, which is the
+    // default and the commonest real state.
+    let rules = parsed["buckets"]["root-demo-uploads"]["lifecycleRules"]
+        .as_u64()
+        .expect("a rule count");
+    assert_eq!(rules, 0, "nothing will ever delete from this bucket");
+
+    // And a queue with no redrive policy, which is the other default that
+    // bites: a poison message retries forever.
+    let has_dlq = parsed["queues"]["root-demo-jobs"]["hasDeadLetterQueue"]
+        .as_bool()
+        .expect("a dlq flag");
+    assert!(!has_dlq, "the seeder does not attach the DLQ, on purpose");
+}
+
+/// The rules on top of the AWS collector, against live resources.
+#[tokio::test]
+#[ignore]
+async fn aws_findings_name_the_cost_and_the_missing_consumer() {
+    let (collector, snapshot) = connect("demo-aws", ServiceKind::Aws, AWS, Some("test"))
+        .await
+        .expect("the AWS emulator should be up");
+
+    let documents = collector.config().await.expect("s3/sqs attributes");
+    let stored = snapshot
+        .metrics
+        .iter()
+        .find(|m| m.key == "stored_bytes")
+        .map(|m| m.value)
+        .unwrap_or(0.0);
+
+    let series = vec![climb_to(
+        "stored_bytes",
+        stored,
+        None,
+        inframonitoring_lib::model::MetricUnit::Bytes,
+    )];
+
+    let found = advisor::findings(&snapshot, &documents, &series);
+    for finding in &found {
+        println!("  [{:?}] {} — {}", finding.severity, finding.rule, finding.title);
+        println!("      {}", finding.detail);
+    }
+
+    assert!(
+        found.iter().any(|f| f.rule.contains("bucket-no-lifecycle")),
+        "buckets with no lifecycle policy grow for ever: {found:#?}"
+    );
+    assert!(
+        found.iter().any(|f| f.rule.contains("queue-unattended")),
+        "the seeder fills a queue nothing consumes: {found:#?}"
+    );
+    assert!(
+        found.iter().any(|f| f.rule.contains("queue-no-dlq")),
+        "the seeder's queue has no redrive policy: {found:#?}"
+    );
+
+    // The growth rate is what makes the lifecycle finding actionable without a
+    // declared ceiling.
+    let lifecycle = found
+        .iter()
+        .find(|f| f.rule.contains("bucket-no-lifecycle"))
+        .unwrap();
+    assert!(
+        lifecycle.detail.contains("a day"),
+        "the rate should be stated: {}",
+        lifecycle.detail
+    );
+}
+
+/// The last mile: root's own config file, root's own keychain, every demo
+/// connection polled the way the running app polls them.
+///
+/// Every test above builds a profile by hand. This one proves the estate is
+/// actually *registered* — that the connections exist in root's configuration,
+/// that their credentials resolve out of the keychain, and that each one comes
+/// back healthy. Machine-specific by nature, so it skips rather than fails
+/// when root has never been run here.
+#[tokio::test]
+#[ignore]
+async fn every_demo_connection_is_registered_and_reachable() {
+    use inframonitoring_lib::{config, secrets};
+
+    let Some(base) = dirs_config() else {
+        eprintln!("skipping: no config directory for this platform");
+        return;
+    };
+    let path = config::config_path(&base);
+    if !path.exists() {
+        eprintln!("skipping: root has no config at {}", path.display());
+        return;
+    }
+
+    let loaded = config::AppConfig::load(&path).expect("root's config should parse");
+    let demo: Vec<_> = loaded
+        .profiles
+        .iter()
+        .filter(|p| p.id.starts_with("demo-"))
+        .collect();
+
+    assert!(
+        !demo.is_empty(),
+        "no demo connections registered in {}",
+        path.display()
+    );
+
+    let mut failures: Vec<String> = Vec::new();
+    for profile in &demo {
+        // Reported rather than swallowed: a credential that cannot be read
+        // and a credential that was never set produce the same "unreachable",
+        // and they are fixed in completely different places.
+        let secret = match secrets::get_secret(&profile.secret_key()).await {
+            Ok(secret) => {
+                println!(
+                    "  {:<20} secret: {}",
+                    profile.name,
+                    if secret.is_some() { "read" } else { "not set" }
+                );
+                secret
+            }
+            Err(e) => {
+                failures.push(format!("{}: keychain — {e}", profile.name));
+                None
+            }
+        };
+        match build_collector(profile, secret).await {
+            Ok(collector) => match collector.collect().await {
+                Ok(snapshot) => {
+                    println!(
+                        "  {:<20} {:?}  {}",
+                        profile.name, snapshot.health, snapshot.summary
+                    );
+                    if snapshot.health == Health::Down {
+                        failures.push(format!("{}: {}", profile.name, snapshot.summary));
+                    }
+                }
+                Err(e) => failures.push(format!("{}: collect failed — {e}", profile.name)),
+            },
+            Err(e) => failures.push(format!("{}: could not build — {e}", profile.name)),
+        }
+    }
+
+    assert!(failures.is_empty(), "connections root cannot reach:\n  {}", failures.join("\n  "));
+}
+
+/// Where the running app keeps its configuration.
+fn dirs_config() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let base = std::path::PathBuf::from(home);
+    #[cfg(target_os = "macos")]
+    let dir = base.join("Library/Application Support/com.root.observability");
+    #[cfg(not(target_os = "macos"))]
+    let dir = base.join(".config/com.root.observability");
+    Some(dir)
 }

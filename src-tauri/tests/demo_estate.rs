@@ -570,3 +570,128 @@ fn dirs_config() -> Option<std::path::PathBuf> {
     let dir = base.join(".config/com.root.observability");
     Some(dir)
 }
+
+// ------------------------------------------------------------- what things are
+
+/// The bug this was reported as: in a containerised estate, everything read as
+/// "a container". The demo runs a database, two caches, a proxy and a queue —
+/// and the list said nothing about which was which.
+#[tokio::test]
+#[ignore]
+async fn containers_are_identified_by_what_they_run() {
+    let Some((_, snapshot)) = connect("demo-docker", ServiceKind::Docker, "", None).await else {
+        eprintln!("skipping: no reachable Docker socket");
+        return;
+    };
+
+    let containers = snapshot
+        .sections
+        .iter()
+        .find(|s| s.id == "containers")
+        .expect("a containers section");
+
+    let kind_of = |name: &str| -> Option<String> {
+        containers
+            .rows
+            .iter()
+            .find(|r| r.name == name)
+            .and_then(|r| r.cells.get("kind"))
+            .and_then(|c| match c {
+                inframonitoring_lib::model::CellValue::Text { value } => Some(value.clone()),
+                _ => None,
+            })
+    };
+
+    for name in ["root-demo-db", "root-demo-cache", "root-demo-proxy", "root-demo-queue"] {
+        println!("  {name:<28} {}", kind_of(name).unwrap_or_else(|| "?".into()));
+    }
+    println!(
+        "  {:<28} {}",
+        "root-demo-db-churner",
+        kind_of("root-demo-db-churner").unwrap_or_else(|| "?".into())
+    );
+
+    assert_eq!(kind_of("root-demo-db").as_deref(), Some("PostgreSQL"));
+    assert_eq!(kind_of("root-demo-cache").as_deref(), Some("Redis"));
+    assert_eq!(kind_of("root-demo-proxy").as_deref(), Some("Nginx"));
+    assert_eq!(kind_of("root-demo-queue").as_deref(), Some("RabbitMQ"));
+
+    // The case that makes the port check worth having: same image as the real
+    // database, publishes nothing, runs psql in a loop. Calling this a
+    // PostgreSQL would put a database in the inventory that does not exist.
+    assert_eq!(
+        kind_of("root-demo-db-churner").as_deref(),
+        Some("PostgreSQL (not serving)"),
+        "the churner carries the image but is not a database"
+    );
+
+    // An image root does not recognise says nothing rather than guessing.
+    assert_eq!(kind_of("root-demo-proxy-traffic").as_deref(), Some("—"));
+}
+
+/// The other half of the same bug: the demo's Postgres appears twice — as a
+/// container on the Docker host, and as the `demo-db` connection pointed at
+/// it. Root showed them as unrelated, so an operator could not tell which
+/// container rows were already covered properly.
+///
+/// Needs the demo connections registered in root's own config, so it skips
+/// when they are not.
+#[tokio::test]
+#[ignore]
+async fn a_container_is_linked_to_the_connection_that_watches_it() {
+    use inframonitoring_lib::{config, identify};
+
+    let Some(base) = dirs_config() else { return };
+    let path = config::config_path(&base);
+    if !path.exists() {
+        eprintln!("skipping: root has no config here");
+        return;
+    }
+    let loaded = config::AppConfig::load(&path).expect("root's config should parse");
+
+    let Some((_, snapshot)) = connect("demo-docker", ServiceKind::Docker, "", None).await else {
+        eprintln!("skipping: no reachable Docker socket");
+        return;
+    };
+    let containers = snapshot
+        .sections
+        .iter()
+        .find(|s| s.id == "containers")
+        .expect("a containers section");
+
+    // The supervisor does this join on every poll; done here directly because
+    // a test does not run the supervisor.
+    let connections: Vec<(String, String)> = loaded
+        .profiles
+        .iter()
+        .filter(|p| p.enabled && p.kind != ServiceKind::Docker)
+        .map(|p| (p.id.clone(), p.endpoint.clone()))
+        .collect();
+
+    let watcher_of = |name: &str| -> Option<String> {
+        let row = containers.rows.iter().find(|r| r.name == name)?;
+        let ports: Vec<u16> = row
+            .extra
+            .get("hostPorts")?
+            .as_array()?
+            .iter()
+            .filter_map(|v| v.as_u64())
+            .map(|p| p as u16)
+            .collect();
+        identify::monitored_by(
+            &ports,
+            connections.iter().map(|(id, e)| (id.as_str(), e.as_str())),
+        )
+    };
+
+    for name in ["root-demo-db", "root-demo-cache", "root-demo-proxy"] {
+        println!("  {name:<22} watched by {:?}", watcher_of(name));
+    }
+
+    assert_eq!(watcher_of("root-demo-db").as_deref(), Some("demo-db"));
+    assert_eq!(watcher_of("root-demo-cache").as_deref(), Some("demo-cache"));
+
+    // Publishes nothing, so nothing can be pointed at it — correctly unlinked
+    // rather than guessed at from its image.
+    assert_eq!(watcher_of("root-demo-db-churner"), None);
+}

@@ -105,7 +105,16 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
         loop {
             // --- Health snapshot
             match collector.collect().await {
-                Ok(snapshot) => {
+                Ok(mut snapshot) => {
+                    // Say which connection already watches each component.
+                    //
+                    // Done here rather than in the collector because it is a
+                    // join across connections, and a collector that knew about
+                    // its siblings would be a collector that could not be
+                    // tested alone. This is the only place a finished snapshot
+                    // and the whole configuration are both in hand.
+                    link_to_connections(&state, &mut snapshot).await;
+
                     // `insert` hands back the snapshot this one replaces, which
                     // is exactly the input the change engine needs — no second
                     // copy of the previous state has to be kept anywhere.
@@ -198,4 +207,66 @@ pub async fn poll_once(state: &Arc<AppState>, profile_id: &str) -> Result<crate:
     let derived = alerts_from_snapshot(&snapshot);
     state.alerts.write().await.reconcile(profile_id, derived);
     Ok(snapshot)
+}
+
+/// Mark components that a configured connection is already monitoring.
+///
+/// In a containerised estate the same Postgres appears twice: once as a
+/// container on a Docker host, once as the Postgres connection pointed at it.
+/// Root showed them as unrelated, so an operator reading the container list
+/// could not tell which rows were already covered properly and which were only
+/// being watched as processes.
+///
+/// The match is on published host port, not on the image: a connection to
+/// `localhost:5442` and a container publishing 5442 are the same service, and
+/// that is a fact rather than a resemblance. It also survives an image root
+/// does not recognise.
+async fn link_to_connections(state: &Arc<AppState>, snapshot: &mut crate::model::HealthSnapshot) {
+    // Only the Docker host itself hosts other people's services this way.
+    if !matches!(
+        snapshot.kind,
+        crate::model::ServiceKind::Docker | crate::model::ServiceKind::Podman
+    ) {
+        return;
+    }
+
+    let connections: Vec<(String, String)> = {
+        let config = state.config.read().await;
+        config
+            .profiles
+            .iter()
+            .filter(|p| p.enabled && p.id != snapshot.profile_id)
+            .map(|p| (p.id.clone(), p.endpoint.clone()))
+            .collect()
+    };
+    if connections.is_empty() {
+        return;
+    }
+
+    for section in &mut snapshot.sections {
+        if section.id != "containers" {
+            continue;
+        }
+        for row in &mut section.rows {
+            let ports: Vec<u16> = row
+                .extra
+                .get("hostPorts")
+                .and_then(|v| v.as_array())
+                .map(|values| values.iter().filter_map(|v| v.as_u64()).map(|p| p as u16).collect())
+                .unwrap_or_default();
+
+            let Some(watcher) = crate::identify::monitored_by(
+                &ports,
+                connections.iter().map(|(id, e)| (id.as_str(), e.as_str())),
+            ) else {
+                continue;
+            };
+
+            // Alongside the ports rather than replacing them, so a later
+            // reader can still see what the match was made on.
+            if let Some(extra) = row.extra.as_object_mut() {
+                extra.insert("watchedBy".to_string(), serde_json::Value::String(watcher));
+            }
+        }
+    }
 }

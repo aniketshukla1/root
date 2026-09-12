@@ -314,12 +314,74 @@ impl Collector for DockerCollector {
                 .and_then(|l| l.get("com.docker.compose.project"))
                 .cloned();
 
+            // What this container actually is, rather than "a container".
+            //
+            // A containerised estate is twenty systems of a dozen kinds, and a
+            // list that calls all of them containers is true and useless. The
+            // image says what software is present; publishing that software's
+            // port says it is serving, which is what separates a database from
+            // a container that merely has psql in it.
+            // Container-side ports that are published, for identification —
+            // a Postgres serves on 5432 whatever host port it is mapped to.
+            let published: Vec<u16> = summary
+                .ports
+                .as_ref()
+                .map(|ports| {
+                    ports
+                        .iter()
+                        .filter(|p| p.public_port.is_some())
+                        .filter_map(|p| u16::try_from(p.private_port).ok())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // Host-side ports, for the connection join — a profile's endpoint
+            // names the host port, not the container's.
+            let host_ports: Vec<u16> = summary
+                .ports
+                .as_ref()
+                .map(|ports| {
+                    let mut seen: Vec<u16> = ports
+                        .iter()
+                        .filter_map(|p| p.public_port)
+                        .filter_map(|p| u16::try_from(p).ok())
+                        .collect();
+                    // Docker reports one entry per address family, so the same
+                    // port arrives twice.
+                    seen.sort_unstable();
+                    seen.dedup();
+                    seen
+                })
+                .unwrap_or_default();
+
+            let identity = summary
+                .image
+                .as_deref()
+                .and_then(|image| crate::identify::identify(image, &published));
+
+            let kind_text = match &identity {
+                Some(id) if id.serving => id.kind.label().to_string(),
+                // Named but hedged: the software is there and nothing is
+                // listening on its port, which is usually a client, a sidecar
+                // or a job. Saying "Postgres" flatly would put a database in
+                // the inventory that does not exist.
+                Some(id) => format!("{} (not serving)", id.kind.label()),
+                None => "—".to_string(),
+            };
+
             let mut row = Row::new(&id, &name, health)
                 .summary(state_text.clone())
                 .cell("name", CellValue::text(&name))
                 .cell("state", CellValue::text(&state_text))
+                .cell("kind", CellValue::text(kind_text))
+
                 .cell("image", CellValue::maybe_text(summary.image.clone()))
-                .cell("project", CellValue::maybe_text(project));
+                .cell("project", CellValue::maybe_text(project))
+                // Not a cell: every cell must have a declared column, and this
+                // is data for the supervisor's connection join rather than
+                // anything to render. A profile's endpoint names the host
+                // port, so that is the side recorded here.
+                .extra(serde_json::json!({ "hostPorts": host_ports }));
 
             match sample {
                 Some(sample) => {
@@ -389,6 +451,10 @@ impl Collector for DockerCollector {
             vec![
                 ColumnSpec::text("name", "Container").primary(),
                 ColumnSpec::text("state", "State"),
+                // Before CPU: what a thing *is* comes before how hard it is
+                // working, and in a containerised estate this is the column
+                // that turns a list of names into an inventory.
+                ColumnSpec::text("kind", "Type"),
                 ColumnSpec::gauge("cpu", "CPU", MetricUnit::Percent),
                 ColumnSpec::gauge("memory", "Memory", MetricUnit::Bytes),
                 // A container's image moving is a redeploy; the change engine

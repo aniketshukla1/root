@@ -23,6 +23,7 @@ pub mod backtest;
 pub mod configsource;
 pub mod redact;
 pub mod history;
+pub mod identify;
 pub mod incidents;
 pub mod journal;
 pub mod ingest;

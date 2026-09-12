@@ -18,6 +18,13 @@ import { cx, ServiceMark } from "./primitives";
  * Clicking a healthy one takes you straight to it, because there is nothing to
  * explain; clicking a failing one opens the summary first, because that is the
  * question you actually had.
+ *
+ * Each group is drawn as its own recessed block. That is not decoration: the
+ * blocks used to flow as bare cell grids separated by whitespace, and two
+ * neighbouring sets of containers — same colour, same 14px square, a gap
+ * between them barely wider than the gap inside them — read as one grid. A
+ * count you cannot bound is a count you cannot trust, so the boundary is
+ * drawn rather than implied.
  */
 export interface HeatmapGroup {
   key: string;
@@ -82,6 +89,23 @@ export function groupEntities(entities: Entity[]): HeatmapGroup[] {
 /** Cells beyond this in one block stop helping and start costing frames. */
 const CELL_CAP = 480;
 
+/**
+ * A block has to be wide enough for its own caption, not merely for its cells:
+ * a group of one is still labelled `demo-cache-healthy / Slow commands`. This
+ * is what that caption needs at 10px mono, and it happens to hold nine cells
+ * to a row, which is a fair shape for the small blocks that make up most of
+ * an estate.
+ */
+const MIN_BLOCK = 184;
+
+/**
+ * Past this many cells a block earns a second track. Left in one it becomes a
+ * narrow column twenty rows deep, which is the one shape this display is bad
+ * at — you can no longer take the whole group in at a glance, which is the
+ * entire point of drawing it as squares.
+ */
+const WIDE_BLOCK_AT = 24;
+
 export function Heatmap({
   entities,
   issues,
@@ -105,25 +129,51 @@ export function Heatmap({
 
   return (
     <div className="relative">
-      <div className="flex flex-wrap gap-x-6 gap-y-4">
+      {/* Equal tracks rather than a wrapping row. Blocks used to be as wide as
+          their own caption, so a long connection name pushed its neighbour
+          half a screen away while a short one sat flush against it — the
+          spacing encoded the length of a label and nothing else. */}
+      <div
+        className="grid items-start gap-2"
+        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${MIN_BLOCK}px, 1fr))` }}
+      >
         {groups.map((group) => (
-          <div key={group.key} className="min-w-0">
-            <div className="mb-2 flex items-center gap-2">
-              <ServiceMark descriptor={catalog.get(group.kind)} size={14} />
-              <span className="num truncate text-2xs text-ink-2">{group.profileName}</span>
-              <span className="num text-2xs text-ink-4">{group.section}</span>
-              <span className="num text-2xs text-ink-4">{group.entities.length}</span>
-              {group.down > 0 && (
-                <span className="num text-2xs text-crit">{group.down} down</span>
-              )}
-              {group.degraded > 0 && (
-                <span className="num text-2xs text-warn">{group.degraded} degraded</span>
-              )}
+          <div
+            key={group.key}
+            className={cx(
+              "min-w-0 rounded-sm border border-line-soft bg-sunk",
+              // Only once the container is wide enough that a second track
+              // certainly exists; spanning into a track that isn't there
+              // grows the grid instead of the block.
+              group.entities.length > WIDE_BLOCK_AT && "@3xl:col-span-2",
+            )}
+          >
+            <div className="border-b border-line-soft px-2 py-1.5">
+              <div className="flex items-center gap-1.5">
+                <ServiceMark descriptor={catalog.get(group.kind)} size={14} />
+                <span className="num truncate text-2xs text-ink-2">{group.profileName}</span>
+                <span className="num ml-auto shrink-0 text-2xs text-ink-4">
+                  {group.entities.length}
+                </span>
+              </div>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <span className="num truncate text-2xs text-ink-4">{group.section}</span>
+                {(group.down > 0 || group.degraded > 0) && (
+                  <span className="num ml-auto shrink-0 text-2xs">
+                    {group.down > 0 && <span className="text-crit">{group.down} down</span>}
+                    {group.down > 0 && group.degraded > 0 && (
+                      <span className="text-ink-4"> · </span>
+                    )}
+                    {group.degraded > 0 && (
+                      <span className="text-warn">{group.degraded} degraded</span>
+                    )}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div
-              className="flex flex-wrap gap-[3px]"
-              style={{ maxWidth: cellsWide(group.entities.length) * 17 }}
+              className="flex flex-wrap gap-[3px] p-2"
               onMouseLeave={() => setHover(null)}
             >
               {group.entities.slice(0, CELL_CAP).map((entity) => (
@@ -147,11 +197,6 @@ export function Heatmap({
       {hover && <Tip entity={hover.entity} x={hover.x} y={hover.y} />}
     </div>
   );
-}
-
-/** Blocks stay squarish, so a group of 200 does not become one long ribbon. */
-function cellsWide(count: number): number {
-  return Math.max(6, Math.min(24, Math.ceil(Math.sqrt(count * 1.6))));
 }
 
 function Cell({
@@ -185,7 +230,10 @@ function Cell({
       style={
         healthy
           ? {
-              background: `color-mix(in srgb, ${color} 26%, var(--color-panel))`,
+              // Mixed against the block's own ground, not the panel's. A
+              // healthy cell is meant to be a tint of the surface it sits on;
+              // against the wrong surface it reads as a faint lump instead.
+              background: `color-mix(in srgb, ${color} 26%, var(--color-sunk))`,
               boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 55%, transparent)`,
             }
           : { background: color, boxShadow: `inset 0 0 0 1px ${color}` }

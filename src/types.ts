@@ -286,6 +286,54 @@ export interface Trend {
  * component ones — an NFS export, a container's volume, a single hot node —
  * are one row deep in a place no connection-level view reaches.
  */
+export type RuntimeKind = "undeclared" | "container" | "pod" | "host" | "managed";
+
+/**
+ * Where a connection actually runs, as declared.
+ *
+ * root infers what a container is from its image and its published port. That
+ * is reading rather than guessing, but nothing checks it — a declaration gives
+ * the inference something to be wrong against, and the disagreements are the
+ * point.
+ */
+export interface Runtime {
+  kind: RuntimeKind;
+  /** The Docker host or Kubernetes cluster it runs on. */
+  hostProfileId?: string;
+  /** The container or pod name, as the host reports it. */
+  name?: string;
+}
+
+export type Discrepancy =
+  | { kind: "hostNotConfigured"; hostProfileId: string }
+  | { kind: "notFound"; host: string; name: string }
+  | { kind: "disagrees"; host: string; declared: string; inferred: string }
+  | { kind: "notServing"; host: string; name: string }
+  | { kind: "incomplete" };
+
+export interface RuntimeCheck {
+  profileId: string;
+  profileName: string;
+  declared: Runtime;
+  discrepancies: Discrepancy[];
+}
+
+/** A component that looks like a service with nothing watching it. */
+export interface Uncovered {
+  hostProfileId: string;
+  hostLabel: string;
+  name: string;
+  kind: ServiceKind;
+}
+
+export interface RuntimeReport {
+  /** Only connections with something to say — agreement is not news. */
+  checks: RuntimeCheck[];
+  uncovered: Uncovered[];
+  declared: number;
+  total: number;
+}
+
 /** Where a connection's configuration lives. Declared, never discovered. */
 export interface ConfigSource {
   id: string;
@@ -782,6 +830,7 @@ export interface ConnectionProfile {
    */
   configSources: ConfigSource[];
   historySource?: HistorySource;
+  runtime: Runtime;
 }
 
 export type LlmProviderKind = "anthropic" | "open_ai_compatible" | "ollama";

@@ -32,6 +32,7 @@ pub mod model;
 pub mod patterns;
 pub mod promquery;
 pub mod registry;
+pub mod runtime;
 pub mod scenarios;
 pub mod secrets;
 pub mod state;
@@ -146,6 +147,7 @@ pub fn run() {
             commands::get_long_history,
             commands::run_backtest,
             commands::clear_claims,
+            commands::get_runtime_report,
             commands::run_scenarios,
             commands::list_scenarios,
             commands::get_ingest_settings,

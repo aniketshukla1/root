@@ -52,6 +52,7 @@ fn profile(id: &str, kind: ServiceKind, endpoint: &str) -> ConnectionProfile {
         depends_on: Vec::new(),
         config_sources: Vec::new(),
         history_source: None,
+            runtime: Default::default(),
         metadata: ProfileOptions::default(),
     }
 }
@@ -694,4 +695,94 @@ async fn a_container_is_linked_to_the_connection_that_watches_it() {
     // Publishes nothing, so nothing can be pointed at it — correctly unlinked
     // rather than guessed at from its image.
     assert_eq!(watcher_of("root-demo-db-churner"), None);
+}
+
+/// A declared runtime, checked against what root can actually see.
+///
+/// root reads a container's image and published port to work out what it is,
+/// and nothing checks that answer — so a wrong one is wrong quietly. A
+/// declaration gives it something to be wrong against, and this is the case
+/// the whole feature exists for: `demo-proxy` is declared as
+/// `root-demo-nginx`, and the real container is `root-demo-proxy`.
+#[tokio::test]
+#[ignore]
+async fn a_wrong_declaration_is_caught_against_the_live_estate() {
+    use inframonitoring_lib::{config, runtime};
+
+    let Some(base) = dirs_config() else { return };
+    let path = config::config_path(&base);
+    if !path.exists() {
+        eprintln!("skipping: root has no config here");
+        return;
+    }
+    let loaded = config::AppConfig::load(&path).expect("root's config should parse");
+
+    let Some((_, snapshot)) = connect("demo-docker", ServiceKind::Docker, "", None).await else {
+        eprintln!("skipping: no reachable Docker socket");
+        return;
+    };
+    let containers = snapshot
+        .sections
+        .iter()
+        .find(|s| s.id == "containers")
+        .expect("a containers section");
+
+    let components: Vec<runtime::Component<'_>> = containers
+        .rows
+        .iter()
+        .map(|row| {
+            let kind_text = row.cells.get("kind").and_then(|c| match c {
+                inframonitoring_lib::model::CellValue::Text { value } => Some(value.as_str()),
+                _ => None,
+            });
+            runtime::Component {
+                name: row.name.as_str(),
+                identified: kind_text
+                    .filter(|t| *t != "—")
+                    .and_then(|t| {
+                        inframonitoring_lib::registry::kind_from_label(
+                            t.trim_end_matches(" (not serving)"),
+                        )
+                    }),
+                serving: kind_text.is_some_and(|t| t != "—" && !t.contains("not serving")),
+                watched_by: None,
+            }
+        })
+        .collect();
+
+    let mut reported = 0;
+    for profile in loaded.profiles.iter().filter(|p| p.runtime.is_declared()) {
+        let found = runtime::reconcile(
+            &profile.id,
+            &profile.runtime,
+            true,
+            "demo-docker",
+            &components,
+        );
+        for d in &found {
+            println!("  {:<20} {}", profile.name, d.describe());
+            reported += 1;
+        }
+        if found.is_empty() && profile.runtime.kind.is_hosted() {
+            println!("  {:<20} agrees", profile.name);
+        }
+
+        // The planted error, and the only one that must be reported.
+        if profile.id == "demo-proxy" {
+            assert_eq!(
+                found,
+                vec![runtime::Discrepancy::NotFound {
+                    host: "demo-docker".into(),
+                    name: "root-demo-nginx".into(),
+                }],
+                "a declaration naming a container that does not exist must be caught"
+            );
+        }
+        // The correct ones must stay quiet, or the check is just noise.
+        if profile.id == "demo-db" || profile.id == "demo-cache" {
+            assert!(found.is_empty(), "{}: {found:#?}", profile.name);
+        }
+    }
+
+    assert_eq!(reported, 1, "exactly the planted error, nothing else");
 }

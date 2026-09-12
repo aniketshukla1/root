@@ -1360,3 +1360,15 @@ mod tests {
         );
     }
 }
+
+/// The kind a descriptor label names, if any.
+///
+/// The inverse of `ServiceKind::label`, resolved through the registry rather
+/// than a second hand-written match — a mapping written twice is a mapping
+/// that will disagree with itself.
+pub fn kind_from_label(label: &str) -> Option<crate::model::ServiceKind> {
+    catalog()
+        .into_iter()
+        .find(|d| d.label.eq_ignore_ascii_case(label.trim()))
+        .map(|d| d.kind)
+}

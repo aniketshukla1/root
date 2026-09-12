@@ -51,6 +51,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_long_history: () => [],
   run_backtest: ({ profileId }) => fixtures.backtest(profileId as string),
   run_scenarios: () => fixtures.scenarios(),
+  get_runtime_report: () => fixtures.runtimeReport(),
   get_health_runs: () => fixtures.healthRuns(),
   get_topology: () => fixtures.topology(),
   get_incidents: () => fixtures.incidents(),
@@ -122,6 +123,7 @@ import type {
   Finding,
   Recall,
   RecordedVerdict,
+  RuntimeReport,
   Replay,
   Scorecard,
   SuiteResult,
@@ -251,6 +253,12 @@ export const api = {
    * rules against embedded fixtures, so it works on a fresh install.
    */
   runScenarios: () => invoke<SuiteResult>("run_scenarios"),
+
+  /**
+   * Declared runtimes checked against what root can see, plus the containers
+   * nothing is watching. Only disagreements come back — agreement is not news.
+   */
+  getRuntimeReport: () => invoke<RuntimeReport>("get_runtime_report"),
 
   runBacktest: (profileId: string, days?: number, stepMinutes?: number) =>
     invoke<Replay>("run_backtest", {

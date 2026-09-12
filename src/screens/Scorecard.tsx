@@ -10,7 +10,9 @@ import type {
   RecallScore,
   Replay,
   RuleBehaviour,
+  Discrepancy,
   RuleScore,
+  RuntimeReport,
   ScenarioOutcome,
   Scorecard as Card,
   SuiteResult,
@@ -130,6 +132,7 @@ export function Scorecard({
                 measurement that does not have to wait for ratings to
                 accumulate — it reads history that is already there. Hiding it
                 until somebody has rated something had it exactly backwards. */}
+            <RuntimeReconciliation />
             <Scenarios />
             <Backtest connections={connections} />
           </>
@@ -186,6 +189,7 @@ export function Scorecard({
               )}
             </Panel>
 
+            <RuntimeReconciliation />
             <Scenarios />
             <Backtest connections={connections} />
 
@@ -743,5 +747,135 @@ function describeFailure(failure: Failure): string {
       return `${failure.rule} fired and should not have ("${failure.title}") — the noise regression.`;
     case "wrongSeverity":
       return `${failure.rule} fired at ${failure.actual}, expected ${failure.expected} — right problem, wrong urgency.`;
+  }
+}
+
+/**
+ * Where root's own reading of the estate disagrees with what somebody said.
+ *
+ * root works out what a container is from its image and its published port.
+ * That is reading rather than guessing, but nothing checks it — so a wrong
+ * answer is wrong quietly, and a correct inference is indistinguishable from a
+ * plausible one.
+ *
+ * A declaration gives it something to be wrong against. This panel is the
+ * result: only the disagreements, because a declaration root agrees with is
+ * not news and listing every one would bury the few that matter.
+ *
+ * The second half is coverage — containers that look like services with
+ * nothing pointed at them. That question is unanswerable without declarations,
+ * because root cannot tell a gap from a deliberate omission until somebody
+ * says which it is.
+ */
+function RuntimeReconciliation() {
+  const [report, setReport] = useState<RuntimeReport>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    api
+      .getRuntimeReport()
+      .then(setReport)
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+
+  if (error) {
+    return (
+      <Panel title="Where things run">
+        <Empty title="Could not check" hint={error} />
+      </Panel>
+    );
+  }
+  if (!report) return null;
+
+  const clean = report.checks.length === 0 && report.uncovered.length === 0;
+
+  return (
+    <Panel
+      title="Where things run"
+      subtitle={
+        report.declared === 0
+          ? "nothing declared — root's own reading is unchecked"
+          : `${report.declared} of ${report.total} connections say where they run`
+      }
+    >
+      {report.declared === 0 ? (
+        <Empty
+          title="No runtimes declared"
+          hint="root reads a container's image and published port to work out what it is, and nothing checks that answer. Set 'Where this runs' on a connection and the two get compared — a disagreement is either root being wrong or the estate having changed, and both are worth knowing."
+        />
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {clean && (
+            <p className="num text-2xs leading-relaxed text-ink-4">
+              Every declaration matches what root found. That covers{" "}
+              {report.declared} of {report.total} connections — the rest are running on
+              root's own reading, unchecked.
+            </p>
+          )}
+
+          {report.checks.map((check) => (
+            <div
+              key={check.profileId}
+              className="rounded-md border border-line bg-page p-2.5"
+              style={{ borderLeftColor: "var(--color-warn)", borderLeftWidth: 2 }}
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs text-ink">{check.profileName}</span>
+                <Tag>{check.declared.kind}</Tag>
+              </div>
+              {check.discrepancies.map((d, i) => (
+                <p key={i} className="mt-1 max-w-[92ch] text-xs leading-relaxed text-ink-2">
+                  {describeDiscrepancy(d)}
+                </p>
+              ))}
+            </div>
+          ))}
+
+          {/* Coverage. Only serving components count — a container carrying a
+              database image without running one needs no connection, and
+              listing it would bury the real gaps. */}
+          {report.uncovered.length > 0 && (
+            <div className="rounded-md border border-line bg-page p-2.5">
+              <div className="text-xs text-ink">
+                {report.uncovered.length} service
+                {report.uncovered.length === 1 ? "" : "s"} nothing is watching
+              </div>
+              <p className="mt-1 max-w-[92ch] text-xs leading-relaxed text-ink-2">
+                Running, publishing the port their image implies, and no connection pointed
+                at them. Either an oversight or deliberate — declaring one is how you say
+                which.
+              </p>
+              <div className="mt-1.5 flex flex-col gap-1 border-t border-line-soft pt-1.5">
+                {report.uncovered.map((gap) => (
+                  <div
+                    key={`${gap.hostProfileId}:${gap.name}`}
+                    className="num flex items-baseline gap-2 text-2xs"
+                  >
+                    <span className="text-ink-2">{gap.name}</span>
+                    <Tag>{gap.kind}</Tag>
+                    <span className="ml-auto text-ink-4">on {gap.hostLabel}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function describeDiscrepancy(d: Discrepancy): string {
+  switch (d.kind) {
+    case "hostNotConfigured":
+      return `Declared to run on \`${d.hostProfileId}\`, which is not a configured connection — the host was probably removed, and this declaration now describes nothing.`;
+    case "notFound":
+      return `Declared as \`${d.name}\` on ${d.host}, which has no component by that name. It was renamed, moved, or is not running.`;
+    case "disagrees":
+      return `Declared as \`${d.declared}\` on ${d.host}, but the published port matches \`${d.inferred}\` instead. One of the two is wrong and root cannot tell which.`;
+    case "notServing":
+      return `\`${d.name}\` on ${d.host} exists but is not publishing the port its image implies, so it may be a sidecar or a job rather than the service itself.`;
+    case "incomplete":
+      return "Declared as hosted, but without both a host and a name there is nothing to check it against.";
   }
 }

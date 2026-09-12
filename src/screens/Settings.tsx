@@ -6,6 +6,7 @@ import { applyDensity, readDensity, type Density } from "../density";
 import { applyTheme, readTheme, watchSystemTheme, type Theme } from "../theme";
 import type {
   ConfigSource,
+  Runtime,
   HistorySource,
   AgentMode,
   AppConfig,
@@ -318,6 +319,7 @@ export function blankProfile(descriptor: ServiceDescriptor): ConnectionProfile {
     pollIntervalSecs: descriptor.defaultPollSecs,
     dependsOn: [],
     configSources: [],
+    runtime: { kind: "undeclared" },
     options,
     metadata: {},
   };
@@ -616,6 +618,19 @@ export function ProfileForm({
             <ConfigSources
               sources={draft.configSources}
               onChange={(configSources) => setDraft((d) => ({ ...d, configSources }))}
+            />
+          </Field>
+
+          <Field
+            label="Where this runs"
+            help="Optional, and root works the same without it. root already reads a container's image and published port to work out what it is — but nothing checks that, so a wrong answer is wrong quietly. Saying where this actually runs gives the inference something to be wrong against, and the disagreements show up on the Scorecard."
+          >
+            <RuntimeField
+              runtime={draft.runtime}
+              hosts={siblings.filter((s) =>
+                ["docker", "podman", "kubernetes"].includes(s.kind),
+              )}
+              onChange={(runtime) => setDraft((d) => ({ ...d, runtime }))}
             />
           </Field>
 
@@ -1663,6 +1678,89 @@ function PrometheusHistory({
             refused rather than having one picked for you, because a forecast for the wrong
             host looks exactly like a forecast for the right one.
           </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Where a connection actually runs, declared rather than inferred.
+ *
+ * Deliberately three small inputs and no browse button. The point is a claim
+ * somebody is willing to make — a picker that listed the running containers
+ * and let you choose one would just be root's own inference wearing a
+ * different hat, and it would agree with itself every time.
+ */
+function RuntimeField({
+  runtime,
+  hosts,
+  onChange,
+}: {
+  runtime: Runtime;
+  /** Docker hosts and Kubernetes clusters — the things that host others. */
+  hosts: ConnectionProfile[];
+  onChange: (runtime: Runtime) => void;
+}) {
+  const hosted = runtime.kind === "container" || runtime.kind === "pod";
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Select
+        value={runtime.kind}
+        onChange={(e) => {
+          const kind = e.target.value as Runtime["kind"];
+          // Clearing the kind clears what belonged to it, rather than leaving
+          // a host and a name attached to "managed service".
+          onChange(
+            kind === "container" || kind === "pod"
+              ? { ...runtime, kind }
+              : { kind },
+          );
+        }}
+      >
+        <option value="undeclared">Not declared</option>
+        <option value="container">A container</option>
+        <option value="pod">A Kubernetes pod</option>
+        <option value="host">A process on a machine</option>
+        <option value="managed">A managed cloud service</option>
+      </Select>
+
+      {hosted && hosts.length === 0 && (
+        <p className="num text-2xs leading-relaxed text-ink-4">
+          No Docker host or Kubernetes cluster is configured, so there is nothing to check
+          this against yet. The declaration is still recorded.
+        </p>
+      )}
+
+      {hosted && hosts.length > 0 && (
+        <>
+          <Select
+            value={runtime.hostProfileId ?? ""}
+            onChange={(e) =>
+              onChange({ ...runtime, hostProfileId: e.target.value || undefined })
+            }
+          >
+            <option value="">Which host…</option>
+            {hosts.map((host) => (
+              <option key={host.id} value={host.id}>
+                {host.name || host.id}
+              </option>
+            ))}
+          </Select>
+          <Input
+            value={runtime.name ?? ""}
+            placeholder={runtime.kind === "pod" ? "pod name" : "container name"}
+            onChange={(e) => onChange({ ...runtime, name: e.target.value || undefined })}
+          />
+          {/* Half a declaration is a claim nobody can verify, so it is worth
+              saying before it is saved rather than reporting it later. */}
+          {(!runtime.hostProfileId || !runtime.name) && (
+            <p className="num text-2xs leading-relaxed text-ink-4">
+              Both a host and a name are needed. Without them there is nothing for root to
+              check its own answer against.
+            </p>
+          )}
         </>
       )}
     </div>

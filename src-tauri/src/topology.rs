@@ -176,6 +176,7 @@ mod tests {
             depends_on: depends_on.iter().map(|s| (*s).into()).collect(),
             config_sources: Vec::new(),
             history_source: None,
+            runtime: Default::default(),
             metadata: Default::default(),
         }
     }

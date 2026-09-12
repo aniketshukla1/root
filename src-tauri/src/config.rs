@@ -131,6 +131,15 @@ pub struct ConnectionProfile {
     /// inference and a wrong guess forecasts the wrong number convincingly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_source: Option<crate::promquery::HistorySource>,
+    /// Where this connection actually runs, as declared.
+    ///
+    /// Optional and empty by default. root infers what a container is from its
+    /// image and its published port, which is reading rather than guessing but
+    /// is still root talking to itself — nothing checks it. A declaration
+    /// gives the inference something to be wrong against, and the
+    /// disagreements are the output.
+    #[serde(default)]
+    pub runtime: crate::runtime::Runtime,
 }
 
 fn default_true() -> bool {

@@ -41,6 +41,7 @@ import type {
   RecordedVerdict,
   Replay,
   RuleScore,
+  RuntimeReport,
   SuiteResult,
   Scorecard,
   Verdict,
@@ -1841,6 +1842,59 @@ export function scenarios(): SuiteResult {
         "redis",
         [],
       ),
+    ],
+  };
+}
+
+/**
+ * A runtime report with one of each disagreement worth seeing.
+ *
+ * Agreement is deliberately absent: the real command returns only connections
+ * with something to say, because listing every declaration root agrees with
+ * would bury the few that are wrong.
+ */
+export function runtimeReport(): RuntimeReport {
+  return {
+    declared: 3,
+    total: 12,
+    checks: [
+      {
+        profileId: "payments-db",
+        profileName: "payments-db",
+        declared: {
+          kind: "container",
+          hostProfileId: "orders-api",
+          name: "payments-db",
+        },
+        discrepancies: [
+          {
+            kind: "disagrees",
+            host: "orders-api",
+            declared: "payments-db",
+            inferred: "payments-db-primary",
+          },
+        ],
+      },
+      {
+        profileId: "session-cache",
+        profileName: "session-cache",
+        declared: {
+          kind: "container",
+          hostProfileId: "orders-api",
+          name: "session-cache",
+        },
+        discrepancies: [
+          { kind: "notFound", host: "orders-api", name: "session-cache" },
+        ],
+      },
+    ],
+    uncovered: [
+      {
+        hostProfileId: "orders-api",
+        hostLabel: "orders-api",
+        name: "orders-redis-sidecar",
+        kind: "redis",
+      },
     ],
   };
 }

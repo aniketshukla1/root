@@ -984,6 +984,174 @@ pub async fn clear_claims(state: Shared<'_>, profile_id: String) -> Result<()> {
     Ok(())
 }
 
+// ------------------------------------------------------- runtime reconciling
+
+/// One connection's declared runtime, checked against what root can see.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeCheck {
+    pub profile_id: String,
+    pub profile_name: String,
+    pub declared: crate::runtime::Runtime,
+    pub discrepancies: Vec<crate::runtime::Discrepancy>,
+}
+
+/// Everything root and its operators disagree about, plus the gaps.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeReport {
+    /// Only connections with something to say. A declaration root agrees with
+    /// is not news, and listing every one of them would bury the few that are
+    /// wrong.
+    pub checks: Vec<RuntimeCheck>,
+    /// Containers and pods that look like services with nothing watching them.
+    pub uncovered: Vec<crate::runtime::Uncovered>,
+    /// How many connections have declared a runtime at all — the denominator
+    /// for everything above, and the honest caveat when it is small.
+    pub declared: usize,
+    pub total: usize,
+}
+
+/// Reconcile every declared runtime against the live estate.
+#[tauri::command]
+pub async fn get_runtime_report(state: Shared<'_>) -> Result<RuntimeReport> {
+    let profiles: Vec<crate::config::ConnectionProfile> = {
+        let config = state.config.read().await;
+        config.profiles.iter().filter(|p| p.enabled).cloned().collect()
+    };
+    let snapshots = state.snapshots.read().await.clone();
+
+    let mut checks = Vec::new();
+    let mut uncovered = Vec::new();
+
+    // Hosts first: each one's components are read once and reused for every
+    // connection declared against it.
+    for host in profiles.iter().filter(|p| {
+        matches!(
+            p.kind,
+            crate::model::ServiceKind::Docker
+                | crate::model::ServiceKind::Podman
+                | crate::model::ServiceKind::Kubernetes
+        )
+    }) {
+        let Some(snapshot) = snapshots.get(&host.id) else {
+            continue;
+        };
+        let components = components_of(snapshot);
+
+        // Which connections say they run here.
+        let declared_here: Vec<&crate::config::ConnectionProfile> = profiles
+            .iter()
+            .filter(|p| p.runtime.host_profile_id.as_deref() == Some(host.id.as_str()))
+            .collect();
+
+        for profile in &declared_here {
+            let found = crate::runtime::reconcile(
+                &profile.id,
+                &profile.runtime,
+                true,
+                &host.name,
+                &components,
+            );
+            if !found.is_empty() {
+                checks.push(RuntimeCheck {
+                    profile_id: profile.id.clone(),
+                    profile_name: profile.name.clone(),
+                    declared: profile.runtime.clone(),
+                    discrepancies: found,
+                });
+            }
+        }
+
+        let declared_names: Vec<String> = declared_here
+            .iter()
+            .filter_map(|p| p.runtime.name.clone())
+            .collect();
+        uncovered.extend(crate::runtime::uncovered(
+            &host.id,
+            &host.name,
+            &components,
+            &declared_names,
+        ));
+    }
+
+    // Declarations pointing at a host that is gone, or that name nothing —
+    // neither of which the loop above can see, because it walks hosts.
+    let host_ids: std::collections::HashSet<&str> =
+        profiles.iter().map(|p| p.id.as_str()).collect();
+    for profile in profiles.iter().filter(|p| p.runtime.is_declared()) {
+        let names_a_live_host = profile
+            .runtime
+            .host_profile_id
+            .as_deref()
+            .is_some_and(|id| host_ids.contains(id) && snapshots.contains_key(id));
+        if names_a_live_host {
+            continue;
+        }
+        let found = crate::runtime::reconcile(
+            &profile.id,
+            &profile.runtime,
+            profile
+                .runtime
+                .host_profile_id
+                .as_deref()
+                .is_some_and(|id| host_ids.contains(id)),
+            "",
+            &[],
+        );
+        if !found.is_empty() {
+            checks.push(RuntimeCheck {
+                profile_id: profile.id.clone(),
+                profile_name: profile.name.clone(),
+                declared: profile.runtime.clone(),
+                discrepancies: found,
+            });
+        }
+    }
+
+    Ok(RuntimeReport {
+        checks,
+        uncovered,
+        declared: profiles.iter().filter(|p| p.runtime.is_declared()).count(),
+        total: profiles.len(),
+    })
+}
+
+/// A host snapshot's components, in the shape reconciliation wants.
+fn components_of(snapshot: &crate::model::HealthSnapshot) -> Vec<crate::runtime::Component<'_>> {
+    snapshot
+        .sections
+        .iter()
+        .filter(|s| s.id == "containers" || s.id == "pods")
+        .flat_map(|section| {
+            section.rows.iter().map(|row| {
+                // The identification the collector recorded, read back out of
+                // the cell it renders from — one source of truth rather than
+                // running the matcher twice and risking two answers.
+                let kind_text = row.cells.get("kind").and_then(|c| match c {
+                    crate::model::CellValue::Text { value } => Some(value.as_str()),
+                    _ => None,
+                });
+                let serving = kind_text.is_some_and(|t| t != "—" && !t.contains("not serving"));
+                let identified = kind_text
+                    .filter(|t| *t != "—")
+                    .and_then(|t| crate::registry::kind_from_label(t.trim_end_matches(" (not serving)")));
+
+                crate::runtime::Component {
+                    name: row.name.as_str(),
+                    identified,
+                    serving,
+                    watched_by: row
+                        .extra
+                        .get("watchedBy")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty()),
+                }
+            })
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------- scenario library
 
 /// Run the built-in scenarios against the rules as they stand.

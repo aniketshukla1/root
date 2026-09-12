@@ -554,7 +554,7 @@ mod tests {
             config_via: default_via(),
             config_on_disk: None,
             series: vec![SeriesSpec {
-                key: "memory".into(),
+                key: "used_memory".into(),
                 label: Some("Memory".into()),
                 unit: MetricUnit::Bytes,
                 warn_above: Some(2_147_483_648.0),
@@ -682,7 +682,7 @@ mod tests {
     fn a_linear_climb_has_a_fit_a_real_metric_could_have() {
         let series = build_series(
             &SeriesSpec {
-                key: "memory".into(),
+                key: "used_memory".into(),
                 label: None,
                 unit: MetricUnit::Bytes,
                 warn_above: Some(100.0),
@@ -764,7 +764,7 @@ mod tests {
     fn a_clean_linear_climb_produces_a_fit_good_enough_to_project() {
         let series = build_series(
             &SeriesSpec {
-                key: "memory".into(),
+                key: "used_memory".into(),
                 label: None,
                 unit: MetricUnit::Bytes,
                 warn_above: Some(100.0),
@@ -786,7 +786,7 @@ mod tests {
     fn a_step_is_not_mistaken_for_a_trend() {
         let series = build_series(
             &SeriesSpec {
-                key: "memory".into(),
+                key: "used_memory".into(),
                 label: None,
                 unit: MetricUnit::Bytes,
                 warn_above: Some(100.0),
@@ -811,7 +811,7 @@ mod tests {
     fn a_flat_series_has_no_destination() {
         let series = build_series(
             &SeriesSpec {
-                key: "memory".into(),
+                key: "used_memory".into(),
                 label: None,
                 unit: MetricUnit::Bytes,
                 warn_above: Some(100.0),

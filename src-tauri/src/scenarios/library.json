@@ -10,7 +10,7 @@
     },
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "warnAbove": 2147483648,
@@ -43,7 +43,7 @@
     },
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "warnAbove": 2147483648,
@@ -76,7 +76,7 @@
     },
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "from": 100000000,
@@ -108,7 +108,7 @@
     },
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "warnAbove": 8589934592,
@@ -133,7 +133,7 @@
     },
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "warnAbove": 2147483648,
@@ -158,7 +158,7 @@
     },
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "warnAbove": 1073741824,
@@ -244,7 +244,7 @@
     },
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "warnAbove": 2147483648,
@@ -278,7 +278,7 @@
     },
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "warnAbove": 2147483648,
@@ -451,7 +451,7 @@
     "config": null,
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "warnAbove": 2147483648,
@@ -476,7 +476,7 @@
     },
     "series": [
       {
-        "key": "memory",
+        "key": "used_memory",
         "label": "Memory",
         "unit": "bytes",
         "warnAbove": 2147483648,

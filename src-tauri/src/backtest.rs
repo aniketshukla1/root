@@ -509,7 +509,7 @@ mod tests {
     fn consecutive_firings_collapse_into_one_episode() {
         let end = Utc::now();
         // Flat for a day, then climbing hard toward 2 GB.
-        let memory = series("memory", Some(2.0 * GB), 48, end, |h| {
+        let memory = series("used_memory", Some(2.0 * GB), 48, end, |h| {
             if h < 24.0 {
                 0.5 * GB
             } else {
@@ -519,7 +519,7 @@ mod tests {
 
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -551,11 +551,11 @@ mod tests {
     #[test]
     fn a_quiet_history_produces_no_episodes() {
         let end = Utc::now();
-        let memory = series("memory", Some(8.0 * GB), 48, end, |_| 0.4 * GB);
+        let memory = series("used_memory", Some(8.0 * GB), 48, end, |_| 0.4 * GB);
 
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -575,11 +575,11 @@ mod tests {
     fn a_rule_that_never_stops_firing_reports_a_high_duty_cycle() {
         let end = Utc::now();
         // Over its limit for the whole window: the rule is correct and useless.
-        let memory = series("memory", Some(2.0 * GB), 48, end, |_| 2.5 * GB);
+        let memory = series("used_memory", Some(2.0 * GB), 48, end, |_| 2.5 * GB);
 
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn a_recorded_miss_that_the_current_rules_would_catch_is_flagged() {
         let end = Utc::now();
-        let memory = series("memory", Some(2.0 * GB), 48, end, |h| {
+        let memory = series("used_memory", Some(2.0 * GB), 48, end, |h| {
             0.4 * GB + h / 48.0 * 1.5 * GB
         });
 
@@ -624,7 +624,7 @@ mod tests {
 
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -650,7 +650,7 @@ mod tests {
     #[test]
     fn an_incident_already_called_is_not_counted_as_newly_caught() {
         let end = Utc::now();
-        let memory = series("memory", Some(2.0 * GB), 48, end, |h| {
+        let memory = series("used_memory", Some(2.0 * GB), 48, end, |h| {
             0.4 * GB + h / 48.0 * 1.5 * GB
         });
         let incidents = vec![(
@@ -662,7 +662,7 @@ mod tests {
 
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -685,7 +685,7 @@ mod tests {
         let end = Utc::now();
         // Climbing from the very start, so the rule opens early and never
         // closes — its episode begins well outside the 24h warning window.
-        let memory = series("memory", Some(2.0 * GB), 72, end, |h| {
+        let memory = series("used_memory", Some(2.0 * GB), 72, end, |h| {
             0.4 * GB + h / 72.0 * 1.5 * GB
         });
         let broke_at = end - Duration::hours(2);
@@ -693,7 +693,7 @@ mod tests {
 
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -720,7 +720,7 @@ mod tests {
     #[test]
     fn a_firing_far_outside_the_warning_window_is_not_a_catch() {
         let end = Utc::now();
-        let memory = series("memory", Some(2.0 * GB), 48, end, |h| {
+        let memory = series("used_memory", Some(2.0 * GB), 48, end, |h| {
             0.4 * GB + h / 48.0 * 1.5 * GB
         });
         // The incident is two days after anything the replay could have said.
@@ -733,7 +733,7 @@ mod tests {
 
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -758,7 +758,7 @@ mod tests {
         let end = Utc::now();
         // Utterly flat for two days, then one hour of steep climb. With a 6h
         // trailing window the early evaluations can see nothing but flatness.
-        let memory = series("memory", Some(2.0 * GB), 48, end, |h| {
+        let memory = series("used_memory", Some(2.0 * GB), 48, end, |h| {
             if h < 47.0 {
                 0.5 * GB
             } else {
@@ -768,7 +768,7 @@ mod tests {
 
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -793,10 +793,10 @@ mod tests {
     #[test]
     fn every_replay_admits_that_config_is_current() {
         let end = Utc::now();
-        let memory = series("memory", Some(2.0 * GB), 48, end, |_| 0.4 * GB);
+        let memory = series("used_memory", Some(2.0 * GB), 48, end, |_| 0.4 * GB);
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -832,7 +832,7 @@ mod tests {
     fn a_thin_window_is_flagged_rather_than_reported_as_clean() {
         let end = Utc::now();
         let thin = MetricSeries {
-            key: "memory".into(),
+            key: "used_memory".into(),
             label: "Memory".into(),
             unit: MetricUnit::Bytes,
             warn_above: Some(2.0 * GB),
@@ -851,7 +851,7 @@ mod tests {
 
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -874,10 +874,10 @@ mod tests {
     #[test]
     fn evaluations_are_bounded() {
         let end = Utc::now();
-        let long = series("memory", Some(2.0 * GB), 24 * 30, end, |_| 0.4 * GB);
+        let long = series("used_memory", Some(2.0 * GB), 24 * 30, end, |_| 0.4 * GB);
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,
@@ -896,12 +896,12 @@ mod tests {
     #[test]
     fn an_episode_carries_its_most_severe_wording() {
         let end = Utc::now();
-        let memory = series("memory", Some(2.0 * GB), 48, end, |h| {
+        let memory = series("used_memory", Some(2.0 * GB), 48, end, |h| {
             0.4 * GB + h / 48.0 * 1.7 * GB
         });
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 0.0, MetricUnit::Bytes)],
+            vec![Metric::new("used_memory", "Memory", 0.0, MetricUnit::Bytes)],
         );
         let out = replay(
             &snap,

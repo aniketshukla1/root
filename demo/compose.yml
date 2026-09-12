@@ -1,0 +1,187 @@
+# A small estate that is wrong on purpose.
+#
+# root's whole claim is that configuration read against telemetry says things
+# neither half says alone. That claim is untestable against healthy
+# infrastructure: a correctly-sized Redis produces no findings, and a demo of
+# nothing happening demonstrates nothing.
+#
+# So every service here is misconfigured in a way that is realistic, common,
+# and specifically what one of root's rules exists to catch. The load
+# generators then make the metrics actually move, because a forecast needs a
+# trend and a fresh container has none.
+#
+#   docker compose -f demo/compose.yml up -d
+#   docker compose -f demo/compose.yml down -v
+#
+# Ports are deliberately unusual (63xx, 54xx, 80xx) so this cannot collide
+# with anything real on the machine.
+#
+# SECURITY: every credential here is a literal, obviously-fake development
+# value committed on purpose. Nothing in this file is a secret and nothing in
+# it should ever be reused. The whole estate is disposable — `down -v` removes
+# it and its data.
+
+name: root-demo
+
+services:
+  # --------------------------------------------------------------- caching
+  #
+  # maxmemory is small and maxmemory-policy is noeviction — the pairing that
+  # turns a full cache into refused writes rather than evictions. The filler
+  # below walks it toward that ceiling so the projection has a real slope.
+  cache:
+    image: redis:7-alpine
+    container_name: root-demo-cache
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy noeviction
+      --requirepass demo-not-a-real-password
+      --appendonly no
+    ports:
+      - "6399:6379"
+    # No memory limit, on purpose: root's container rule should notice that a
+    # leak here would be a host-wide event rather than a container-wide one.
+    restart: unless-stopped
+
+  # A second cache configured correctly, so the demo shows root staying quiet
+  # about something that is fine. An estate where everything is flagged
+  # teaches the wrong lesson as thoroughly as one where nothing is.
+  cache-healthy:
+    image: redis:7-alpine
+    container_name: root-demo-cache-healthy
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --requirepass demo-not-a-real-password
+      --appendonly no
+    ports:
+      - "6398:6379"
+    mem_limit: 256m
+    restart: unless-stopped
+
+  # -------------------------------------------------------------- database
+  #
+  # max_connections is deliberately tiny. The connection churner opens
+  # sessions steadily so the count climbs toward it and the pool-exhaustion
+  # rule has a trend to project.
+  db:
+    image: postgres:16-alpine
+    container_name: root-demo-db
+    environment:
+      POSTGRES_PASSWORD: demo-not-a-real-password
+      POSTGRES_DB: orders
+    command: >
+      postgres
+      -c max_connections=25
+      -c shared_buffers=32MB
+      -c work_mem=1MB
+      -c log_min_duration_statement=200
+    ports:
+      - "5442:5432"
+    mem_limit: 512m
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------- proxy
+  #
+  # stub_status on, which is what root's nginx collector reads.
+  proxy:
+    image: nginx:alpine
+    container_name: root-demo-proxy
+    ports:
+      - "8088:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  # ------------------------------------------------------------- messaging
+  queue:
+    image: rabbitmq:3-management-alpine
+    container_name: root-demo-queue
+    environment:
+      RABBITMQ_DEFAULT_USER: demo
+      RABBITMQ_DEFAULT_PASS: demo-not-a-real-password
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    mem_limit: 512m
+    restart: unless-stopped
+
+  # ------------------------------------------------------------ generators
+  #
+  # Without these the estate is static and every forecast correctly refuses.
+  # A demo of root declining to project is honest and useless.
+
+  # Writes steadily into the misconfigured cache so memory climbs toward its
+  # 256mb ceiling over most of a working day.
+  #
+  # The first version used a 48mb ceiling and filled it in ninety minutes,
+  # which then sat pinned at 100% — a demo of an instance that is already
+  # broken, rather than one you can watch approach the cliff. Roughly 29 MB an
+  # hour gives a clean trend within the first hour and a projection of about
+  # eight, which is the shape the product is actually for.
+  cache-filler:
+    image: redis:7-alpine
+    container_name: root-demo-cache-filler
+    depends_on: [cache]
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - |
+        sleep 10
+        i=0
+        while true; do
+          # 16 KB per key, a few keys at a time: a gentle climb rather than a
+          # cliff, because a cliff is a step and no line fits a step.
+          redis-cli -h cache -a demo-not-a-real-password --no-auth-warning \
+            SET "pad:$$i" "$$(head -c 16384 /dev/zero | tr '\0' 'x')" >/dev/null 2>&1
+          i=$$((i + 1))
+          sleep 2
+        done
+
+  # Opens sessions and holds them, so the connection count drifts up toward
+  # max_connections instead of sitting flat.
+  db-churner:
+    image: postgres:16-alpine
+    container_name: root-demo-db-churner
+    depends_on: [db]
+    environment:
+      PGPASSWORD: demo-not-a-real-password
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - |
+        sleep 15
+        while true; do
+          # Sessions that connect and then sit idle, which is what a leaked
+          # connection pool actually looks like.
+          #
+          # The obvious version of this — `psql -c 'SELECT pg_sleep(240)'` —
+          # holds the connection by running a long query, and root correctly
+          # reported the result as six stuck queries and marked the database
+          # degraded. It was right and the demo was wrong: a leak is idle
+          # sessions nobody closed, not queries that never finish. Holding
+          # stdin open gives the honest shape.
+          (sleep 240) | psql -h db -U postgres -d orders >/dev/null 2>&1 &
+          sleep 25
+        done
+
+  # Ordinary traffic, so the proxy has request rates rather than zeroes.
+  proxy-traffic:
+    image: alpine:3
+    container_name: root-demo-proxy-traffic
+    depends_on: [proxy]
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - |
+        apk add --no-cache curl >/dev/null 2>&1
+        sleep 10
+        while true; do
+          for _ in 1 2 3 4 5; do curl -s -o /dev/null http://proxy/ || true; done
+          sleep 3
+        done

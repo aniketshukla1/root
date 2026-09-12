@@ -220,15 +220,37 @@ impl Settings {
     /// setting takes in different formats: `maxmemory-policy` in redis.conf is
     /// `maxmemory_policy` in half the tooling that talks about it.
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.values.get(&normalise(key)).map(|e| e.value.as_str())
+        self.entry(key).map(|e| e.value.as_str())
+    }
+
+    /// The entry for a key, direct or one level down.
+    ///
+    /// A collector may report a setting either as a bare value or as an object
+    /// carrying provenance — `pg_settings` returns `{value, source}`, because
+    /// knowing a parameter came from `ALTER SYSTEM` rather than the config
+    /// file sends an operator to a different place. Flattening that produces
+    /// `max_connections.value` and no key called `max_connections` at all.
+    ///
+    /// The Postgres rule asked for the bare name and therefore never fired on
+    /// a real database, while passing every test that handed it a flat
+    /// fixture. Same shape of mistake as the Redis rule reading `memory` when
+    /// the collector emits `used_memory`, and found the same way: by pointing
+    /// root at something real.
+    fn entry(&self, key: &str) -> Option<&Entry> {
+        let direct = normalise(key);
+        self.values
+            .get(&direct)
+            // `normalise` strips `-` and `_` but keeps `.`, so the nested key
+            // is `maxconnections.value`, not `maxconnectionsvalue`.
+            .or_else(|| self.values.get(&format!("{direct}.value")))
     }
 
     pub fn source_of(&self, key: &str) -> Option<&str> {
-        self.values.get(&normalise(key)).map(|e| e.source.as_str())
+        self.entry(key).map(|e| e.source.as_str())
     }
 
     pub fn evidence(&self, key: &str) -> Option<Evidence> {
-        let entry = self.values.get(&normalise(key))?;
+        let entry = self.entry(key)?;
         Some(Evidence::Setting {
             key: entry.key.clone(),
             value: entry.value.clone(),
@@ -572,6 +594,20 @@ fn same_value(a: &str, b: &str) -> bool {
 
 // --------------------------------------------------------------------- redis
 
+/// The key the Redis collector emits memory under.
+///
+/// Named rather than inlined because getting it wrong is silent and total. The
+/// rule below looked for `memory` for as long as it existed; the collector has
+/// always emitted `used_memory`. Every unit test and every scenario built its
+/// own snapshot with whichever key the rule wanted, so the mismatch was
+/// invisible — the rule passed everything and could not fire on a single real
+/// instance.
+///
+/// What caught it was pointing root at an actual Redis. That is what the
+/// `demo_estate` tests are for, and why they assert against a live server
+/// rather than a fixture.
+const REDIS_MEMORY: &str = "used_memory";
+
 fn redis_rules(
     snapshot: &HealthSnapshot,
     settings: &Settings,
@@ -580,7 +616,7 @@ fn redis_rules(
 ) {
     let policy = settings.get("maxmemory-policy").unwrap_or("noeviction");
     let configured = settings.get("maxmemory").and_then(parse_size);
-    let used = metric(snapshot, "memory").map(|m| m.value);
+    let used = metric(snapshot, REDIS_MEMORY).map(|m| m.value);
 
     // No ceiling at all. The instance will grow until the host has no memory
     // left, and then the kernel picks what dies — which on a shared host is
@@ -617,13 +653,13 @@ fn redis_rules(
     // The finding this module exists for. The policy decides whether filling
     // up is a degradation or an outage, and the default is the outage.
     let refuses_writes = policy == "noeviction";
-    let trend = trend_for(series, "memory");
+    let trend = trend_for(series, REDIS_MEMORY);
     let seconds = trend.and_then(|t| t.seconds_to_ceiling(used, limit));
 
     if let Some(seconds) = seconds {
         let severity = urgency(seconds);
         let mut evidence = vec![Evidence::Metric {
-            key: "memory".to_string(),
+            key: REDIS_MEMORY.to_string(),
             label: "Memory".to_string(),
             value: used,
             unit: MetricUnit::Bytes,
@@ -633,7 +669,7 @@ fn redis_rules(
         evidence.extend(settings.evidence("maxmemory-policy"));
         if let Some(t) = trend {
             evidence.push(Evidence::Projection {
-                key: "memory".to_string(),
+                key: REDIS_MEMORY.to_string(),
                 seconds_to_limit: seconds,
                 fit: t.fit,
                 window_secs: t.window_secs,
@@ -1163,6 +1199,24 @@ mod tests {
         assert_eq!(settings.get("maxmemory_policy"), Some("noeviction"));
     }
 
+    /// `pg_settings` reports `{value, source}` per parameter, so flattening
+    /// leaves no bare `max_connections`. The rule asked for the bare name and
+    /// silently never fired on a real database.
+    #[test]
+    fn a_setting_reported_with_its_provenance_is_still_reachable_by_name() {
+        let doc = ConfigDocument::live(
+            "p1",
+            "live",
+            "pg_settings",
+            &serde_json::json!({
+                "max_connections": { "value": "100", "source": "configuration file" },
+            }),
+        );
+        let settings = Settings::from_documents(&[doc]);
+        assert_eq!(settings.get("max_connections"), Some("100"));
+        assert_eq!(settings.source_of("max_connections"), Some("pg_settings"));
+    }
+
     #[test]
     fn a_nested_live_value_is_reachable_by_its_leaf() {
         let doc = ConfigDocument::live(
@@ -1300,7 +1354,7 @@ mod tests {
         let snap = snapshot(
             ServiceKind::Redis,
             vec![Metric::new(
-                "memory",
+                REDIS_MEMORY,
                 "Memory",
                 two_gb * 0.9,
                 MetricUnit::Bytes,
@@ -1312,7 +1366,7 @@ mod tests {
             "CONFIG GET *",
             &serde_json::json!({ "maxmemory": "2gb", "maxmemory-policy": "noeviction" }),
         );
-        let series = vec![rising("memory", two_gb * 0.5, two_gb * 0.9, Some(two_gb))];
+        let series = vec![rising(REDIS_MEMORY, two_gb * 0.5, two_gb * 0.9, Some(two_gb))];
 
         let found = findings(&snap, &[config], &series);
         assert_eq!(found.len(), 1, "{found:#?}");
@@ -1342,7 +1396,7 @@ mod tests {
         let two_gb = 2.0 * 1024.0 * 1024.0 * 1024.0;
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", two_gb * 0.9, MetricUnit::Bytes)],
+            vec![Metric::new(REDIS_MEMORY, "Memory", two_gb * 0.9, MetricUnit::Bytes)],
         );
         let config = ConfigDocument::live(
             "p1",
@@ -1350,7 +1404,7 @@ mod tests {
             "CONFIG GET *",
             &serde_json::json!({ "maxmemory": "2gb", "maxmemory-policy": "allkeys-lru" }),
         );
-        let series = vec![rising("memory", two_gb * 0.5, two_gb * 0.9, Some(two_gb))];
+        let series = vec![rising(REDIS_MEMORY, two_gb * 0.5, two_gb * 0.9, Some(two_gb))];
 
         let found = findings(&snap, &[config], &series);
         assert_eq!(found.len(), 1);
@@ -1362,7 +1416,7 @@ mod tests {
     fn an_unbounded_redis_is_reported_whatever_the_metrics_say() {
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 1000.0, MetricUnit::Bytes)],
+            vec![Metric::new(REDIS_MEMORY, "Memory", 1000.0, MetricUnit::Bytes)],
         );
         let config = ConfigDocument::live(
             "p1",
@@ -1384,7 +1438,7 @@ mod tests {
         let two_gb = 2.0 * 1024.0 * 1024.0 * 1024.0;
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", two_gb * 0.2, MetricUnit::Bytes)],
+            vec![Metric::new(REDIS_MEMORY, "Memory", two_gb * 0.2, MetricUnit::Bytes)],
         );
         let config = ConfigDocument::live(
             "p1",
@@ -1393,7 +1447,7 @@ mod tests {
             &serde_json::json!({ "maxmemory": "2gb", "maxmemory-policy": "noeviction" }),
         );
         // Flat: a fit exists, but it points nowhere.
-        let series = vec![rising("memory", two_gb * 0.2, two_gb * 0.2, Some(two_gb))];
+        let series = vec![rising(REDIS_MEMORY, two_gb * 0.2, two_gb * 0.2, Some(two_gb))];
 
         assert!(findings(&snap, &[config], &series).is_empty());
     }
@@ -1402,7 +1456,7 @@ mod tests {
     fn no_config_means_no_findings_rather_than_guesses() {
         let snap = snapshot(
             ServiceKind::Redis,
-            vec![Metric::new("memory", "Memory", 1e9, MetricUnit::Bytes)],
+            vec![Metric::new(REDIS_MEMORY, "Memory", 1e9, MetricUnit::Bytes)],
         );
         assert!(findings(&snap, &[], &[]).is_empty());
     }

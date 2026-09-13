@@ -335,22 +335,30 @@ export function Alerts({
                                   tab: "alerts",
                                 })
                               }
-                              className="text-xs font-semibold text-ink transition-colors hover:text-accent"
+                              className="max-w-xl truncate text-xs font-semibold text-ink transition-colors hover:text-accent"
+                              title={group.label}
                             >
                               {group.label}
                             </button>
                           ) : groupBy === "incident" && group.incident ? (
                             <button
                               onClick={() => onNavigate({ name: "overview" })}
-                              className="truncate text-xs font-semibold text-ink transition-colors hover:text-accent"
+                              className="max-w-xl truncate text-xs font-semibold text-ink transition-colors hover:text-accent"
                               title={group.label}
                             >
                               {group.label}
                             </button>
                           ) : (
-                            <h2 className="text-xs font-semibold text-ink">{group.label}</h2>
+                            <h2
+                              className="max-w-xl truncate text-xs font-semibold text-ink"
+                              title={group.label}
+                            >
+                              {group.label}
+                            </h2>
                           )}
-                          <span className="num text-2xs text-ink-4">{group.alerts.length}</span>
+                          <span className="num shrink-0 text-2xs text-ink-4">
+                            {group.alerts.length}
+                          </span>
                           {group.unacknowledged > 0 && (
                             <Tag color="var(--color-warn)">
                               {group.unacknowledged} unacknowledged
@@ -437,11 +445,18 @@ export function Alerts({
                           </p>
                         </td>
 
-                        <td className="hidden max-w-40 px-3 lg:table-cell">
+                        {/* Both of the cells below hold a `div`, not a
+                            `span`, and that is load-bearing: `truncate` is
+                            overflow-hidden, overflow does not apply to an
+                            inline box, and a component name is whatever the
+                            collector called the thing. A Redis slow command
+                            arrives 170 characters long and used to paint
+                            straight across the four columns to its right. */}
+                        <td className="hidden max-w-44 px-3 lg:table-cell">
                           {alert.component ? (
-                            <span className="num truncate text-xs text-ink-3">
+                            <div className="num truncate text-xs text-ink-3" title={alert.component}>
                               {alert.component}
-                            </span>
+                            </div>
                           ) : (
                             <span className="text-ink-4/60">—</span>
                           )}
@@ -457,7 +472,11 @@ export function Alerts({
                                   tab: "alerts",
                                 })
                               }
-                              className="flex min-w-0 items-center gap-1.5 text-xs text-ink-2 transition-colors hover:text-accent"
+                              /* `w-full`, because a button is shrink-to-fit:
+                                 without it the button grows past its own
+                                 cell to fit the name and the truncate inside
+                                 it never has a bound to clip against. */
+                              className="flex w-full min-w-0 items-center gap-1.5 text-xs text-ink-2 transition-colors hover:text-accent"
                             >
                               <ServiceMark descriptor={catalog.get(alert.kind)} size={15} />
                               <span className="truncate">{alert.profileName}</span>
@@ -466,7 +485,7 @@ export function Alerts({
                         )}
 
                         <td className="hidden max-w-40 px-3 xl:table-cell">
-                          <span
+                          <div
                             className={cx(
                               "truncate text-xs",
                               owner && owner !== "Unassigned"
@@ -475,7 +494,7 @@ export function Alerts({
                             )}
                           >
                             {owner ?? "Unassigned"}
-                          </span>
+                          </div>
                         </td>
 
                         <td

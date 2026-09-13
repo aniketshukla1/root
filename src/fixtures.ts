@@ -438,6 +438,23 @@ const BASE_ALERTS: Alert[] = [
     detail: "orders-api-release · FAILURE in 14m 02s",
     component: "orders-api-release", firstSeen: iso(38 * 60_000), lastSeen: iso(38 * 60_000),
     active: true, acknowledged: false },
+  /**
+   * A component name long enough to be a layout problem, and not an invented
+   * one: Redis trims every `SLOWLOG GET` argument to 128 characters and adds
+   * its own `... (N more bytes)`, so one padded write comes back as a
+   * ~170-character token with nowhere to break.
+   *
+   * It lives here because the alerts table used to paint exactly this string
+   * straight across the four columns to its right, and nothing in the rest of
+   * the fixtures was long enough to show it. A layout that only holds for
+   * short values is one that has not been tested.
+   */
+  { id: "a5", fingerprint: "session-cache/slowlog", profileId: "session-cache", profileName: "session-cache",
+    kind: "redis", severity: "warning", title: "Slow command took 118ms",
+    detail: "slowlog entry 11607 · above the 50ms threshold",
+    component: `SET pad:11607 ${"x".repeat(128)}... (16256 more bytes)`,
+    firstSeen: iso(9 * 60_000), lastSeen: iso(2 * 60_000),
+    active: true, acknowledged: false },
 ];
 
 /**

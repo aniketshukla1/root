@@ -653,7 +653,12 @@ export function ServiceDashboard({
                         )}
                       </span>
                     </td>
-                    <td className="px-2.5">
+                    {/* Capped, because a revision is whatever the collector
+                        found: an image digest is 71 characters and nothing
+                        stops it being longer. Without a bound the truncates
+                        below have nothing to clip against and the column
+                        widens the table instead. */}
+                    <td className="max-w-64 px-2.5">
                       {change.from ? (
                         <span className="flex min-w-0 items-baseline gap-1.5 text-2xs">
                           <span className="num truncate text-ink-4">{change.from}</span>

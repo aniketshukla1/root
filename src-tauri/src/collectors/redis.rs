@@ -289,7 +289,7 @@ impl Collector for RedisCollector {
             .map(|entry| {
                 Row::new(
                     format!("slow:{}", entry.id),
-                    entry.command.clone(),
+                    entry.name.clone(),
                     Health::Degraded,
                 )
                 .summary(format!("{:.1}ms", entry.micros / 1000.0))
@@ -489,6 +489,41 @@ struct SlowEntry {
     at: DateTime<Utc>,
     micros: f64,
     command: String,
+    /// What to call the row: the verb and the key, never the payload.
+    name: String,
+}
+
+/// The longest key we will put in a row's name.
+///
+/// Redis already caps each `SLOWLOG` argument at 128 characters; this is a
+/// second, tighter bound because a name is read in a column beside other
+/// names, not on its own.
+const MAX_KEY_CHARS: usize = 64;
+
+/// Name a slow command by its shape rather than its content.
+///
+/// The row name becomes the alert title and the component the alert is filed
+/// under, so it has to be an identifier. The command text is not one: Redis
+/// trims each argument to 128 characters and appends its own
+/// `... (N more bytes)`, so a single padded write arrives as a
+/// 170-character string, and a multi-key command as several thousand. The
+/// verb and the key identify the command; the payload is what made it slow,
+/// not what it is. The full text keeps its own monospace column, which wraps
+/// — the same split the database collector makes between `pid 4821` and the
+/// statement it is running.
+fn slow_name(argv: &[String]) -> String {
+    match argv {
+        [] => "(unknown command)".to_string(),
+        [verb] => verb.to_uppercase(),
+        [verb, key, ..] => {
+            let key: String = if key.chars().count() > MAX_KEY_CHARS {
+                key.chars().take(MAX_KEY_CHARS).collect::<String>() + "…"
+            } else {
+                key.clone()
+            };
+            format!("{} {}", verb.to_uppercase(), key)
+        }
+    }
 }
 
 /// `SLOWLOG GET n` returns nested arrays: [id, unix_ts, micros, [argv...], ...].
@@ -530,20 +565,17 @@ fn decode_slowlog(raw: &redis::Value) -> Vec<SlowEntry> {
             let seconds = as_int(fields.get(1)?)?;
             let micros = as_int(fields.get(2)?)? as f64;
 
-            let command = match fields.get(3) {
-                Some(redis::Value::Array(argv)) => argv
-                    .iter()
-                    .filter_map(as_string)
-                    .collect::<Vec<_>>()
-                    .join(" "),
-                _ => String::new(),
+            let argv: Vec<String> = match fields.get(3) {
+                Some(redis::Value::Array(argv)) => argv.iter().filter_map(as_string).collect(),
+                _ => Vec::new(),
             };
 
             Some(SlowEntry {
                 id,
                 at: DateTime::from_timestamp(seconds, 0).unwrap_or_else(Utc::now),
                 micros,
-                command,
+                name: slow_name(&argv),
+                command: argv.join(" "),
             })
         })
         .collect()
@@ -667,7 +699,48 @@ db1:keys=7,expires=0,avg_ttl=0
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, 7);
         assert_eq!(entries[0].command, "GET big:key");
+        assert_eq!(entries[0].name, "GET big:key");
         assert!((entries[0].micros - 15_000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_slow_write_is_named_by_its_key_not_its_payload() {
+        // Redis hands back the first 128 characters of the value and then its
+        // own `... (N more bytes)`. That whole string used to become the row
+        // name, which is the alert title and the component the alert is filed
+        // under — so one padded SET produced a 170-character component that
+        // ran clean across the columns beside it.
+        let payload = "x".repeat(128) + "... (16256 more bytes)";
+        let raw = redis::Value::Array(vec![redis::Value::Array(vec![
+            redis::Value::Int(11_607),
+            redis::Value::Int(1_700_000_000),
+            redis::Value::Int(118_000),
+            redis::Value::Array(vec![
+                redis::Value::BulkString(b"set".to_vec()),
+                redis::Value::BulkString(b"pad:11607".to_vec()),
+                redis::Value::BulkString(payload.clone().into_bytes()),
+            ]),
+        ])]);
+
+        let entries = decode_slowlog(&raw);
+        assert_eq!(entries[0].name, "SET pad:11607");
+        // The payload is not lost — it keeps the column that can hold it.
+        assert!(entries[0].command.contains(&payload));
+    }
+
+    #[test]
+    fn an_overlong_key_is_cut_in_the_name_and_whole_in_the_command() {
+        let key = "k".repeat(200);
+        let name = slow_name(&["GET".to_string(), key.clone()]);
+        assert!(name.starts_with("GET kkk"));
+        assert_eq!(name.chars().count(), 4 + MAX_KEY_CHARS + 1);
+        assert!(name.ends_with('…'));
+    }
+
+    #[test]
+    fn a_command_with_no_arguments_still_has_a_name() {
+        assert_eq!(slow_name(&["dbsize".to_string()]), "DBSIZE");
+        assert_eq!(slow_name(&[]), "(unknown command)");
     }
 
     #[test]

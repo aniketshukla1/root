@@ -190,7 +190,11 @@ export function ServiceDetail({
             <Sep />
             {service.category}
             <Sep />
-            <span className="num">{formatRelative(snapshot.checkedAt)}</span>
+            {/* Reserved for the same reason as the one in ScreenHeader: it
+                changes width on every poll, and the latency after it moved. */}
+            <span className="num inline-block min-w-[8ch]">
+              {formatRelative(snapshot.checkedAt)}
+            </span>
             <Sep />
             <span className="num" title="Time the last collection cycle took">
               {snapshot.latencyMs}ms

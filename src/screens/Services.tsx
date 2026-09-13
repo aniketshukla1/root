@@ -84,6 +84,15 @@ export function Services({
     });
   }, [model.services, query, onlyProblems, catalog]);
 
+  /**
+   * Whether the operator has narrowed the list — not whether the list happens
+   * to be narrower. The header used to show "of 8" only while the counts
+   * differed, so under "Needs attention" it appeared and vanished as
+   * connections recovered and broke again. What the header looks like should
+   * change when somebody does something, never because a poll came back.
+   */
+  const filtering = onlyProblems || query.trim() !== "";
+
   const groups = useMemo(
     () => groupServices(filtered, groupBy, catalog),
     [filtered, groupBy, catalog],
@@ -105,7 +114,7 @@ export function Services({
         meta={
           <>
             <span className="num">{filtered.length}</span>
-            {filtered.length !== model.services.length && (
+            {filtering && (
               <>
                 <span className="text-ink-4/50">of</span>
                 <span className="num">{model.services.length}</span>

@@ -56,7 +56,15 @@ export function ScreenHeader({
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-ok" />
               </span>
             )}
-            <span className="num">{formatRelative(syncedAt)}</span>
+            {/* Width reserved, not measured. This label sits at the right-hand
+                end of a group anchored to the right edge, so any change in its
+                width moves everything to its left — the filter, both segmented
+                controls and Ask. It alternates between "just now" and "6s ago"
+                on nearly every fetch, which slid the whole cluster 13px back
+                and forth every few seconds. The face is monospace, so 8ch is
+                exactly "just now", the widest thing formatRelative returns
+                short of a hundred days. */}
+            <span className="num inline-block min-w-[8ch]">{formatRelative(syncedAt)}</span>
           </span>
         )}
         {onRefresh && (

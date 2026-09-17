@@ -16,6 +16,7 @@ pub mod database;
 pub mod docker;
 pub mod elasticsearch;
 pub mod etcd;
+pub mod gigapipe;
 pub mod http;
 pub mod jenkins;
 pub mod kafka;
@@ -199,6 +200,7 @@ pub async fn build_collector(
         ServiceKind::Nats => Arc::new(nats::NatsCollector::new(profile, secret)?),
         ServiceKind::Clickhouse => Arc::new(clickhouse::ClickhouseCollector::new(profile, secret)?),
         ServiceKind::Kafka => Arc::new(kafka::KafkaCollector::new(profile, secret)?),
+        ServiceKind::Gigapipe => Arc::new(gigapipe::GigapipeCollector::new(profile, secret)?),
     };
     Ok(collector)
 }

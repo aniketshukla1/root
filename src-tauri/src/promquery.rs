@@ -10,6 +10,13 @@
 //! Most estates already have somewhere that does: a Prometheus with weeks of
 //! retention. This reads from it.
 //!
+//! ## Anything that speaks the same API
+//!
+//! Nothing below is Prometheus-specific beyond the endpoint shape. Gigapipe
+//! serves PromQL at the same `/api/v1/query_range`, so a gigapipe connection
+//! is a history source here with no code change — which matters, because a
+//! ClickHouse-backed store holds years where a Prometheus holds weeks.
+//!
 //! ## A source, not a store
 //!
 //! Prometheus is read here and never written. root's own judgement record
@@ -57,7 +64,9 @@ const MAX_SERIES: usize = 1;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HistorySource {
-    /// The Prometheus connection that holds it, as a profile id.
+    /// The connection that holds it, as a profile id. A Prometheus or a
+    /// Gigapipe — the field name is the original one, kept so existing
+    /// configs keep resolving.
     pub prometheus_profile_id: String,
     /// How root's metric keys map onto PromQL. Declared, never inferred.
     #[serde(default)]

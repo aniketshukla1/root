@@ -7,6 +7,8 @@ import { isProblem } from "./catalog";
 import type {
   Alert,
   AppConfig,
+  CellValue,
+  ColumnSpec,
   ConnectionProfile,
   Criticality,
   HealthRun,
@@ -111,6 +113,18 @@ export interface Entity {
   summary: string;
   health: Health;
   ownership: Ownership;
+  /**
+   * What the collector actually reported about this one thing, carried by
+   * reference rather than copied — the same objects the section table renders.
+   *
+   * Without these an entity is a name, a health and one terse summary line,
+   * which is all the component matrix had to show for a cell: fine for a
+   * failing pod whose summary says "exited 137 · OOMKilled", useless for a
+   * healthy one, whose summary is usually empty. The numbers are the answer to
+   * "what is this thing doing", and they exist either way.
+   */
+  cells: Record<string, CellValue>;
+  columns: ColumnSpec[];
 }
 
 export interface Issue extends Entity {
@@ -185,6 +199,8 @@ function entitiesOf(snapshot: HealthSnapshot, category: string, ownership: Owner
         summary: snapshot.error ?? snapshot.summary,
         health: snapshot.health,
         ownership,
+        cells: {},
+        columns: [],
       },
     ];
   }
@@ -203,6 +219,8 @@ function entitiesOf(snapshot: HealthSnapshot, category: string, ownership: Owner
       summary: row.summary,
       health: row.health,
       ownership,
+      cells: row.cells,
+      columns: section.columns,
     })),
   );
 }
@@ -274,6 +292,8 @@ export function buildModel(
         name: alert.component ?? alert.title,
         section: "Alert condition",
         summary: alert.detail,
+        cells: {},
+        columns: [],
         health: alert.severity === "critical" ? "down" : "degraded",
         ownership,
         priority: alert.severity === "critical" ? 1 : 2,

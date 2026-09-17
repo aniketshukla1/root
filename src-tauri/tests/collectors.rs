@@ -499,3 +499,263 @@ async fn docker_collects_against_a_live_daemon_when_one_is_available() {
     let cutoff = Utc::now() - Duration::hours(1);
     assert!(logs.iter().all(|l| l.timestamp >= cutoff));
 }
+
+// ----------------------------------------------------------------- Gigapipe
+
+/// A gigapipe whose process is up. `rows` is the `sent_rows{service="logs"}`
+/// counter value, so a test can poll twice and watch the rate derive.
+fn gigapipe_metrics(rows: u64, bytes: u64, parse_errors: u64) -> String {
+    format!(
+        "# HELP sent_rows The total number of rows sent\n\
+         # TYPE sent_rows counter\n\
+         sent_rows{{service=\"logs\"}} {rows}\n\
+         sent_rows{{service=\"traces\"}} 40\n\
+         sent_bytes{{service=\"logs\"}} {bytes}\n\
+         sent_bytes{{service=\"traces\"}} 900\n\
+         json_parse_errors_count {parse_errors}\n\
+         connection_reset_by_peer_count 0\n\
+         go_goroutines 61\n\
+         process_resident_memory_bytes 157286400\n"
+    )
+}
+
+/// A gigapipe that answers `/ready` and serves every query API.
+async fn gigapipe_server(serving: bool) -> MockServer {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/ready"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ready"))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/metrics"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(gigapipe_metrics(1000, 90_000, 0)))
+        .mount(&server)
+        .await;
+
+    // The whole point of probing per signal: these are what a dead ClickHouse
+    // takes down while `/ready` keeps saying yes.
+    let status = if serving { 200 } else { 500 };
+    for api in ["/loki/api/v1/labels", "/api/v1/labels", "/api/echo"] {
+        Mock::given(method("GET"))
+            .and(path(api))
+            .respond_with(ResponseTemplate::new(status).set_body_json(json!({
+                "status": "success", "data": ["service_name", "level"]
+            })))
+            .mount(&server)
+            .await;
+    }
+
+    server
+}
+
+fn gigapipe_profile(server: &MockServer, options: ProfileOptions) -> ConnectionProfile {
+    profile(ServiceKind::Gigapipe, server.uri(), options)
+}
+
+#[tokio::test]
+async fn gigapipe_serving_every_signal_is_healthy() {
+    let server = gigapipe_server(true).await;
+    let collector = build_collector(&gigapipe_profile(&server, ProfileOptions::default()), None)
+        .await
+        .expect("collector builds");
+
+    let snapshot = collector.collect().await.expect("collect succeeds");
+
+    assert_eq!(snapshot.health, Health::Healthy);
+    assert_eq!(metric(&snapshot, "signals_up"), 3.0);
+
+    let signals = section(&snapshot, "signals");
+    assert_eq!(signals.len(), 3);
+    assert_eq!(cell_text(row(signals, "logs"), "api"), "/loki/api/v1/labels");
+
+    // Two `service` labels on the counter, so two pipelines.
+    let ingest = section(&snapshot, "ingest");
+    assert_eq!(ingest.len(), 2);
+    assert_eq!(cell_number(row(ingest, "logs"), "rows"), 1000.0);
+    assert_eq!(cell_number(row(ingest, "traces"), "bytes"), 900.0);
+}
+
+#[tokio::test]
+async fn gigapipe_ready_with_a_dead_backend_is_down_and_says_why() {
+    // The failure this collector exists for. `/ready` answers from the
+    // process, so a store whose ClickHouse has gone away looks perfectly
+    // healthy from the outside while every query fails.
+    let server = gigapipe_server(false).await;
+    let collector = build_collector(&gigapipe_profile(&server, ProfileOptions::default()), None)
+        .await
+        .expect("collector builds");
+
+    let snapshot = collector.collect().await.expect("collect succeeds");
+
+    assert_eq!(snapshot.health, Health::Down);
+    assert_eq!(metric(&snapshot, "signals_up"), 0.0);
+    assert!(
+        snapshot.summary.contains("ClickHouse"),
+        "the summary must name the backend, not just say down: {}",
+        snapshot.summary
+    );
+    // And it is a Down snapshot, not a collector error — the trait's contract.
+    assert!(snapshot.error.is_none());
+}
+
+#[tokio::test]
+async fn gigapipe_that_does_not_answer_is_down_not_an_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/ready"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+
+    let collector = build_collector(&gigapipe_profile(&server, ProfileOptions::default()), None)
+        .await
+        .expect("collector builds");
+
+    let snapshot = collector.collect().await.expect("an unreachable target is not an error");
+    assert_eq!(snapshot.health, Health::Down);
+    assert!(snapshot.error.is_some(), "the reason must survive to the UI");
+}
+
+#[tokio::test]
+async fn gigapipe_derives_an_ingest_rate_only_once_it_has_two_readings() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/ready"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ready"))
+        .mount(&server)
+        .await;
+    for api in ["/loki/api/v1/labels", "/api/v1/labels", "/api/echo"] {
+        Mock::given(method("GET"))
+            .and(path(api))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": "success"})))
+            .mount(&server)
+            .await;
+    }
+
+    // First poll sees 1000 rows, second sees 1600. Mounted most-specific
+    // first: wiremock retires the bounded mock once it has served its one.
+    Mock::given(method("GET"))
+        .and(path("/metrics"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(gigapipe_metrics(1000, 90_000, 0)))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/metrics"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(gigapipe_metrics(1600, 140_000, 0)))
+        .mount(&server)
+        .await;
+
+    let collector = build_collector(&gigapipe_profile(&server, ProfileOptions::default()), None)
+        .await
+        .expect("collector builds");
+
+    let first = collector.collect().await.expect("first poll");
+    assert!(
+        !first.metrics.iter().any(|m| m.key == "ingest_rows_per_sec"),
+        "one reading of a counter is not a rate, and inventing one would draw \
+         a spike on the chart the moment root started"
+    );
+    assert!(matches!(
+        row(section(&first, "ingest"), "logs").cells.get("rate"),
+        Some(CellValue::Null) | None
+    ));
+
+    let second = collector.collect().await.expect("second poll");
+    assert!(
+        metric(&second, "ingest_rows_per_sec") > 0.0,
+        "600 rows arrived between the two polls"
+    );
+    assert!(cell_number(row(section(&second, "ingest"), "logs"), "rate") > 0.0);
+}
+
+#[tokio::test]
+async fn gigapipe_tails_application_logs_out_of_the_warehouse() {
+    // A gigapipe connection with a LogQL selector is not reporting on
+    // gigapipe. It is carrying whatever was shipped *into* it — which is how
+    // root reads OTLP-delivered logs without owning a receiver.
+    let server = gigapipe_server(true).await;
+
+    let now = Utc::now();
+    let nanos = |offset: i64| (now.timestamp_nanos_opt().unwrap() + offset).to_string();
+
+    Mock::given(method("GET"))
+        .and(path("/loki/api/v1/query_range"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status": "success",
+            "data": {
+                "resultType": "streams",
+                "result": [
+                    {
+                        "stream": {
+                            "service_name": "checkout-api",
+                            "detected_level": "error",
+                            "host": "10.0.0.4"
+                        },
+                        "values": [
+                            [nanos(-2_000_000_000), "could not reach the payments service"],
+                            [nanos(-1_000_000_000), "retrying in 5s"]
+                        ]
+                    }
+                ]
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let mut options = ProfileOptions::default();
+    options.set("logQuery", json!("{service_name=\"checkout-api\"}"));
+
+    let collector = build_collector(&gigapipe_profile(&server, options), None)
+        .await
+        .expect("collector builds");
+
+    let logs = collector
+        .fetch_logs(now - Duration::hours(1), 50)
+        .await
+        .expect("the LogQL query succeeds");
+
+    assert_eq!(logs.len(), 2);
+    // The shipper's own identity, not gigapipe's.
+    assert_eq!(logs[0].source, "checkout-api");
+    // The shipper's declared level beats inferring one from the text.
+    assert_eq!(logs[0].level, LogLevel::Error);
+    assert_eq!(logs[1].level, LogLevel::Error);
+    // Oldest first, like every other collector.
+    assert!(logs[0].timestamp < logs[1].timestamp);
+}
+
+#[tokio::test]
+async fn a_bad_logql_expression_surfaces_the_reason_gigapipe_gave() {
+    let server = gigapipe_server(true).await;
+
+    Mock::given(method("GET"))
+        .and(path("/loki/api/v1/query_range"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "status": "error",
+            "error": "parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"
+        })))
+        .mount(&server)
+        .await;
+
+    let mut options = ProfileOptions::default();
+    options.set("logQuery", json!("not a selector"));
+
+    let collector = build_collector(&gigapipe_profile(&server, options), None)
+        .await
+        .expect("collector builds");
+
+    let error = collector
+        .fetch_logs(Utc::now() - Duration::hours(1), 50)
+        .await
+        .expect_err("a bad expression is an error, not an empty result");
+
+    assert!(
+        error.to_string().contains("syntax error"),
+        "the operator needs gigapipe's own message to fix the query: {error}"
+    );
+}

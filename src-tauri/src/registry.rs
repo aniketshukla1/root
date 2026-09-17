@@ -1230,6 +1230,70 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
                 diagnostics: Vec::new(),
             },
         },
+        ServiceDescriptor {
+            kind: ServiceKind::Gigapipe,
+            label: "Gigapipe".to_string(),
+            monogram: "GP".to_string(),
+            accent: 27,
+            category: "Observability".to_string(),
+            blurb: "Ingest rates per pipeline, query APIs that answer or do not, and — \
+                    with a LogQL selector — the applications shipping into it. Also \
+                    serves as a long-range history source."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Server URL", FieldKind::Url)
+                .placeholder("http://gigapipe.internal:3100")
+                .required(),
+            username: Some(user("optional")),
+            credential: Some(token(
+                "Password or bearer token",
+                "Sent as basic auth when a username is set, otherwise as a bearer token.",
+            )),
+            fields: {
+                let mut fields = vec![
+                    FieldSpec::new("logQuery", "LogQL selector", FieldKind::Text)
+                        .placeholder("{service_name=\"checkout-api\"}")
+                        .help(
+                            "Lines matching this join root's shared log stream — so anything \
+                             shipped to gigapipe over OpenTelemetry, Datadog or Elastic shows \
+                             up here without root needing a receiver of its own. Leave empty \
+                             to monitor gigapipe and nothing else.",
+                        ),
+                    FieldSpec::new(
+                        "idleIngestMinutes",
+                        "Degrade after idle minutes",
+                        FieldKind::Number,
+                    )
+                    .default(serde_json::json!(0))
+                    .range(0.0, 1440.0)
+                    .help(
+                        "Mark this connection degraded when nothing has been ingested for \
+                         this long. Zero disables it — a warehouse waiting for its first \
+                         write is idle, not broken.",
+                    )
+                    .advanced(),
+                    FieldSpec::new(
+                        "signalsDegrade",
+                        "Degrade when a query API stops answering",
+                        FieldKind::Boolean,
+                    )
+                    .default(serde_json::json!(true))
+                    .help(
+                        "A store whose process is up while its backend is gone answers \
+                         /ready and fails every query. Leave this on unless you deliberately \
+                         run a write-only instance.",
+                    )
+                    .advanced(),
+                ];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 30,
+            capabilities: Capabilities {
+                logs: true,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
     ]
 }
 

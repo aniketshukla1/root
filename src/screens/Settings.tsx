@@ -642,12 +642,14 @@ export function ProfileForm({
 
           <Field
             label="Long-range history"
-            help="root keeps a few hours in memory, which is enough for a chart and not enough for a forecast — a volume that fills in three weeks is invisible to it. If you already run Prometheus, point this at it and say which PromQL produces each metric. Read-only; nothing is written there."
+            help="root keeps a few hours in memory, which is enough for a chart and not enough for a forecast — a volume that fills in three weeks is invisible to it. If you already run Prometheus or Gigapipe, point this at it and say which PromQL produces each metric. Read-only; nothing is written there."
           >
-            <PrometheusHistory
+            <LongRangeHistory
               source={draft.historySource}
               metricKeys={metricKeys}
-              candidates={siblings.filter((s) => s.kind === "prometheus")}
+              candidates={siblings.filter((s) =>
+                ["prometheus", "gigapipe"].includes(s.kind),
+              )}
               onChange={(historySource) => setDraft((d) => ({ ...d, historySource }))}
             />
           </Field>
@@ -1552,7 +1554,7 @@ function ConfigSources({
  * they correspond — a wrong guess would forecast the wrong number
  * convincingly, which is worse than forecasting nothing.
  */
-function PrometheusHistory({
+function LongRangeHistory({
   source,
   metricKeys,
   candidates,
@@ -1567,8 +1569,8 @@ function PrometheusHistory({
   if (candidates.length === 0) {
     return (
       <p className="num text-2xs leading-relaxed text-ink-4">
-        No Prometheus connection is configured. Add one and it can serve as the history
-        source for everything else.
+        No Prometheus or Gigapipe connection is configured. Add one and it can serve as
+        the history source for everything else.
       </p>
     );
   }

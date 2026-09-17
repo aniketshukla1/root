@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 
-import { healthColor, healthLabel, markColor, type Catalog } from "../catalog";
+import { healthColor, healthLabel, isProblem, markColor, type Catalog } from "../catalog";
+import { cellText, formatRelative } from "../format";
 import type { Entity, Issue } from "../model";
+import type { ColumnSpec } from "../types";
 import { HEALTH_ORDER } from "../types";
 import { cx, ServiceMark } from "./primitives";
 
@@ -149,7 +151,14 @@ export function Heatmap({
         ))}
       </div>
 
-      {hover && <Tip entity={hover.entity} x={hover.x} y={hover.y} />}
+      {hover && (
+        <Tip
+          entity={hover.entity}
+          issue={issueBy.get(hover.entity.id)}
+          x={hover.x}
+          y={hover.y}
+        />
+      )}
     </div>
   );
 }
@@ -332,26 +341,101 @@ function Cell({
  * Fixed to the viewport rather than the block, so a cell near the right edge
  * still gets a readable label instead of one clipped by its own panel.
  */
-function Tip({ entity, x, y }: { entity: Entity; x: number; y: number }) {
+/**
+ * What the collector knows about one cell.
+ *
+ * The matrix answers "how many are broken" at a glance; the tooltip is where
+ * you ask "what is this one". It used to answer with a name, a connection and
+ * one summary line — which for a healthy component is nothing at all, since a
+ * healthy row rarely writes a summary. Hovering 357 of the 364 cells therefore
+ * told you only what you could already see from the colour.
+ *
+ * So it shows the row: the same cells the section table would, as text, worst
+ * column first. A pod that is fine still has a restart count, an age and a
+ * memory figure, and those are the answer to whether it is *quietly* wrong —
+ * the question the colour cannot answer.
+ */
+const TIP_W = 296;
+const TIP_CELLS = 6;
+
+function Tip({ entity, issue, x, y }: { entity: Entity; issue?: Issue; x: number; y: number }) {
+  // Nulls carry nothing, and the primary column is the name in the title.
+  const shown = entity.columns
+    .filter((column) => !column.primary)
+    .map((column) => ({ column, text: cellText(column, entity.cells[column.key]) }))
+    .filter((cell): cell is { column: ColumnSpec; text: string } => cell.text !== null)
+    // A column the table hides on narrow layouts is the first to go here too.
+    .sort((a, b) => Number(a.column.secondary) - Number(b.column.secondary))
+    .slice(0, TIP_CELLS);
+
+  // Clamped to the viewport: the cell under the pointer can be anywhere, and
+  // a tooltip that runs off the right edge is one you have to move the mouse
+  // to read — at which point it is gone. Above the cell unless the block sits
+  // near the top of the window, in which case below it.
+  const left = Math.min(Math.max(x, TIP_W / 2 + 8), window.innerWidth - TIP_W / 2 - 8);
+  const below = y < 210;
+
   return (
     <div
-      className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full pb-2"
-      style={{ left: x, top: y }}
+      className={cx(
+        "pointer-events-none fixed z-50 -translate-x-1/2",
+        below ? "pt-6" : "-translate-y-full pb-2",
+      )}
+      style={{ left, top: y, width: TIP_W }}
     >
-      <div className="panel max-w-64 px-2.5 py-1.5 overlay-plate">
-        <div className="flex items-center gap-1.5">
+      <div className="panel overlay-plate">
+        <div className="panel-pad-x flex items-center gap-2 border-b border-line py-2">
           <span
             className="h-2 w-2 shrink-0 rounded-xs"
             style={{ background: healthColor(entity.health) }}
           />
-          <span className="num truncate text-2xs text-ink">{entity.name}</span>
+          <span className="num min-w-0 flex-1 truncate text-xs text-ink">{entity.name}</span>
+          <span
+            className="num shrink-0 text-2xs"
+            style={{ color: healthColor(entity.health) }}
+          >
+            {healthLabel(entity.health)}
+          </span>
         </div>
-        <div className="num mt-1 text-2xs text-ink-4">
-          {entity.profileName} · {entity.section}
+
+        <div className="panel-pad-x py-2">
+          <div className="num truncate text-2xs text-ink-4">
+            {entity.profileName} · {entity.section}
+          </div>
+
+          {entity.summary && (
+            <div className="num mt-1.5 line-clamp-2 text-2xs text-ink-3">{entity.summary}</div>
+          )}
+
+          {shown.length > 0 && (
+            <dl className="mt-2 flex flex-col gap-1 border-t border-line-soft pt-2">
+              {shown.map(({ column, text }) => (
+                <div key={column.key} className="flex items-baseline gap-2">
+                  <dt className="num min-w-0 flex-1 truncate text-2xs text-ink-4">
+                    {column.label}
+                  </dt>
+                  <dd className="num shrink-0 text-2xs text-ink-2">{text}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          {issue && (
+            <div className="mt-2 border-t border-line-soft pt-2">
+              <div
+                className="num text-2xs"
+                style={{ color: healthColor(entity.health) }}
+              >
+                {issue.acknowledged ? "Acknowledged · " : ""}
+                {issue.alert ? issue.alert.title : "Failing"} · {formatRelative(issue.firstSeen)}
+              </div>
+            </div>
+          )}
         </div>
-        {entity.summary && (
-          <div className="num mt-1 line-clamp-2 text-2xs text-ink-3">{entity.summary}</div>
-        )}
+
+        <div className="panel-pad-x num border-t border-line py-1.5 text-2xs text-ink-4">
+          {isProblem(entity.health) ? "Click for the summary" : "Click to open"}
+        </div>
       </div>
     </div>
   );

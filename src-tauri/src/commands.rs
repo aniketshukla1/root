@@ -914,7 +914,7 @@ async fn long_history(
             .cloned()
             .ok_or_else(|| {
                 crate::error::AppError::Collector(
-                    "this connection points at a Prometheus that is no longer configured"
+                    "this connection points at a history source that is no longer configured"
                         .into(),
                 )
             })?;

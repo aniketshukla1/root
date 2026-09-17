@@ -1,4 +1,4 @@
-import type { Metric, MetricUnit } from "./types";
+import type { CellValue, ColumnSpec, Metric, MetricUnit } from "./types";
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes)) return "—";
@@ -124,4 +124,37 @@ export function formatRate(perSecond: number, unit: MetricUnit, windowSecs?: num
   if (Math.abs(scaled) < 1e-9) return "flat";
   const sign = scaled > 0 ? "+" : "−";
   return `${sign}${formatMetricValue(Math.abs(scaled), unit)}/${daily ? "day" : "h"}`;
+}
+
+/**
+ * One cell, as a string.
+ *
+ * The table renders cells as elements — a meter, a badge, a row of tags. A
+ * tooltip has no room for any of that and wants the same value as text, so the
+ * formatting rules live here rather than being approximated a second time.
+ */
+export function cellText(column: ColumnSpec, value: CellValue | undefined): string | null {
+  if (!value || value.type === "null") return null;
+  switch (value.type) {
+    case "status":
+      return value.value;
+    case "tags":
+      return value.value.filter(Boolean).join(" · ") || null;
+    case "duration":
+      return formatDuration(value.value * 1000);
+    case "timestamp":
+      return formatRelative(value.value);
+    case "gauge":
+      return formatMetricValue(
+        value.value,
+        column.kind.type === "gauge" ? column.kind.unit : "count",
+      );
+    case "number":
+      return formatMetricValue(
+        value.value,
+        column.kind.type === "metric" ? column.kind.unit : "count",
+      );
+    default:
+      return value.value || null;
+  }
 }

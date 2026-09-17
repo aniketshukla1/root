@@ -122,9 +122,27 @@ export function markColor(accent: number): string {
   return SERIES[IDENTITY_ORDER[Math.abs(accent) % IDENTITY_ORDER.length]];
 }
 
-/** Chart series colour for the nth plotted series. Past 8, fold into "Other". */
+/**
+ * The line colour for a chart that plots one thing.
+ *
+ * Those charts used to wear the service kind's identity hue, and a kind whose
+ * slot happened to be series-2, -4 or -8 drew its CPU line in something
+ * indistinguishable from serious, warn or crit: a healthy MongoDB showed a red
+ * sparkline beside the word "Healthy". A chart with one series has no legend
+ * for a colour to key into, so it gets no identity colour at all — the badge,
+ * the logo and the name already carry that.
+ */
+export const DATA_INK = "var(--color-data)";
+
+/**
+ * Chart series colour for the nth plotted series. Past 8, fold into "Other".
+ *
+ * Handed out in IDENTITY_ORDER rather than raw slot order, so the hues that sit
+ * next to a status colour are only reached once a chart is already comparing
+ * five or more things and has a legend to say which line is which.
+ */
 export function seriesColor(index: number): string {
-  return SERIES[index % SERIES.length];
+  return SERIES[IDENTITY_ORDER[index % IDENTITY_ORDER.length]];
 }
 
 export const SERIES_CAP = SERIES.length;

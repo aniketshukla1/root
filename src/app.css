@@ -41,8 +41,12 @@
   /* ink */
   --color-ink: #f0f5fa;
   --color-ink-2: #a9b8ca;
-  --color-ink-3: #8496ad;
-  --color-ink-4: #6f8095;
+  --color-ink-3: #8d9fb4;
+  /* The quietest ink still has to clear 4.5:1 on the LIGHTEST surface it is
+     ever printed on, not the darkest. At #6f8095 it measured 4.66:1 on panel
+     but 4.17:1 on raised and 4.10:1 on overlay — a fail everywhere a dialog,
+     a tooltip or a signal card carries small print. */
+  --color-ink-4: #7a8ba0;
 
   /* interaction */
   --color-accent: #4cc2ff;
@@ -66,6 +70,11 @@
   --color-series-7: #57bcc4;
   --color-series-8: #dd8080;
 
+  /* A chart with one series. Cool and quiet on purpose: not a status hue, not
+     an identity hue, and far enough from the accent that a deploy marker drawn
+     across it still reads as a different thing. */
+  --color-data: #86a8cc;
+
   /* Plotted surfaces: the nominal lane, log severities below warn, the
      component-matrix ground, and the chart ruling.
      `lane-ok` is deliberately recessive but must stay ABOVE ~1.9:1 against
@@ -76,21 +85,67 @@
   --color-lvl-debug: #2b3846;
   --color-lvl-info: #6f8095;
 
-  --text-2xs: 10px;
+  /* --- type scale ------------------------------------------------------
+   *
+   * Two bands. Below --text-base is chrome: labels, captions, table cells,
+   * the mono furniture. Above it is display: figures and headlines, which
+   * exist to be read across a room-lit desk from three feet away.
+   *
+   * The display band used to have no tokens at all, so eleven sizes were
+   * invented at call sites — 15, 17, 19, 21, 22, 23, 25, 26, 34, 44 — several
+   * of them a pixel apart and doing the same job in different files. These
+   * seven are those eleven, deduplicated. Anything not on this scale is a bug
+   * unless it carries a comment saying why.
+   */
+  /* 10px was carrying four fifths of the words on Overview — not just the
+     uppercase kickers this size was chosen for, but the evidence lines, the
+     propagation sentence and the blind-spot list. Half a pixel is invisible
+     on a caption and the difference between readable and squinting on a
+     sentence; prose that runs longer than a label now asks for --text-xs. */
+  --text-2xs: 10.5px;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 13px;
 
+  --text-lg: 15px;
+  --text-xl: 17px;
+  --text-2xl: 19px;
+  --text-3xl: 22px;
+  --text-4xl: 25px;
+  --text-5xl: 34px;
+  --text-6xl: 44px;
+
+  /* Corners: a hairline radius on a mark, the house 3px on everything else.
+     `--radius-lg` is deliberately the same 3px — the field-guide surface has
+     exactly one corner, and a "large" radius would be a different product. */
+  --radius-xs: 1px;
   --radius-sm: 2px;
   --radius-md: 3px;
   --radius-lg: 3px;
+
+  /* The hover and press washes. Both were inline #ffffff0a literals, which is
+     the one kind of colour that cannot follow the theme. */
+  --color-wash: color-mix(in oklab, var(--color-ink) 5%, transparent);
+  --color-wash-strong: color-mix(in oklab, var(--color-ink) 8%, transparent);
 }
 
 /* Values that are not colours cannot live in @theme, so the ruling tint and
    the shadow ride on plain custom properties that both themes redefine. */
 :root {
+  /* Motion, CSS side. `ui/motion.ts` owns the entrance choreography; these are
+     the state changes — a hover, a focus, a colour settling after a click.
+     They were Tailwind's defaults plus two ad-hoc durations. */
+  --ease-ui: cubic-bezier(0.22, 0.9, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+
   --grat: rgba(255, 255, 255, 0.045);
-  --plate-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  /* One elevation. Surfaces on the page are separated by borders — that is the
+     whole premise of this palette — so the only thing that casts a shadow is
+     something floating over it: a dialog, a tooltip, a toast, the palette.
+     `--plate-shadow` used to exist alongside this and was applied to nothing,
+     while five different `shadow-black/NN` strengths were hardcoded instead. */
+  --overlay-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* ------------------------------------------------------------------- light
@@ -114,8 +169,10 @@
 
   --color-ink: #2a2622;
   --color-ink-2: #4a443d;
-  --color-ink-3: #6e6659;
-  --color-ink-4: #8c8375;
+  --color-ink-3: #585044;
+  /* Same floor on paper, where the sunk and raised surfaces are the darker
+     ones: #8c8375 measured 3.62:1 on panel and failed outright. */
+  --color-ink-4: #6f6759;
 
   --color-accent: #1d6a9c;
   --color-accent-dim: #17567e;
@@ -136,13 +193,15 @@
   --color-series-7: #2d7f88;
   --color-series-8: #a85252;
 
+  --color-data: #4f6b8a;
+
   --color-lane-ok: #b9cdab;
   --color-cell-todo: #ece4d6;
   --color-lvl-debug: #cabda7;
   --color-lvl-info: #9a9081;
 
   --grat: rgba(60, 46, 28, 0.1);
-  --plate-shadow: 0 1px 2px rgba(60, 46, 28, 0.05);
+  --overlay-shadow: 0 8px 24px rgba(60, 46, 28, 0.18);
 }
 
 /* ------------------------------------------------------------------- density
@@ -214,6 +273,19 @@
     color: inherit;
   }
 
+  /* State changes ride the UI easing by default. Entrances do not — those are
+     choreographed in ui/motion.ts and must not inherit a duration from here. */
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [role="tab"],
+  .row-hover {
+    transition-duration: var(--dur-fast);
+    transition-timing-function: var(--ease-ui);
+  }
+
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 1px;
@@ -247,6 +319,33 @@
 }
 
 @layer components {
+  /* Density-aware surfaces. `--pad-x`, `--gutter` and `--panel-pad` were
+     declared in both density scales and read by nothing at all, so switching
+     to comfortable changed row height and type size while every padding in
+     the product stayed at its hardcoded 12px. These three classes are where
+     the toggle actually lands: a panel's body, a panel's header and a table
+     cell. Everything else can stay on the Tailwind scale — a one-off gap is
+     not a density decision. */
+  .panel-pad {
+    padding: var(--panel-pad);
+  }
+
+  .panel-pad-x {
+    padding-inline: var(--panel-pad);
+  }
+
+  .cell-pad-x {
+    padding-inline: var(--pad-x);
+  }
+
+  .screen-pad {
+    padding: calc(var(--gutter) * 0.75);
+  }
+
+  .screen-gap {
+    gap: calc(var(--gutter) * 0.75);
+  }
+
   /* Mono is the chrome typeface. Column headers and micro-labels are the only
      uppercase in the product — it reads as tabular chrome, not editorial voice. */
   .label {
@@ -255,6 +354,11 @@
     letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--color-ink-3);
+  }
+
+  /* The floating layer: dialogs, tooltips, toasts, the palette. */
+  .overlay-plate {
+    box-shadow: var(--overlay-shadow);
   }
 
   .panel {
@@ -266,7 +370,7 @@
   /* Rows are the densest surface in the app; the hover wash has to be
      perceptible without becoming a stripe pattern at 29px. */
   .row-hover:hover {
-    background: color-mix(in oklab, var(--color-ink) 5%, transparent);
+    background: var(--color-wash);
   }
 
   .num {

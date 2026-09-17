@@ -107,13 +107,66 @@ Two things make this hold rather than merely being a convention:
 
 ## Collectors
 
+Twenty-seven service types, grouped by the `category` each one declares in
+`registry::catalog()`. A collector that emits no log lines says so — most do not,
+because most infrastructure exposes an API and not a stream.
+
+### Containers and orchestration
+
 | Source | What is collected | Logs |
 | --- | --- | --- |
-| **Docker** | Container inventory, per-container CPU / memory / network, health-check state, restart and exit status, engine version | `docker logs` tailed per running container |
-| **Jenkins** | Job results and durations, build queue depth *and the reason each item is blocked*, executor counts, agent online/offline with cause | Build outcomes, plus console output for builds that fail |
-| **Elasticsearch** | Cluster colour, node JVM heap / CPU / disk, shard counts (unassigned, relocating, initializing), per-index size and doc count | Documents tailed from a configured index pattern (ECS-aware) |
-| **PostgreSQL / MySQL** | Connection saturation, database and table sizes, long-running queries, blocked locks, cache hit ratio, deadlocks, replication role and lag | Synthesized from live diagnostics — slow queries and lock waits |
+| **Docker** | Container inventory, per-container CPU / memory / network, health-check state, restart and exit status, engine version | `docker logs` tailed per running container; stderr with no level of its own is read as a warning |
+| **Podman** | The same Engine API Docker serves, from a daemonless, rootless engine. The collector carries its kind rather than hard-coding Docker, so a failed connection names Podman's socket and a working one is labelled with the engine actually running | Container logs, tailed identically |
+| **Kubernetes** | Node readiness, workload rollout state, and pods that are crash-looping or stuck pending. Nodes and workloads are listed in full; pods appear only when something is wrong with them, because a table of every pod in a real cluster is the wall of noise it replaced. Auth comes from kubeconfig, so EKS/GKE exec plugins work with no token to paste | Warning events from the cluster event stream |
+
+### Hosts and storage
+
+| Source | What is collected | Logs |
+| --- | --- | --- |
+| **Linux host** | Disk fill per mount and never averaged — a root filesystem at 99% beside a data volume at 3% averages to comfortable, and only one of them stops the machine. Memory *available* rather than free, because `MemFree` on a healthy box is near zero. Load against the core count from the same scrape | None. node_exporter exposes metrics, not a stream |
+| **NFS exports** | Fill *and* inode exhaustion per export, since millions of small files run out of inodes while `df -h` still shows 40% free. Exports are grouped by the server they come from, so one dead server is one row rather than six broken teams. `node_filesystem_device_error` is checked before any fill number is believed — a stale mount reports zeroes that otherwise read as an empty, healthy export | None |
+
+### Endpoints and proxies
+
+| Source | What is collected | Logs |
+| --- | --- | --- |
 | **HTTP endpoint** | Uptime, status code, response time, and an optional body assertion — catches a service that answers 200 while being unable to reach its own database | State *transitions* only, so a healthy endpoint stays silent |
+| **Nginx** | Active connections, request rate, and the reading / writing / waiting split from `stub_status` — plus the gap between accepts and handled, which is nginx dropping connections for want of file descriptors or worker slots, and is invisible if you read only the totals | None |
+| **Apache httpd** | Worker saturation from the `mod_status` scoreboard, which carries the denominator `BusyWorkers` alone cannot: 118 busy is fine at 400 slots and fatal at 128. States are kept apart — a wall of `W` is a server under load, a wall of `R` is one held open by slow clients, and `G` piling up is a reload stuck behind long requests | None |
+| **Apache Tomcat** | Thread pool saturation per connector, plus request and error rates, from the manager's JMX proxy. Pools are never summed: 200 busy of 400 reads as half capacity and can be one connector completely exhausted while the other sits idle | None |
+| **HAProxy** | Frontends, backends, and the servers behind each one counted individually — a BACKEND row reports `UP` on its last surviving server, which is the right answer to "can this serve" and the wrong one to "is this healthy". `qcur`, the queue that fills while there is still time to act, is read as the leading signal | None |
+| **Traefik** | Routers, services, and the servers behind them — including routers that fail to build, pointing at a missing service or an unresolved certificate. Traefik answers those requests itself, so an uptime check on the proxy stays green while every request to that route 404s | None |
+
+### Databases, caching and search
+
+| Source | What is collected | Logs |
+| --- | --- | --- |
+| **PostgreSQL** | Connection saturation, database and table sizes, long-running queries, blocked locks, cache hit ratio, deadlocks, replication role and lag | None. SQL reaches no log stream, and the collector does not invent one: slow queries and lock waits are rows in Active queries carrying the full statement and a terminate action, not synthesized lines duplicating the same fact |
+| **MySQL** | Thread and connection counts, schema sizes, long-running queries, slow-query and aborted-connect counters, replication state. Works with MariaDB | None, for the same reason |
+| **MongoDB** | Connection count against the limit, replica set health and lag, and database sizes, from four read-only admin commands. `replSetGetStatus` on a standalone and `currentOp` without privileges both fail on perfectly healthy servers, so each degrades to an empty section rather than reporting the database down | Operations running past the threshold, as `diagnostic` lines rather than runtime ones |
+| **ClickHouse** | Running queries, merges, and replicated tables — including `is_readonly` ones, which keep answering queries correctly from data they already had while inserts fail and the replica drifts. `queue_size` moves before `absolute_delay` does | None |
+| **Redis** | Memory used against the limit, evictions, connected and blocked clients, ops rate, hit rate, and replication link state, all from `INFO`. `KEYS` and `SCAN` are absent by design — a monitor that walks a production keyspace every poll causes the incident it reports | Slow command log entries, as `diagnostic` lines |
+| **Memcached** | Hit rate, memory fill, item count, and the eviction *rate*. A cache at 96% hits can still be badly undersized, because the hot keys keep answering while everything else is thrown out to make room. Reclaims are counted apart from `expired_unfetched`, since only the first means pressure | None. The text protocol serves `stats` and nothing else |
+| **Elasticsearch** | Cluster colour, node JVM heap / CPU / disk, shard counts (unassigned, relocating, initializing), per-index size and doc count. Works with OpenSearch | Documents tailed from a configured index pattern (ECS-aware); silent until one is set |
+
+### Messaging and coordination
+
+| Source | What is collected | Logs |
+| --- | --- | --- |
+| **Kafka** | Consumer group lag, offline and under-replicated partitions, topic sizes, and broker membership, over the native protocol. A group behind with *no members* is a stopped pipeline rather than a slow one. Per-poll work is bounded rather than proportional to partition count | Derived events only, each reported once: a partition going offline, or a group with lag and nobody on it |
+| **RabbitMQ** | Queue depth and growth, consumer counts, unacknowledged messages, and node memory and disk alarms, via the management API. A queue at 200 with zero consumers is treated as worse than one at 50,000 being drained by twenty | Memory and disk alarms, once each as they are raised |
+| **NATS** | Connections, subscriptions, and cluster routes from `/varz`, plus route count — a clustered server that lost its routes looks healthy from its own side. And `slow_consumers`, which is the only trace NATS leaves when it drops a subscriber's pending messages and disconnects it; the publisher is never told | None |
+| **ZooKeeper** | Ensemble role, outstanding request backlog, and `zk_synced_followers` — a leader reporting four followers and two synced has already lost its fault tolerance, and nothing about the port or `zk_server_state` shows it. Read with the `mntr` four-letter word, so the monitor is not one more client against the connection limit it is watching | None |
+| **Consul** | Raft leadership, peer count, and every check the cluster knows about — with node and service failures counted apart. One dead agent fails `serfHealth` plus every service registered on it, which reads naively as twenty service outages and is one host | None |
+| **etcd** | Raft health and, the number that matters, mvcc database size against the backend quota. Reaching it raises `NOSPACE` and turns the cluster read-only — every write in a Kubernetes cluster fails while `/health` keeps answering true. `/metrics` is parsed in-tree rather than pulling in a Prometheus dependency | None |
+
+### CI/CD, observability and cloud
+
+| Source | What is collected | Logs |
+| --- | --- | --- |
+| **Jenkins** | Job results and durations, build queue depth *and the reason each item is blocked*, executor counts, agent online/offline with cause | Build outcomes as they finish. Console output is fetched per build into the `build` stream instead — forty lines per failed build in the shared view buried everything else |
+| **Prometheus** | Scrape target health, firing alert rules, and TSDB series count. A target that silently stopped being scraped is invisible in a dashboard built on its data; the graph just goes flat. Deliberately not a PromQL client — the question here is whether Prometheus is scraping what it thinks it is | Each alert once, as it starts firing |
+| **AWS** | One connection is an account and region; buckets and queues are components inside it. S3 object count and stored bytes against lifecycle policy — growth that nothing will ever delete. SQS depth, in-flight count, and dead-letter configuration: depth with *nothing in flight* means no consumer is even trying. Object counts walk a bounded number of pages and say when they stopped rather than reporting a fraction as a total | None. Oldest-message age is left to CloudWatch on purpose: reading it off the queue would increment every message's receive count and dead-letter the backlog the monitor was watching |
 
 ### On log delivery
 

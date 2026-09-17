@@ -183,20 +183,62 @@ without migrating the profile shape.
    one out never repaints the rest. The two never share a code path.
 3. **Everything else is neutral ink.** Text never wears a series colour.
 
+   A chart that plots **one** series is in that third group, not the second: it
+   draws in `DATA_INK` (`--color-data`). Identity on a single-series chart buys
+   nothing — the panel title, badge and name already say whose line it is — and
+   it costs something real, because three of the eight identity hues sit beside
+   a status hue. A healthy MongoDB connection used to draw a red sparkline next
+   to the word "Healthy".
+
 Both palettes are validated against the panel surface (`#101317`) for the dark
 lightness band, chroma floor, protanopia/deuteranopia/tritanopia separation, the
 normal-vision floor, and 3:1 contrast. **Re-run the validator before changing any
 value in the `@theme` block** — those hexes are computed, not chosen.
 
+**Every other value is a token too.** The colour rules above were followed from
+the start; type, spacing, corners and motion were not, and drifted into eleven
+display sizes, three dead density tokens and five spellings of a 3px corner.
+They are now one scale each:
+
+| Axis | Tokens | Rule |
+| --- | --- | --- |
+| Type — chrome | `2xs` 10.5 · `xs` 11 · `sm` 12 · `base` 13 | labels, captions, table cells |
+| Type — display | `lg` 15 · `xl` 17 · `2xl` 19 · `3xl` 22 · `4xl` 25 · `5xl` 34 · `6xl` 44 | figures and headings |
+| Density | `--row-h`, `--ui-size`, `--mono-size`, `--pad-x`, `--panel-pad`, `--gutter` | reached through `.panel-pad`, `.cell-pad-x`, `.screen-pad` — never re-hardcoded |
+| Corners | `xs` 1 (marks) · `sm` 2 · `md` 3 (everything else) | bare `rounded` is Tailwind's 4px and is not ours |
+| Motion | `--dur-fast`, `--dur-base`, `--ease-ui` for states; `ui/motion.ts` for entrances | |
+
+An arbitrary value (`text-[18px]`, `p-[7px]`) is a bug unless it carries a
+comment saying why — the splash wordmark is the one that does.
+
+**Components own their states.** `Button` has four variants, three sizes and a
+`loading` that keeps its width; `Input` has `invalid`; `Field` binds the error
+to the control; `Chip` is the pressable sibling of `Tag`; `Stat` is the only
+place a figure is typeset. Reaching past them — a raw `<button>` with a height
+in `className`, a hand-built pill — is how the system erodes, and how six
+control heights and seven pill spellings happened.
+
 Other rules:
 
+- **A role is a promise.** `role="tab"` means arrow keys and an `aria-controls`
+  panel; a filter that has neither is a `radiogroup`, which is what `Segmented`
+  now is. Anything that appears unasked — a toast — carries `aria-live`.
 - **Status is never colour alone.** Every health signal carries a distinct
   silhouette (circle / triangle / square / ring) and, wherever there is room, the
   word. Dense grids that omit the word carry it in `title`.
 - **One y-axis per chart.** Two units means two charts. `Metrics` groups series
   by `key:unit` for exactly this reason.
 - **Uppercase is for table column headers only** (`.label`). Headings are
-  sentence case.
+  sentence case, and an identifier is never uppercased at all — a connection
+  shown as `ORDERS-API` is a different string from the one in every other
+  column.
+- **The quiet inks clear 4.5:1 on the lightest surface they print on**, not the
+  darkest: `--color-ink-4` is used on `raised` and `overlay` as well as `panel`.
+- **`--text-2xs` is for labels and captions.** Anything that is a sentence takes
+  `--text-xs` or larger.
+- **A healthy cell is a ring, not a fill** (12% fill / 45% ring, ≥3:1 against
+  its own ground). A page of healthy components must not out-shout the few that
+  are not.
 - Thin marks, recessive grid, 2px surface gaps between stacked segments, and a
   hover layer on everything that plots.
 

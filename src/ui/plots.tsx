@@ -395,7 +395,7 @@ export function StackBars({
                 ) : null,
               )}
             </motion.span>
-            <span className="num text-[9px] text-ink-4">{col.label}</span>
+            <span className="num text-2xs text-ink-4">{col.label}</span>
           </div>
         );
       })}
@@ -435,7 +435,7 @@ export function Calendar({
                 ease: [0.3, 1.4, 0.5, 1],
                 delay: (w * 7 + d) * 0.006,
               }}
-              className="block rounded-[1px]"
+              className="block rounded-xs"
               style={{ width: cell, height: cell, background: fill[Math.min(3, level)] }}
             />
           ))}

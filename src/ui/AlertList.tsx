@@ -66,7 +66,7 @@ export function AlertList({
             />
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate text-[13px] text-ink">{alert.title}</span>
+                <span className="truncate text-base text-ink">{alert.title}</span>
                 {alert.acknowledged && alert.active && <Tag>Acked</Tag>}
                 {!alert.active && <Tag color="var(--color-ok)">Resolved</Tag>}
               </div>

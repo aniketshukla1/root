@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
-import { isProblem, markColor } from "../catalog";
+import { DATA_INK, isProblem } from "../catalog";
 import { formatDateTime, formatMetricValue, formatRelative, isBreaching } from "../format";
 import { criticalityLabel, environmentLabel, type EstateModel } from "../model";
 import type { ServiceTab, View } from "../nav";
@@ -25,14 +25,17 @@ import { Horizon, Rate } from "../ui/capacity";
 import { ConfigTab } from "../ui/config";
 import { SectionList } from "../ui/SectionTable";
 import {
+  balancedTracks,
   Button,
+  Chip,
   cx,
   Dot,
   Empty,
   HealthBadge,
   Panel,
-  ServiceMark,
   Sep,
+  ServiceMark,
+  Stat,
   Tabs,
   Tag,
 } from "../ui/primitives";
@@ -214,7 +217,7 @@ export function ServiceDetail({
           <button
             type="button"
             onClick={() => onNavigate({ name: "overview" })}
-            className="row-hover flex items-center gap-2.5 rounded-lg border border-line bg-panel px-3 py-2 text-left"
+            className="row-hover flex items-center gap-2.5 rounded-md border border-line bg-panel px-3 py-2 text-left"
             style={{
               borderLeftWidth: 2,
               borderLeftColor:
@@ -237,7 +240,7 @@ export function ServiceDetail({
 
         {snapshot.error && (
           <div
-            className="rounded-lg border px-3 py-2 text-xs"
+            className="rounded-md border px-3 py-2 text-xs"
             style={{
               borderColor: "color-mix(in oklab, var(--color-crit) 40%, transparent)",
               background: "color-mix(in oklab, var(--color-crit) 10%, transparent)",
@@ -250,7 +253,7 @@ export function ServiceDetail({
 
         {result && (
           <div
-            className="flex items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-xs"
+            className="flex items-center gap-2 rounded-md border border-line bg-panel px-3 py-2 text-xs"
             role="status"
           >
             <span className={result.ok ? "text-ok" : "text-crit"}>
@@ -265,7 +268,11 @@ export function ServiceDetail({
           </div>
         )}
 
-        <SummaryBar service={service} history={history} />
+        {/* The Dashboard tab opens with Signals — the same four numbers, with
+            their trend, threshold and sparkline. Repeating them in the bar
+            above it said each one three times on one screen, so the bar keeps
+            only the summary and ownership while that tab is open. */}
+        <SummaryBar service={service} history={history} showMetrics={tab !== "dashboard"} />
 
         {/* `shrink-0` matters: Screen is a flex column, so without it this
             panel shrinks to fit and `overflow-hidden` silently clips the tab
@@ -286,9 +293,12 @@ export function ServiceDetail({
               { value: "config", label: "Config", count: findings.length || undefined },
               { value: "configuration", label: "Connection" },
             ]}
+            panelId="service-tab-panel"
           />
 
-          <div className="p-3">
+          {/* Named so the tabs can point at it: `role="tab"` without
+              `aria-controls` describes a relationship it never states. */}
+          <div id="service-tab-panel" role="tabpanel" tabIndex={-1} className="p-3">
             {tab === "dashboard" && (
               <ServiceDashboard
                 service={service}
@@ -332,7 +342,7 @@ export function ServiceDetail({
               />
             )}
 
-            {tab === "metrics" && <MetricsTab history={history} kind={snapshot.kind} catalog={catalog} />}
+            {tab === "metrics" && <MetricsTab history={history} />}
 
             {tab === "logs" && (
               <LogsTab logs={serviceLogs} onNavigate={onNavigate} />
@@ -381,9 +391,11 @@ export function ServiceDetail({
 function SummaryBar({
   service,
   history,
+  showMetrics,
 }: {
   service: EstateModel["services"][number];
   history: MetricSeries[];
+  showMetrics: boolean;
 }) {
   const { snapshot, ownership } = service;
 
@@ -393,7 +405,7 @@ function SummaryBar({
           shrink, so without one the summary is squeezed to a single word per
           line instead of wrapping the strip below it. */}
       <div className="min-w-64 flex-1">
-        <p className="text-[13px] text-ink-2">{snapshot.summary}</p>
+        <p className="text-base text-ink-2">{snapshot.summary}</p>
         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-2xs text-ink-4">
           <span className={ownership.assigned ? "" : "italic"}>{ownership.team}</span>
           {ownership.assigned && (
@@ -424,35 +436,33 @@ function SummaryBar({
         </div>
       </div>
 
-      {snapshot.metrics.length > 0 && (
+      {showMetrics && snapshot.metrics.length > 0 && (
         <div className="flex flex-wrap gap-x-5 gap-y-2">
           {snapshot.metrics.slice(0, 6).map((metric) => {
             const series = history.find((s) => s.key === metric.key);
             const over = isBreaching(metric);
             return (
-              <div key={metric.key} className="min-w-0">
-                <div
-                  className={cx("num text-[17px] leading-tight", over ? "text-warn" : "text-ink")}
-                  title={
-                    metric.warnAbove !== undefined
-                      ? `Threshold ${formatMetricValue(metric.warnAbove, metric.unit)}`
-                      : undefined
-                  }
-                >
-                  {formatMetricValue(metric.value, metric.unit)}
-                </div>
-                <div className="label mt-0.5 truncate" title={metric.label}>
-                  {metric.label}
-                </div>
+              <Stat
+                key={metric.key}
+                size="md"
+                label={metric.label}
+                value={formatMetricValue(metric.value, metric.unit)}
+                tone={over ? "var(--color-warn)" : undefined}
+                hint={
+                  metric.warnAbove !== undefined
+                    ? `Threshold ${formatMetricValue(metric.warnAbove, metric.unit)}`
+                    : metric.label
+                }
+              >
                 {series?.trend && (
-                  <div className="num mt-0.5 flex gap-1.5 text-2xs">
+                  <span className="num flex gap-1.5 pb-0.5 text-2xs">
                     <Rate trend={series.trend} unit={metric.unit} />
                     {metric.warnAbove !== undefined && (
                       <Horizon trend={series.trend} unit={metric.unit} />
                     )}
-                  </div>
+                  </span>
                 )}
-              </div>
+              </Stat>
             );
           })}
         </div>
@@ -525,7 +535,7 @@ function AlertsTab({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-[13px] text-ink">{issue.name}</span>
+                    <span className="truncate text-base text-ink">{issue.name}</span>
                     <Tag>{issue.section}</Tag>
                   </div>
                   <p className="line-clamp-1 text-xs text-ink-3" title={issue.summary}>
@@ -544,17 +554,9 @@ function AlertsTab({
   );
 }
 
-function MetricsTab({
-  history,
-  kind,
-  catalog,
-}: {
-  history: MetricSeries[];
-  kind: string;
-  catalog: Catalog;
-}) {
+function MetricsTab({ history }: { history: MetricSeries[] }) {
   const plotted = history.filter((s) => s.points.length > 1);
-  const accent = markColor(catalog.get(kind).accent);
+  const line = DATA_INK;
 
   // This tab has no range control of its own — the Dashboard tab owns that —
   // so the axis is whatever the data actually covers rather than a window the
@@ -575,7 +577,7 @@ function MetricsTab({
   }
 
   return (
-    <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(360px,1fr))]">
+    <div className="grid gap-3" style={balancedTracks(plotted.length, 360)}>
       {plotted.map((series) => (
         <Panel
           key={series.key}
@@ -609,7 +611,7 @@ function MetricsTab({
               {
                 key: series.key,
                 label: series.label,
-                color: accent,
+                color: line,
                 points: series.points,
                 warnAbove: series.warnAbove,
               },
@@ -664,7 +666,7 @@ function LogsTab({
           {logs.slice(0, 400).map((event) => (
             <tr
               key={event.id}
-              className="group border-b border-line/40 align-baseline hover:bg-white/[0.035]"
+              className="group border-b border-line/40 align-baseline row-hover"
             >
               <td className="w-px px-3 py-1 whitespace-nowrap">
                 <button
@@ -905,7 +907,7 @@ function ConfirmAction({
       aria-modal
     >
       <div
-        className="panel w-full max-w-md bg-overlay p-4 shadow-2xl shadow-black/50"
+        className="panel w-full max-w-md bg-overlay p-4 overlay-plate"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-sm font-semibold text-ink">{action.label}</h2>
@@ -983,15 +985,10 @@ function DependencyList({
       ) : (
         <div className="flex flex-wrap gap-1.5">
           {ids.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onOpen(id)}
-              className="row-hover num flex items-center gap-1.5 rounded-sm border border-line px-2 py-1 text-2xs text-ink-2"
-            >
+            <Chip key={id} onClick={() => onOpen(id)} className="num text-ink-2">
               {id}
               <ChevronRight size={11} style={{ color: "var(--color-ink-4)" }} />
-            </button>
+            </Chip>
           ))}
         </div>
       )}

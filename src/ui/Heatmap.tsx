@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { healthColor, healthLabel, markColor, type Catalog } from "../catalog";
 import type { Entity, Issue } from "../model";
@@ -138,59 +138,14 @@ export function Heatmap({
         style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${MIN_BLOCK}px, 1fr))` }}
       >
         {groups.map((group) => (
-          <div
+          <Block
             key={group.key}
-            className={cx(
-              "min-w-0 rounded-sm border border-line-soft bg-sunk",
-              // Only once the container is wide enough that a second track
-              // certainly exists; spanning into a track that isn't there
-              // grows the grid instead of the block.
-              group.entities.length > WIDE_BLOCK_AT && "@3xl:col-span-2",
-            )}
-          >
-            <div className="border-b border-line-soft px-2 py-1.5">
-              <div className="flex items-center gap-1.5">
-                <ServiceMark descriptor={catalog.get(group.kind)} size={14} />
-                <span className="num truncate text-2xs text-ink-2">{group.profileName}</span>
-                <span className="num ml-auto shrink-0 text-2xs text-ink-4">
-                  {group.entities.length}
-                </span>
-              </div>
-              <div className="mt-0.5 flex items-center gap-1.5">
-                <span className="num truncate text-2xs text-ink-4">{group.section}</span>
-                {(group.down > 0 || group.degraded > 0) && (
-                  <span className="num ml-auto shrink-0 text-2xs">
-                    {group.down > 0 && <span className="text-crit">{group.down} down</span>}
-                    {group.down > 0 && group.degraded > 0 && (
-                      <span className="text-ink-4"> · </span>
-                    )}
-                    {group.degraded > 0 && (
-                      <span className="text-warn">{group.degraded} degraded</span>
-                    )}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div
-              className="flex flex-wrap gap-[3px] p-2"
-              onMouseLeave={() => setHover(null)}
-            >
-              {group.entities.slice(0, CELL_CAP).map((entity) => (
-                <Cell
-                  key={entity.id}
-                  entity={entity}
-                  onHover={(x, y) => setHover({ entity, x, y })}
-                  onClick={() => onSelect(entity, issueBy.get(entity.id))}
-                />
-              ))}
-              {group.entities.length > CELL_CAP && (
-                <span className="num self-center pl-1 text-2xs text-ink-4">
-                  +{group.entities.length - CELL_CAP}
-                </span>
-              )}
-            </div>
-          </div>
+            group={group}
+            catalog={catalog}
+            onHover={setHover}
+            onLeave={() => setHover(null)}
+            onSelect={(entity) => onSelect(entity, issueBy.get(entity.id))}
+          />
         ))}
       </div>
 
@@ -199,13 +154,134 @@ export function Heatmap({
   );
 }
 
+/**
+ * One connection's parts, and one stop on the way through the page.
+ *
+ * Every cell used to be its own tab stop, so reaching the alerts under a
+ * 364-component estate meant 364 presses of Tab. A block is one stop and the
+ * arrow keys move inside it, which is how a grid of cells is meant to be
+ * walked — the same shape a spreadsheet or a calendar uses.
+ */
+function Block({
+  group,
+  catalog,
+  onHover,
+  onLeave,
+  onSelect,
+}: {
+  group: HeatmapGroup;
+  catalog: Catalog;
+  onHover: (hover: { entity: Entity; x: number; y: number }) => void;
+  onLeave: () => void;
+  onSelect: (entity: Entity) => void;
+}) {
+  const cells = group.entities.slice(0, CELL_CAP);
+  // The cell the block hands focus to when it is tabbed into. It starts at the
+  // first one, which sorting has already made the worst one.
+  const [cursor, setCursor] = useState(0);
+  const grid = useRef<HTMLDivElement>(null);
+
+  const focusCell = (index: number) => {
+    const next = Math.max(0, Math.min(cells.length - 1, index));
+    setCursor(next);
+    const node = grid.current?.querySelectorAll<HTMLButtonElement>("button")[next];
+    node?.focus();
+  };
+
+  /** Cells wrap, so "down" is however many fit on a row right now. */
+  const perRow = () => {
+    const buttons = grid.current?.querySelectorAll<HTMLButtonElement>("button");
+    if (!buttons?.length) return 1;
+    const top = buttons[0].offsetTop;
+    let n = 0;
+    for (const button of buttons) {
+      if (button.offsetTop !== top) break;
+      n += 1;
+    }
+    return Math.max(1, n);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const keys = ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", "Home", "End"];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    if (e.key === "ArrowRight") focusCell(cursor + 1);
+    else if (e.key === "ArrowLeft") focusCell(cursor - 1);
+    else if (e.key === "ArrowDown") focusCell(cursor + perRow());
+    else if (e.key === "ArrowUp") focusCell(cursor - perRow());
+    else if (e.key === "Home") focusCell(0);
+    else focusCell(cells.length - 1);
+  };
+
+  return (
+    <div
+      className={cx(
+        "min-w-0 rounded-sm border border-line-soft bg-sunk",
+        // Only once the container is wide enough that a second track
+        // certainly exists; spanning into a track that isn't there
+        // grows the grid instead of the block.
+        group.entities.length > WIDE_BLOCK_AT && "@3xl:col-span-2",
+      )}
+    >
+      <div className="border-b border-line-soft px-2 py-1.5">
+        <div className="flex items-center gap-1.5">
+          <ServiceMark descriptor={catalog.get(group.kind)} size={14} />
+          <span className="num truncate text-2xs text-ink-2">{group.profileName}</span>
+          <span className="num ml-auto shrink-0 text-2xs text-ink-4">
+            {group.entities.length}
+          </span>
+        </div>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <span className="num truncate text-2xs text-ink-4">{group.section}</span>
+          {(group.down > 0 || group.degraded > 0) && (
+            <span className="num ml-auto shrink-0 text-2xs">
+              {group.down > 0 && <span className="text-crit">{group.down} down</span>}
+              {group.down > 0 && group.degraded > 0 && <span className="text-ink-4"> · </span>}
+              {group.degraded > 0 && <span className="text-warn">{group.degraded} degraded</span>}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div
+        ref={grid}
+        role="grid"
+        aria-label={`${group.profileName} · ${group.section}`}
+        className="flex flex-wrap gap-[3px] p-2"
+        onMouseLeave={onLeave}
+        onKeyDown={onKeyDown}
+      >
+        {cells.map((entity, i) => (
+          <Cell
+            key={entity.id}
+            entity={entity}
+            tabIndex={i === cursor ? 0 : -1}
+            onHover={(x, y) => onHover({ entity, x, y })}
+            onFocused={() => setCursor(i)}
+            onClick={() => onSelect(entity)}
+          />
+        ))}
+        {group.entities.length > CELL_CAP && (
+          <span className="num self-center pl-1 text-2xs text-ink-4">
+            +{group.entities.length - CELL_CAP}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Cell({
   entity,
+  tabIndex,
   onHover,
+  onFocused,
   onClick,
 }: {
   entity: Entity;
+  tabIndex: number;
   onHover: (x: number, y: number) => void;
+  onFocused: () => void;
   onClick: () => void;
 }) {
   const color = healthColor(entity.health);
@@ -221,10 +297,12 @@ function Cell({
       onFocus={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
         onHover(r.left + r.width / 2, r.top);
+        onFocused();
       }}
+      tabIndex={tabIndex}
       aria-label={`${entity.name} — ${healthLabel(entity.health)}`}
       className={cx(
-        "h-[14px] w-[14px] shrink-0 rounded-[1px] transition-transform",
+        "h-[14px] w-[14px] shrink-0 rounded-xs transition-transform",
         "hover:z-10 hover:scale-[1.35] focus-visible:z-10 focus-visible:scale-[1.35]",
       )}
       style={
@@ -233,8 +311,16 @@ function Cell({
               // Mixed against the block's own ground, not the panel's. A
               // healthy cell is meant to be a tint of the surface it sits on;
               // against the wrong surface it reads as a faint lump instead.
-              background: `color-mix(in srgb, ${color} 26%, var(--color-sunk))`,
-              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 55%, transparent)`,
+              //
+              // 12% fill / 45% ring, down from 26 / 55. At the old values 357
+              // healthy cells were the largest area of colour on Overview, and
+              // the seven that were actually wrong had to compete with them —
+              // a display whose whole argument is that the red ones find your
+              // eye. The ring still measures 3.10:1 against the block ground,
+              // above the 3:1 floor for a mark carrying meaning, so quiet did
+              // not become invisible. Re-measure if either number moves.
+              background: `color-mix(in srgb, ${color} 12%, var(--color-sunk))`,
+              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 45%, transparent)`,
             }
           : { background: color, boxShadow: `inset 0 0 0 1px ${color}` }
       }
@@ -252,10 +338,10 @@ function Tip({ entity, x, y }: { entity: Entity; x: number; y: number }) {
       className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full pb-2"
       style={{ left: x, top: y }}
     >
-      <div className="panel max-w-64 px-2.5 py-1.5 shadow-lg">
+      <div className="panel max-w-64 px-2.5 py-1.5 overlay-plate">
         <div className="flex items-center gap-1.5">
           <span
-            className="h-2 w-2 shrink-0 rounded-[1px]"
+            className="h-2 w-2 shrink-0 rounded-xs"
             style={{ background: healthColor(entity.health) }}
           />
           <span className="num truncate text-2xs text-ink">{entity.name}</span>

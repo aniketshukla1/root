@@ -656,10 +656,55 @@ export function LogHistogram({
     (a) => !domain || (a.t >= domain[0] && a.t <= domain[1]),
   );
 
+  /**
+   * The stretch of the window the buffer never covered.
+   *
+   * The log ring holds what it holds, so a one-hour view of a twenty-minute
+   * buffer is two thirds empty — and empty, on a chart, reads as "nothing
+   * happened here" rather than "nothing was recorded here". Those are opposite
+   * findings, so the gap is shaded and named instead of left blank.
+   */
+  const firstAt = domain ? Math.min(...buckets.map((b) => ms(b.t))) : undefined;
+  const blankTo =
+    domain && firstAt !== undefined && firstAt - bucketMs > domain[0]
+      ? padL + ((firstAt - bucketMs - domain[0]) / domainSpan) * innerW
+      : undefined;
+
   return (
     <div ref={ref} className="relative" style={{ height }}>
       {width > 0 && (
         <svg width={width} height={height} className="block" onMouseLeave={() => setHover(null)}>
+          {blankTo !== undefined && blankTo > padL + 24 && (
+            <g>
+              <rect
+                x={padL}
+                y={0}
+                width={blankTo - padL}
+                height={height}
+                fill="var(--color-cell-todo)"
+                opacity="0.6"
+              />
+              <line
+                x1={blankTo}
+                x2={blankTo}
+                y1={0}
+                y2={height}
+                stroke="var(--color-line-strong)"
+                strokeWidth="1"
+              />
+              <text
+                x={padL + 6}
+                y={height / 2}
+                dominantBaseline="middle"
+                className="num"
+                fontSize="10.5"
+                fill="var(--color-ink-4)"
+              >
+                no lines buffered before {formatTime(new Date(firstAt!).toISOString())}
+              </text>
+            </g>
+          )}
+
           {inView.map((annotation) => {
             const ax = domain
               ? padL + ((annotation.t - domain[0]) / Math.max(1, domain[1] - domain[0])) * innerW
@@ -697,7 +742,7 @@ export function LogHistogram({
                   y={0}
                   width={step}
                   height={height}
-                  fill={active ? "#ffffff0a" : "transparent"}
+                  fill={active ? "var(--color-wash)" : "transparent"}
                 />
                 {order.map((level) => {
                   const count = bucket[level];
@@ -764,7 +809,7 @@ function Tooltip({
   const flip = x > containerWidth - 150;
   return (
     <div
-      className="pointer-events-none absolute top-1 z-20 min-w-32 rounded-md border border-line-strong bg-overlay px-2 py-1.5 text-xs shadow-lg shadow-black/40"
+      className="pointer-events-none absolute top-1 z-20 min-w-32 rounded-md border border-line-strong bg-overlay px-2 py-1.5 text-xs overlay-plate"
       style={flip ? { right: containerWidth - x + 8 } : { left: x + 8 }}
     >
       {children}

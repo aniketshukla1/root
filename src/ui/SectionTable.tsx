@@ -163,7 +163,7 @@ export function SectionTable({
   return (
     <section className="panel overflow-hidden">
       <header className="flex h-9 items-center gap-2 border-b border-line px-3">
-        <h3 className="text-[13px] font-semibold text-ink">{section.label}</h3>
+        <h3 className="text-base font-semibold text-ink">{section.label}</h3>
         <span className="num text-2xs text-ink-4">{section.rows.length}</span>
         {problems > 0 && (
           <Tag color="var(--color-warn)">{problems} need attention</Tag>
@@ -189,7 +189,7 @@ export function SectionTable({
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-line">
-                  {originOf && <th className="label px-3 py-1.5 text-left font-semibold">Connection</th>}
+                  {originOf && <th className="label cell-pad-x py-1.5 text-left font-semibold">Connection</th>}
                   {section.columns.map((column) => (
                     <th
                       key={column.key}
@@ -215,17 +215,17 @@ export function SectionTable({
                 {visible.map((row) => (
                   <tr
                     key={row.id}
-                    className="group border-b border-line/50 last:border-0 hover:bg-white/[0.035]"
+                    className="group border-b border-line/50 last:border-0 row-hover"
                     style={{ height: "var(--row-h)" }}
                   >
                     {originOf && (
-                      <td className="max-w-40 px-3 text-xs text-ink-3">{originOf(row)}</td>
+                      <td className="max-w-40 cell-pad-x text-xs text-ink-3">{originOf(row)}</td>
                     )}
                     {section.columns.map((column) => (
                       <td
                         key={column.key}
                         className={cx(
-                          "max-w-72 px-3 text-xs text-ink-2",
+                          "max-w-72 cell-pad-x text-xs text-ink-2",
                           column.align === "end" ? "text-right" : "text-left",
                           column.secondary && "hidden lg:table-cell",
                         )}
@@ -258,7 +258,7 @@ export function SectionTable({
                       </td>
                     ))}
                     {hasActions && (
-                      <td className="px-3 whitespace-nowrap">
+                      <td className="cell-pad-x whitespace-nowrap">
                         <span className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                           {row.actions.map((action) => (
                             <Button

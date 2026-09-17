@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
-import { healthColor, isProblem, markColor } from "../catalog";
+import { DATA_INK, healthColor, isProblem } from "../catalog";
 import { formatDateTime, formatMetricValue, formatRelative } from "../format";
 import type { EstateModel } from "../model";
 import type { View } from "../nav";
@@ -202,7 +202,7 @@ export function ComponentDetail({
   }
 
   const descriptor = catalog.get(service.snapshot.kind);
-  const accent = markColor(descriptor.accent);
+  const line = DATA_INK;
   const span = spanOf(history);
   const plotted = history.filter((s) => s.points.length > 1);
 
@@ -235,14 +235,14 @@ export function ComponentDetail({
             </button>
             <button
               onClick={() => onNavigate({ name: "services" })}
-              className="shrink-0 text-[13px] font-normal text-ink-4 transition-colors hover:text-accent"
+              className="shrink-0 text-base font-normal text-ink-4 transition-colors hover:text-accent"
             >
               Services
             </button>
             <ChevronRight size={12} className="shrink-0 text-ink-4/60" />
             <button
               onClick={() => onNavigate({ name: "service", profileId })}
-              className="flex shrink-0 items-center gap-1.5 text-[13px] font-normal text-ink-4 transition-colors hover:text-accent"
+              className="flex shrink-0 items-center gap-1.5 text-base font-normal text-ink-4 transition-colors hover:text-accent"
             >
               <ServiceMark descriptor={descriptor} size={15} />
               {service.snapshot.profileName}
@@ -273,7 +273,7 @@ export function ComponentDetail({
             borderLeftColor: isProblem(row.health) ? healthColor(row.health) : "transparent",
           }}
         >
-          <p className="text-[13px] text-ink-2">{row.summary || row.name}</p>
+          <p className="text-base text-ink-2">{row.summary || row.name}</p>
 
           {row.actions.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -317,7 +317,7 @@ export function ComponentDetail({
                 <div className="label truncate" title={column.label}>
                   {column.label}
                 </div>
-                <div className="mt-1 text-[13px] text-ink">
+                <div className="mt-1 text-base text-ink">
                   <CellReading column={column} value={row.cells[column.key]} health={row.health} />
                 </div>
               </div>
@@ -335,6 +335,7 @@ export function ComponentDetail({
             }
             actions={
               <Segmented
+                label="Time range"
                 value={String(minutes)}
                 onChange={(v) => setMinutes(Number(v))}
                 options={ranges.map((r) => ({ value: String(r.minutes), label: r.label }))}
@@ -356,7 +357,7 @@ export function ComponentDetail({
                   <ChartCard
                     key={series.key}
                     series={series}
-                    color={accent}
+                    color={line}
                     domain={domain}
                     hoverTime={hoverTime}
                     onHoverTime={setHoverTime}
@@ -400,11 +401,11 @@ export function ComponentDetail({
                     >
                       <div className="label truncate">{column.label}</div>
                       <div className="mt-1 flex items-end gap-2">
-                        <span className="num text-[17px] leading-none text-ink">
+                        <span className="num text-xl leading-none text-ink">
                           {value === null ? "—" : formatMetricValue(value, unit)}
                         </span>
                         <span className="ml-auto">
-                          <Sparkline points={points} width={78} height={22} color={accent} />
+                          <Sparkline points={points} width={78} height={22} color={line} />
                         </span>
                       </div>
                       <div className="num mt-1 text-2xs text-ink-4">
@@ -446,7 +447,7 @@ export function ComponentDetail({
                   {componentLogs.map((event) => (
                     <tr
                       key={event.id}
-                      className="group border-b border-line/40 align-baseline last:border-0 hover:bg-white/[0.035]"
+                      className="group border-b border-line/40 align-baseline last:border-0 row-hover"
                     >
                       <td className="w-px px-3 py-1 whitespace-nowrap">
                         <button
@@ -638,7 +639,7 @@ function ConfirmRowAction({
       aria-modal
     >
       <div
-        className="panel w-full max-w-md bg-overlay p-4 shadow-2xl shadow-black/50"
+        className="panel w-full max-w-md bg-overlay p-4 overlay-plate"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-sm font-semibold text-ink">{action.label}</h2>

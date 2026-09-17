@@ -10,7 +10,7 @@ import { listen } from "../events";
 
 import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
-import { healthColor, isProblem, markColor } from "../catalog";
+import { DATA_INK, healthColor, isProblem } from "../catalog";
 import { formatDateTime, formatMetricValue, formatRelative, isBreaching } from "../format";
 import type { Entity, ServiceView } from "../model";
 import type { View } from "../nav";
@@ -35,11 +35,13 @@ import {
 import { Horizon, Rate } from "../ui/capacity";
 import { Bullet } from "../ui/plots";
 import {
+  balancedTracks,
   Button,
   cx,
   Dot,
   Empty,
   Segmented,
+  Stat,
   Tag,
 } from "../ui/primitives";
 import { ChevronDown, ChevronRight, RefreshIcon, TimelineIcon } from "../ui/icons";
@@ -218,7 +220,7 @@ export function ServiceDashboard({
   );
 
   const plotted = useMemo(() => history.filter((s) => s.points.length > 1), [history]);
-  const accent = markColor(catalog.get(service.snapshot.kind).accent);
+  const line = DATA_INK;
 
   const errorLines = useMemo(
     () =>
@@ -246,6 +248,7 @@ export function ServiceDashboard({
       {/* Sticky so the range control stays reachable however far you scroll. */}
       <div className="sticky top-0 z-[2] -mx-3 -mt-3 flex flex-wrap items-center gap-2 border-b border-line bg-panel/95 px-3 py-2 backdrop-blur">
         <Segmented
+          label="Time range"
           value={String(minutes)}
           onChange={(v) => setMinutes(Number(v))}
           options={ranges.map((r) => ({ value: String(r.minutes), label: r.label }))}
@@ -323,7 +326,7 @@ export function ServiceDashboard({
 
       {error && (
         <div
-          className="rounded-lg border px-3 py-2 text-xs"
+          className="rounded-md border px-3 py-2 text-xs"
           style={{ borderColor: "color-mix(in oklab, var(--color-crit) 40%, transparent)" }}
         >
           <span className="font-medium text-crit">Could not load history.</span>{" "}
@@ -355,15 +358,13 @@ export function ServiceDashboard({
                     over ? "border-warn/40" : "border-line",
                   )}
                 >
-                  <div className="label truncate" title={metric.label}>
-                    {metric.label}
-                  </div>
-                  <div className="mt-1 flex items-end gap-2">
-                    <span
-                      className={cx("num text-[21px] leading-none", over ? "text-warn" : "text-ink")}
-                    >
-                      {formatMetricValue(metric.value, metric.unit)}
-                    </span>
+                  <Stat
+                    labelPosition="above"
+                    label={metric.label}
+                    hint={metric.label}
+                    value={formatMetricValue(metric.value, metric.unit)}
+                    tone={over ? "var(--color-warn)" : undefined}
+                  >
                     {series?.trend && (
                       <span className="num flex gap-1.5 pb-0.5 text-2xs">
                         <Rate trend={series.trend} unit={metric.unit} />
@@ -378,12 +379,12 @@ export function ServiceDashboard({
                           points={series.points}
                           width={62}
                           height={20}
-                          color={accent}
+                          color={line}
                           warnAbove={series.warnAbove}
                         />
                       )}
                     </span>
-                  </div>
+                  </Stat>
                   {metric.warnAbove !== undefined && (
                     <div className="mt-2">
                       {/* The threshold is drawn, not just stated: a number
@@ -441,7 +442,7 @@ export function ServiceDashboard({
             hint="Series build as this connection polls. Give it a couple of collection cycles."
           />
         ) : (
-          <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(340px,1fr))]">
+          <div className="grid gap-3" style={balancedTracks(plotted.length, 340)}>
             {plotted.map((series) => {
               const over = series.warnAbove !== undefined && series.latest > series.warnAbove;
               return (
@@ -467,7 +468,7 @@ export function ServiceDashboard({
                       {
                         key: series.key,
                         label: series.label,
-                        color: accent,
+                        color: line,
                         points: series.points,
                         warnAbove: series.warnAbove,
                       },
@@ -542,7 +543,7 @@ export function ServiceDashboard({
                 {errorLines.map((event) => (
                   <tr
                     key={event.id}
-                    className="group border-b border-line/40 align-baseline last:border-0 hover:bg-white/[0.035]"
+                    className="group border-b border-line/40 align-baseline last:border-0 row-hover"
                   >
                     <td className="w-px px-2.5 py-1 whitespace-nowrap">
                       <button
@@ -616,7 +617,7 @@ export function ServiceDashboard({
                 {deploysInView.map((change) => (
                   <tr
                     key={change.id}
-                    className="group border-b border-line/40 last:border-0 hover:bg-white/[0.035]"
+                    className="group border-b border-line/40 last:border-0 row-hover"
                     style={{ height: "var(--row-h)" }}
                   >
                     <td className="w-px px-2.5 whitespace-nowrap">
@@ -796,7 +797,7 @@ function Section({
           aria-expanded={open}
         >
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          <h2 className="text-[13px] font-semibold">{title}</h2>
+          <h2 className="text-base font-semibold">{title}</h2>
         </button>
         {subtitle && <span className="truncate text-xs text-ink-4">{subtitle}</span>}
         {hint && open && (

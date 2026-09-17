@@ -9,16 +9,7 @@ import type { LogEvent, LogLevel, LogStream } from "../types";
 import { LOG_LEVELS } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { LogHistogram, levelColor, type Bucket } from "../ui/charts";
-import {
-  Button,
-  cx,
-  Empty,
-  Input,
-  Panel,
-  Segmented,
-  ServiceMark,
-  Tag,
-} from "../ui/primitives";
+import { Button, Chip, cx, Empty, Input, Panel, Segmented, ServiceMark, Tag } from "../ui/primitives";
 import { AssistantIcon, SearchIcon, TimelineIcon } from "../ui/icons";
 
 /** Rendering the whole buffer would jank the scroll; this is well past a screen. */
@@ -192,6 +183,7 @@ export function Logs({
         }
       >
         <Segmented
+          label="View"
           value={mode}
           onChange={setMode}
           options={[
@@ -200,6 +192,7 @@ export function Logs({
           ]}
         />
         <Segmented
+          label="Time range"
           value={String(minutes)}
           onChange={(v) => onMinutesChange(Number(v))}
           options={[
@@ -251,6 +244,7 @@ export function Logs({
             </div>
 
             <Segmented
+              label="Stream"
               value={stream}
               onChange={setStream}
               options={STREAM_FILTERS.map((s) => ({ value: s.value, label: s.label }))}
@@ -261,17 +255,14 @@ export function Logs({
                 const on = levels.has(level);
                 const count = facets[level];
                 return (
-                  <button
+                  <Chip
                     key={level}
+                    quiet
+                    selected={on}
                     onClick={() => toggleLevel(level)}
                     disabled={count === 0 && !on}
                     title={`${count} ${level} line${count === 1 ? "" : "s"}`}
-                    className={cx(
-                      "flex h-6 items-center gap-1.5 rounded-[4px] border px-1.5 text-2xs transition-colors disabled:opacity-30",
-                      on
-                        ? "border-line-strong bg-raised text-ink"
-                        : "border-transparent text-ink-4 hover:bg-raised/60 hover:text-ink-2",
-                    )}
+                    className="rounded-md px-1.5"
                   >
                     <span
                       className="h-1.5 w-1.5 shrink-0 rounded-full"
@@ -279,7 +270,7 @@ export function Logs({
                     />
                     <span className="capitalize">{level}</span>
                     <span className="num text-ink-4">{count}</span>
-                  </button>
+                  </Chip>
                 );
               })}
             </div>
@@ -396,7 +387,7 @@ function ConnectionRail({
         {!all && (
           <button
             onClick={onAll}
-            className="ml-auto text-2xs text-accent transition-colors hover:underline"
+            className="ml-auto flex h-6 items-center px-1 text-2xs text-accent transition-colors hover:underline"
           >
             Show all
           </button>
@@ -419,7 +410,7 @@ function ConnectionRail({
               )}
               style={{
                 borderLeftColor: on ? markColor(descriptor.accent) : "transparent",
-                background: on && !all ? "#ffffff08" : undefined,
+                background: on && !all ? "var(--color-wash-strong)" : undefined,
               }}
             >
               <button
@@ -541,7 +532,7 @@ function LineTable({
         {events.map((event) => (
           <tr
             key={event.id}
-            className="group border-b border-line/40 align-baseline hover:bg-white/[0.035]"
+            className="group border-b border-line/40 align-baseline row-hover"
           >
             {/* A 2px stripe in the connection's identity colour. Colour is on
                 the rule, never on the text — which stays neutral ink. */}

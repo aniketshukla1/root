@@ -56,6 +56,8 @@ export function Splash({
         </div>
 
         <div className="a-wash mt-7" style={{ animationDelay: "900ms" }}>
+          {/* Off-scale on purpose: the wordmark on the splash is a piece of
+              artwork shown once at launch, not a heading in the type system. */}
           <span className="text-[80px] leading-[0.84] font-bold tracking-[-.05em] text-ink">
             root
           </span>
@@ -108,11 +110,11 @@ export function Splash({
                   when they stop, which is the point. */}
               <div className="mt-1 flex h-1 gap-0.5" aria-hidden>
                 <span
-                  className="rounded-[1px] bg-ok transition-[flex-grow] duration-500"
+                  className="rounded-xs bg-ok transition-[flex-grow] duration-500"
                   style={{ flexGrow: Math.max(0.001, Math.min(reached, total)) }}
                 />
                 <span
-                  className="rounded-[1px] bg-sunk transition-[flex-grow] duration-500"
+                  className="rounded-xs bg-sunk transition-[flex-grow] duration-500"
                   style={{ flexGrow: Math.max(0.001, total - Math.min(reached, total)) }}
                 />
               </div>

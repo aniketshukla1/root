@@ -109,12 +109,12 @@ export function TeamSettings() {
       >
         {local ? (
           <>
-            <p className="max-w-[80ch] text-[12.5px] leading-relaxed text-ink-2">
+            <p className="max-w-[80ch] text-base leading-relaxed text-ink-2">
               root is running locally. It reads the config file on this machine, keeps every
               credential in the OS keychain, and answers to nobody. Nothing leaves this computer,
               and nothing about it needs an account.
             </p>
-            <p className="mt-2.5 max-w-[80ch] text-[12.5px] leading-relaxed text-ink-3">
+            <p className="mt-2.5 max-w-[80ch] text-base leading-relaxed text-ink-3">
               A workspace is a root server that <em className="text-ink-2 not-italic">you</em> run.
               It adds one thing: a shared identity, so several people can look at the same estate
               and be told apart, with a role attached. There is no hosted service and no account to

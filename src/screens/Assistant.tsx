@@ -142,7 +142,7 @@ export function Assistant({
               {entries.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center gap-4">
                   <div className="text-center">
-                    <p className="text-[13px] text-ink-2">
+                    <p className="text-base text-ink-2">
                       Ask about anything the collectors can see.
                     </p>
                     <p className="mt-1 text-xs text-ink-4">
@@ -179,7 +179,7 @@ export function Assistant({
             </div>
 
             <form
-              className="sticky bottom-0 mt-3 flex items-end gap-2 rounded-lg border border-line bg-panel p-2"
+              className="sticky bottom-0 mt-3 flex items-end gap-2 rounded-md border border-line bg-panel p-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 send(draft);
@@ -196,7 +196,7 @@ export function Assistant({
                 }}
                 rows={1}
                 placeholder="Ask about your infrastructure…"
-                className="max-h-40 min-h-7 flex-1 resize-none bg-transparent px-1 py-1 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none"
+                className="max-h-40 min-h-7 flex-1 resize-none bg-transparent px-1 py-1 text-base text-ink placeholder:text-ink-4 focus:outline-none"
               />
               <Button variant="primary" type="submit" disabled={busy || !draft.trim()}>
                 <SendIcon size={13} />
@@ -214,7 +214,7 @@ function Message({ entry }: { entry: ChatEntry }) {
   if (entry.role === "user") {
     return (
       <div className="flex justify-end">
-        <p className="max-w-[80%] rounded-lg rounded-br-sm bg-raised px-3 py-1.5 text-[13px] text-ink">
+        <p className="max-w-[80%] rounded-md rounded-br-sm bg-raised px-3 py-1.5 text-base text-ink">
           {entry.text}
         </p>
       </div>
@@ -232,7 +232,7 @@ function Message({ entry }: { entry: ChatEntry }) {
       ) : (
         <p
           className={cx(
-            "text-[13px] leading-relaxed whitespace-pre-wrap",
+            "text-base leading-relaxed whitespace-pre-wrap",
             entry.error ? "text-crit" : "text-ink-2",
           )}
         >

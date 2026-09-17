@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import type { Catalog } from "../catalog";
 import type { AppConfig, ServiceDescriptor } from "../types";
 import { blankProfile, ProfileForm } from "./Settings";
-import { Button, cx, Empty, Input, RootMark, ServiceMark } from "../ui/primitives";
+import { Button, cx, Empty, Input, PanelHeader, RootMark, ServiceMark } from "../ui/primitives";
 import { CheckIcon, SearchIcon } from "../ui/icons";
 
 /**
@@ -79,7 +79,7 @@ export function Onboarding({
       <div className="flex min-h-0 flex-1 justify-center overflow-y-auto p-6">
         <div className="flex w-full max-w-[960px] flex-col">
           <p className="label mb-3">Step 2 of 2</p>
-          <h1 className="text-[34px] leading-[1.06] font-medium tracking-[-.03em] text-ink">
+          <h1 className="text-5xl leading-[1.06] font-medium tracking-[-.03em] text-ink">
             Connect something you actually run.
           </h1>
           <p className="mt-3 max-w-[66ch] text-sm leading-relaxed text-ink-3">
@@ -94,21 +94,21 @@ export function Onboarding({
               trap Screen guards against for every other screen — this one
               builds its own frame, so it has to say so itself. */}
           <section className="panel mt-7 flex shrink-0 flex-col overflow-hidden">
-            <header className="flex h-[33px] shrink-0 items-center gap-2.5 border-b border-line px-3">
-              <h2 className="label">Service types</h2>
-              <span className="num text-2xs text-ink-4">
-                {total} available
-              </span>
-              <div className="ml-auto flex w-[190px] items-center gap-1.5">
-                <SearchIcon size={12} style={{ color: "var(--color-ink-4)" }} />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search"
-                  className="h-6"
-                />
-              </div>
-            </header>
+            <PanelHeader
+              title="Service types"
+              subtitle={`${total} available`}
+              actions={
+                <div className="flex w-[190px] items-center gap-1.5">
+                  <SearchIcon size={12} style={{ color: "var(--color-ink-4)" }} />
+                  <Input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search"
+                    size="sm"
+                  />
+                </div>
+              }
+            />
 
             <div className="p-3.5">
               {catalog.isEmpty ? (
@@ -138,7 +138,7 @@ export function Onboarding({
                         >
                           <ServiceMark descriptor={descriptor} size={22} />
                           <span className="min-w-0 flex-1">
-                            <span className="block text-[12.5px] text-ink">{descriptor.label}</span>
+                            <span className="block text-base text-ink">{descriptor.label}</span>
                             <span className="mt-0.5 block text-2xs leading-snug text-ink-4">
                               {descriptor.blurb}
                             </span>
@@ -197,7 +197,7 @@ function Step({
         <CheckIcon size={13} style={{ color: "var(--color-ok)" }} />
       ) : (
         <span
-          className="grid h-[15px] w-[15px] place-items-center rounded-full bg-accent text-[9px] font-semibold text-on-accent"
+          className="grid h-[15px] w-[15px] place-items-center rounded-full bg-accent text-2xs font-semibold text-on-accent"
           aria-hidden
         >
           {index}

@@ -27,6 +27,7 @@ import {
   Button,
   cx,
   Empty,
+  Field,
   HealthBadge,
   Input,
   Panel,
@@ -159,7 +160,7 @@ function Connections({
     <div className="flex flex-col gap-3">
       {keychain === false && (
         <div
-          className="rounded-lg border px-3 py-2 text-xs"
+          className="rounded-md border px-3 py-2 text-xs"
           style={{
             borderColor: "color-mix(in oklab, var(--color-warn) 35%, transparent)",
             background: "color-mix(in oklab, var(--color-warn) 8%, transparent)",
@@ -212,7 +213,7 @@ function Connections({
                 return (
                   <tr
                     key={profile.id}
-                    className="group border-b border-line/50 last:border-0 hover:bg-white/[0.035]"
+                    className="group border-b border-line/50 last:border-0 row-hover"
                     style={{ height: "var(--row-h)" }}
                   >
                     <td className="max-w-52 px-3">
@@ -485,22 +486,27 @@ export function ProfileForm({
                   <span className="truncate text-ink-3">{test.snapshot.summary}</span>
                 </>
               ) : (
-                <span className="num truncate text-crit" title={test.error}>
+                <span role="alert" className="num truncate text-crit" title={test.error}>
                   {test.error}
                 </span>
               )}
             </span>
           )}
           {saveError && (
-            <span className="mr-auto truncate text-xs text-crit" title={saveError}>
+            <span role="alert" className="mr-auto truncate text-xs text-crit" title={saveError}>
               {saveError}
             </span>
           )}
-          <Button onClick={runTest} disabled={testing || saving}>
-            {testing ? "Testing…" : "Test connection"}
+          <Button onClick={runTest} loading={testing} disabled={saving}>
+            Test connection
           </Button>
-          <Button variant="primary" onClick={save} disabled={saving || !draft.name.trim()}>
-            {saving ? "Saving…" : "Save"}
+          <Button
+            variant="primary"
+            onClick={save}
+            loading={saving}
+            disabled={!draft.name.trim()}
+          >
+            Save
           </Button>
         </>
       }
@@ -831,29 +837,6 @@ function Fieldset({
         {children}
       </div>
     </section>
-  );
-}
-
-function Field({
-  label,
-  required,
-  help,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  help?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex min-w-0 flex-col gap-1">
-      <span className="text-xs text-ink-3">
-        {label}
-        {required && <span className="ml-0.5 text-crit">*</span>}
-      </span>
-      {children}
-      {help && <span className="text-2xs leading-snug text-ink-4">{help}</span>}
-    </label>
   );
 }
 
@@ -1302,7 +1285,7 @@ function IngestSettings() {
                 token has already stopped working.
               </p>
               <div className="flex items-center gap-1.5">
-                <code className="min-w-0 flex-1 truncate rounded border border-line bg-page px-2 py-1 text-2xs text-ink">
+                <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-page px-2 py-1 text-2xs text-ink">
                   {freshToken}
                 </code>
                 <Button onClick={() => copy(freshToken, "token")}>
@@ -1366,6 +1349,7 @@ function DisplaySettings() {
         help="Light is warm paper rather than white: a dark console inverted onto cold white reads as a mistake, and on paper it reads as printed."
       >
         <Segmented
+          label="Theme"
           value={theme}
           onChange={changeTheme}
           options={[
@@ -1381,6 +1365,7 @@ function DisplaySettings() {
         help="Sets row height and type scale across every table and list in the app."
       >
         <Segmented
+          label="Density"
           value={density}
           onChange={change}
           options={[
@@ -1452,7 +1437,7 @@ function Modal({
     >
       <div
         className={cx(
-          "panel flex max-h-[88vh] w-full flex-col bg-overlay shadow-2xl shadow-black/50",
+          "panel flex max-h-[88vh] w-full flex-col bg-overlay overlay-plate",
           wide ? "max-w-3xl" : "max-w-md",
         )}
         onClick={(e) => e.stopPropagation()}

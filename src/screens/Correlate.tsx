@@ -103,13 +103,13 @@ export function Correlate({
         }
         meta={<span className="num">{formatDateTime(at)}</span>}
       >
-        <Segmented value={windowSecs} onChange={setWindowSecs} options={WINDOWS} />
+        <Segmented label="Window" value={windowSecs} onChange={setWindowSecs} options={WINDOWS} />
       </ScreenHeader>
 
       <Screen className="flex flex-col gap-3">
         {error && (
           <div
-            className="rounded-lg border px-3 py-2 text-xs text-crit"
+            className="rounded-md border px-3 py-2 text-xs text-crit"
             style={{ borderColor: "color-mix(in oklab, var(--color-crit) 40%, transparent)" }}
           >
             {error}

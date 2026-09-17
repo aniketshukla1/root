@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { api, errorMessage } from "../api";
 import { formatHorizon } from "../format";
@@ -217,7 +217,7 @@ function FamilyRow({ family }: { family: FamilyScore }) {
     <div className="rounded-md border border-line bg-page p-2.5">
       <div className="flex items-baseline gap-2">
         <span className="num text-xs text-ink">{label(family.family)}</span>
-        <span className="num ml-auto text-[17px] text-ink">
+        <span className="num ml-auto text-xl text-ink">
           {precision === undefined ? "—" : `${Math.round(precision * 100)}%`}
         </span>
       </div>
@@ -279,7 +279,7 @@ function RecallPanel({ recall }: { recall: RecallScore }) {
         <span className="num text-xs text-ink">
           across {recall.incidents} incident{recall.incidents === 1 ? "" : "s"}
         </span>
-        <span className="num ml-auto text-[17px] text-ink">{Math.round(score * 100)}%</span>
+        <span className="num ml-auto text-xl text-ink">{Math.round(score * 100)}%</span>
       </div>
 
       <Bar
@@ -472,7 +472,7 @@ function Backtest({ connections }: { connections: { id: string; name: string }[]
               className="rounded-md border border-line bg-page p-3"
               style={{ borderLeftColor: "var(--color-ok)", borderLeftWidth: 2 }}
             >
-              <div className="text-[13px] font-medium text-ink">
+              <div className="text-base font-medium text-ink">
                 {newlyCaught.length} recorded miss{newlyCaught.length === 1 ? "" : "es"} the
                 current rules would catch
               </div>
@@ -640,7 +640,7 @@ function Scenarios() {
                 {suite.passed === suite.total ? "No regressions" : "Regressions"}
               </span>
               <span
-                className="num ml-auto text-[17px]"
+                className="num ml-auto text-xl"
                 style={{
                   color:
                     suite.passed === suite.total ? "var(--color-ok)" : "var(--color-warn)",
@@ -865,16 +865,45 @@ function RuntimeReconciliation() {
   );
 }
 
-function describeDiscrepancy(d: Discrepancy): string {
+/**
+ * A name as the operator typed it. These used to be markdown backticks inside
+ * a plain string, which nothing here renders — so the page printed the
+ * backticks themselves.
+ */
+function Name({ children }: { children: ReactNode }) {
+  return <code className="font-mono text-[0.95em] text-ink">{children}</code>;
+}
+
+function describeDiscrepancy(d: Discrepancy): ReactNode {
   switch (d.kind) {
     case "hostNotConfigured":
-      return `Declared to run on \`${d.hostProfileId}\`, which is not a configured connection — the host was probably removed, and this declaration now describes nothing.`;
+      return (
+        <>
+          Declared to run on <Name>{d.hostProfileId}</Name>, which is not a configured connection —
+          the host was probably removed, and this declaration now describes nothing.
+        </>
+      );
     case "notFound":
-      return `Declared as \`${d.name}\` on ${d.host}, which has no component by that name. It was renamed, moved, or is not running.`;
+      return (
+        <>
+          Declared as <Name>{d.name}</Name> on {d.host}, which has no component by that name. It
+          was renamed, moved, or is not running.
+        </>
+      );
     case "disagrees":
-      return `Declared as \`${d.declared}\` on ${d.host}, but the published port matches \`${d.inferred}\` instead. One of the two is wrong and root cannot tell which.`;
+      return (
+        <>
+          Declared as <Name>{d.declared}</Name> on {d.host}, but the published port matches{" "}
+          <Name>{d.inferred}</Name> instead. One of the two is wrong and root cannot tell which.
+        </>
+      );
     case "notServing":
-      return `\`${d.name}\` on ${d.host} exists but is not publishing the port its image implies, so it may be a sidecar or a job rather than the service itself.`;
+      return (
+        <>
+          <Name>{d.name}</Name> on {d.host} exists but is not publishing the port its image implies,
+          so it may be a sidecar or a job rather than the service itself.
+        </>
+      );
     case "incomplete":
       return "Declared as hosted, but without both a host and a name there is nothing to check it against.";
   }

@@ -42,7 +42,7 @@ export function ConfirmDialog({
       role="dialog"
       aria-modal
     >
-      <div className="panel w-full max-w-lg bg-overlay shadow-2xl shadow-black/60">
+      <div className="panel w-full max-w-lg bg-overlay overlay-plate">
         <header className="flex h-10 items-center gap-2 border-b border-line px-4">
           <ShieldIcon size={15} />
           <h2 className="text-sm font-semibold text-ink">Approval required</h2>
@@ -52,7 +52,7 @@ export function ConfirmDialog({
         </header>
 
         <div className="p-4">
-          <p className="text-[13px] text-ink-2">{request.description}</p>
+          <p className="text-base text-ink-2">{request.description}</p>
 
           <div className="mt-3">
             <span className="label">Equivalent command</span>

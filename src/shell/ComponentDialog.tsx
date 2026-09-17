@@ -50,7 +50,7 @@ export function ComponentDialog({
       role="presentation"
     >
       <div
-        className="panel w-full max-w-lg overflow-hidden shadow-2xl"
+        className="panel w-full max-w-lg overflow-hidden overlay-plate"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -59,7 +59,7 @@ export function ComponentDialog({
         <header className="flex items-center gap-2.5 border-b border-line px-4 py-3">
           <ServiceMark descriptor={catalog.get(entity.kind)} size={20} />
           <div className="min-w-0 flex-1">
-            <div className="num truncate text-[13px] text-ink">{entity.name}</div>
+            <div className="num truncate text-base text-ink">{entity.name}</div>
             <div className="num mt-0.5 truncate text-2xs text-ink-4">
               {entity.profileName} · {entity.section}
             </div>

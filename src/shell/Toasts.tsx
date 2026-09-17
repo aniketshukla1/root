@@ -38,7 +38,16 @@ export function Toasts({
   if (toasts.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed right-4 bottom-4 z-40 flex w-80 flex-col gap-2">
+    // A toast is the one thing in the product that appears without being
+    // asked for, which is exactly why it has to be announced: an alert that
+    // arrives silently for a screen-reader user has not been delivered.
+    // `polite` waits for a pause; a critical alert does not wait.
+    <div
+      role="status"
+      aria-live={toasts.some((t) => t.severity === "critical") ? "assertive" : "polite"}
+      aria-relevant="additions"
+      className="pointer-events-none fixed right-4 bottom-4 z-40 flex w-80 flex-col gap-2"
+    >
       {toasts.slice(-4).map((toast) => (
         <ToastCard key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}
@@ -59,7 +68,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
 
   return (
     <div
-      className="panel pointer-events-auto flex gap-2.5 border-l-2 bg-overlay p-2.5 shadow-lg shadow-black/40"
+      className="panel pointer-events-auto flex gap-2.5 border-l-2 bg-overlay p-2.5 overlay-plate"
       style={{ borderLeftColor: tone }}
       role="status"
     >

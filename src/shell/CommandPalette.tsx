@@ -137,7 +137,7 @@ export function CommandPalette({
       onClick={onClose}
     >
       <div
-        className="panel flex max-h-[60vh] w-full max-w-lg flex-col overflow-hidden bg-overlay shadow-2xl shadow-black/50"
+        className="panel flex max-h-[60vh] w-full max-w-lg flex-col overflow-hidden bg-overlay overlay-plate"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal
@@ -150,7 +150,7 @@ export function CommandPalette({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search connections and screens…"
-            className="flex-1 bg-transparent text-[13px] text-ink placeholder:text-ink-4 focus:outline-none"
+            className="flex-1 bg-transparent text-base text-ink placeholder:text-ink-4 focus:outline-none"
           />
           <Kbd>esc</Kbd>
         </div>
@@ -172,7 +172,7 @@ export function CommandPalette({
                   onMouseEnter={() => setCursor(index)}
                   onClick={command.run}
                   className={cx(
-                    "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px]",
+                    "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-base",
                     index === cursor ? "bg-raised text-ink" : "text-ink-2",
                   )}
                 >

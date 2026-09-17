@@ -121,7 +121,7 @@ export function AssistantDock({
         ) : answer ? (
           <>
             {steps.length > 0 && <Steps steps={steps} />}
-            <div className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-2">
+            <div className="text-base leading-relaxed whitespace-pre-wrap text-ink-2">
               {answer}
             </div>
           </>
@@ -147,12 +147,13 @@ export function AssistantDock({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={target.kind === "ask" ? "Ask about your infrastructure…" : "Ask a follow-up…"}
-            className="h-8 flex-1"
+            size="lg"
+            className="flex-1"
             disabled={!configured}
           />
           <Kbd>⌘J</Kbd>
         </form>
-        <p className="num mt-2 text-[9.5px] leading-relaxed text-ink-4">
+        <p className="num mt-2 text-2xs leading-relaxed text-ink-4">
           Grounded in this workspace&rsquo;s snapshots, metrics and logs. It cannot change anything.
         </p>
       </div>

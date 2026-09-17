@@ -90,10 +90,10 @@ export function SignIn({
         </div>
 
         <div className="relative z-10">
-          <h1 className="max-w-[15ch] text-[44px] leading-[1.04] font-medium tracking-[-.03em] text-ink">
+          <h1 className="max-w-[15ch] text-6xl leading-[1.04] font-medium tracking-[-.03em] text-ink">
             One window on the whole estate.
           </h1>
-          <p className="mt-5 max-w-[46ch] text-[15px] leading-relaxed text-ink-3">
+          <p className="mt-5 max-w-[46ch] text-lg leading-relaxed text-ink-3">
             Live health, metric history, a unified log stream, and an assistant that investigates
             rather than guesses — across every service you run.
           </p>
@@ -136,8 +136,8 @@ export function SignIn({
           somewhere unreachable. Auto margins centre and still yield. */}
       <div className="flex min-w-0 flex-1 justify-center overflow-y-auto p-12">
         <form onSubmit={submit} className="my-auto w-[380px]">
-          <h2 className="text-[26px] font-medium tracking-[-.02em] text-ink">Sign in</h2>
-          <p className="mt-2 text-[13px] text-ink-3">
+          <h2 className="text-4xl font-medium tracking-[-.02em] text-ink">Sign in</h2>
+          <p className="mt-2 text-base text-ink-3">
             to <span className="num text-ink-2">{serverUrl}</span>
           </p>
 
@@ -193,7 +193,7 @@ export function SignIn({
           {/* The way out. root does not need this server to be useful, and a
               sign-in screen with no exit would be claiming otherwise. */}
           <div className="mt-7 border-t border-line pt-5">
-            <p className="text-[11.5px] leading-relaxed text-ink-4">
+            <p className="text-xs leading-relaxed text-ink-4">
               root works without a workspace. Local mode reads the config on this machine and keeps
               every credential in its keychain — nothing leaves.
             </p>

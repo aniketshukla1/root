@@ -228,6 +228,7 @@ export function Alerts({
           />
         </div>
         <Segmented
+          label="Severity"
           value={severity}
           onChange={setSeverity}
           options={[
@@ -238,6 +239,7 @@ export function Alerts({
           ]}
         />
         <Segmented
+          label="State"
           value={state}
           onChange={setState}
           options={[
@@ -248,6 +250,7 @@ export function Alerts({
           ]}
         />
         <Segmented
+          label="Group by"
           value={groupBy}
           onChange={setGroupBy}
           options={(Object.keys(GROUP_LABELS) as GroupBy[]).map((key) => ({
@@ -260,7 +263,7 @@ export function Alerts({
 
       <Screen className="flex flex-col gap-3">
         {unacked.length > 1 && (
-          <div className="flex items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2">
+          <div className="flex items-center gap-2 rounded-md border border-line bg-panel px-3 py-2">
             <span className="text-xs text-ink-3">
               <span className="num text-ink">{unacked.length}</span> alerts in this view have not
               been acknowledged.
@@ -293,19 +296,19 @@ export function Alerts({
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-[1] bg-panel">
                 <tr className="border-b border-line">
-                  <th className="label px-3 py-1.5 text-left font-semibold">Severity</th>
-                  <th className="label px-3 py-1.5 text-left font-semibold">Alert</th>
-                  <th className="label hidden px-3 py-1.5 text-left font-semibold lg:table-cell">
+                  <th className="label cell-pad-x py-1.5 text-left font-semibold">Severity</th>
+                  <th className="label cell-pad-x py-1.5 text-left font-semibold">Alert</th>
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold lg:table-cell">
                     Component
                   </th>
                   {groupBy !== "connection" && (
-                    <th className="label px-3 py-1.5 text-left font-semibold">Connection</th>
+                    <th className="label cell-pad-x py-1.5 text-left font-semibold">Connection</th>
                   )}
-                  <th className="label hidden px-3 py-1.5 text-left font-semibold xl:table-cell">
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold xl:table-cell">
                     Owner
                   </th>
-                  <th className="label px-3 py-1.5 text-right font-semibold">First seen</th>
-                  <th className="label px-3 py-1.5 text-right font-semibold">Last seen</th>
+                  <th className="label cell-pad-x py-1.5 text-right font-semibold">First seen</th>
+                  <th className="label cell-pad-x py-1.5 text-right font-semibold">Last seen</th>
                   <th className="w-px" />
                 </tr>
               </thead>
@@ -321,8 +324,12 @@ export function Alerts({
                           : { borderLeftColor: SEVERITY[group.worst].color }
                       }
                     >
-                      <td colSpan={8} className="px-3 py-1.5">
-                        <div className="flex items-center gap-2">
+                      <td colSpan={8} className="cell-pad-x py-1.5">
+                        {/* Wraps. Every item in this row is nowrap — a title,
+                            three counts, two tags — and in a table cell that
+                            is a width the whole table has to honour: at 1100px
+                            it pushed First seen and Last seen off the edge. */}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           {groupBy === "connection" && group.kind && (
                             <ServiceMark descriptor={catalog.get(group.kind)} size={15} />
                           )}
@@ -356,14 +363,25 @@ export function Alerts({
                               {group.label}
                             </h2>
                           )}
+                          {/* A noun on every number. A bare "2" beside "2
+                              unacknowledged" beside "1 more hidden" was three
+                              counts of the same group and none said of what. */}
                           <span className="num shrink-0 text-2xs text-ink-4">
-                            {group.alerts.length}
+                            {group.incident &&
+                            group.incident.alertIds.length > group.alerts.length
+                              ? `${group.alerts.length} of ${group.incident.alertIds.length} alerts`
+                              : `${group.alerts.length} alert${group.alerts.length === 1 ? "" : "s"}`}
                           </span>
-                          {group.unacknowledged > 0 && (
-                            <Tag color="var(--color-warn)">
-                              {group.unacknowledged} unacknowledged
-                            </Tag>
-                          )}
+                          {group.unacknowledged > 0 &&
+                            group.unacknowledged < group.alerts.length && (
+                              <Tag color="var(--color-warn)">
+                                {group.unacknowledged} unacknowledged
+                              </Tag>
+                            )}
+                          {group.unacknowledged > 0 &&
+                            group.unacknowledged === group.alerts.length && (
+                              <Tag color="var(--color-warn)">unacknowledged</Tag>
+                            )}
                           {/* Grouping is a claim, so it carries its own
                               caveat wherever it is shown. A merged row an
                               operator cannot argue with is one they cannot
@@ -380,8 +398,8 @@ export function Alerts({
                           {group.incident &&
                             group.incident.alertIds.length > group.alerts.length && (
                               <span className="num text-2xs text-ink-4">
-                                {group.incident.alertIds.length - group.alerts.length} more hidden
-                                by the filter
+                                {group.incident.alertIds.length - group.alerts.length} hidden by
+                                the filter
                               </span>
                             )}
                           {group.incident && group.incident.confidence !== "high" && (
@@ -414,12 +432,12 @@ export function Alerts({
                       <tr
                         key={alert.id}
                         className={cx(
-                          "group border-b border-line/50 hover:bg-white/[0.035]",
+                          "group border-b border-line/50 row-hover",
                           !alert.active && "opacity-55",
                         )}
                         style={{ height: "var(--row-h)" }}
                       >
-                        <td className="px-3 whitespace-nowrap">
+                        <td className="cell-pad-x whitespace-nowrap">
                           <span className="flex items-center gap-1.5">
                             <span
                               className="h-1.5 w-1.5 shrink-0 rounded-full"
@@ -432,7 +450,13 @@ export function Alerts({
                           </span>
                         </td>
 
-                        <td className="max-w-md px-3">
+                        {/* The cap is what lets the table fit a narrow
+                            column: a td is at least as wide as its content,
+                            and an alert title is as long as the collector
+                            wrote it. Below ~1024px of screen the first-seen
+                            and last-seen columns were pushed off the right
+                            edge by this one cell. */}
+                        <td className="max-w-56 cell-pad-x @5xl:max-w-md">
                           <div className="flex min-w-0 items-center gap-1.5">
                             <span className="truncate text-xs font-medium text-ink">
                               {alert.title}
@@ -452,7 +476,7 @@ export function Alerts({
                             collector called the thing. A Redis slow command
                             arrives 170 characters long and used to paint
                             straight across the four columns to its right. */}
-                        <td className="hidden max-w-44 px-3 lg:table-cell">
+                        <td className="hidden max-w-44 cell-pad-x lg:table-cell">
                           {alert.component ? (
                             <div className="num truncate text-xs text-ink-3" title={alert.component}>
                               {alert.component}
@@ -463,7 +487,7 @@ export function Alerts({
                         </td>
 
                         {groupBy !== "connection" && (
-                          <td className="max-w-44 px-3">
+                          <td className="max-w-44 cell-pad-x">
                             <button
                               onClick={() =>
                                 onNavigate({
@@ -484,7 +508,7 @@ export function Alerts({
                           </td>
                         )}
 
-                        <td className="hidden max-w-40 px-3 xl:table-cell">
+                        <td className="hidden max-w-40 cell-pad-x xl:table-cell">
                           <div
                             className={cx(
                               "truncate text-xs",
@@ -498,19 +522,19 @@ export function Alerts({
                         </td>
 
                         <td
-                          className="num px-3 text-right whitespace-nowrap text-ink-4"
+                          className="num cell-pad-x text-right whitespace-nowrap text-ink-4"
                           title={formatDateTime(alert.firstSeen)}
                         >
                           {formatRelative(alert.firstSeen)}
                         </td>
                         <td
-                          className="num px-3 text-right whitespace-nowrap text-ink-4"
+                          className="num cell-pad-x text-right whitespace-nowrap text-ink-4"
                           title={formatDateTime(alert.lastSeen)}
                         >
                           {formatRelative(alert.lastSeen)}
                         </td>
 
-                        <td className="px-3">
+                        <td className="cell-pad-x">
                           <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                             <Button
                               variant="ghost"

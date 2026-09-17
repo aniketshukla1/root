@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type { Catalog } from "../catalog";
-import { markColor, seriesColor, SERIES_CAP } from "../catalog";
+import { DATA_INK, seriesColor, SERIES_CAP } from "../catalog";
 import { formatMetricValue } from "../format";
 import type { EstateModel, ServiceView } from "../model";
 import type { View } from "../nav";
@@ -159,6 +159,7 @@ export function Metrics({
         onRefresh={onRefresh}
       >
         <Segmented
+          label="View"
           value={mode}
           onChange={setMode}
           options={[
@@ -199,6 +200,7 @@ export function Metrics({
           ))}
         </select>
         <Segmented
+          label="Time range"
           value={String(minutes)}
           onChange={(v) => onMinutesChange(Number(v))}
           options={ranges.map((r) => ({ value: String(r.minutes), label: r.label }))}
@@ -267,7 +269,7 @@ function ConnectionMetrics({
   onOpen: () => void;
 }) {
   const descriptor = catalog.get(service.snapshot.kind);
-  const accent = markColor(descriptor.accent);
+  const line = DATA_INK;
   const breaching = series.filter(
     (s) => s.warnAbove !== undefined && s.latest > s.warnAbove,
   ).length;
@@ -277,7 +279,11 @@ function ConnectionMetrics({
       title={
         <span className="flex items-center gap-2">
           <ServiceMark descriptor={descriptor} size={17} />
-          {service.snapshot.profileName}
+          {/* An identifier, not chrome: the panel title is uppercase mono,
+              and "ORDERS-API" is not the name of anything. */}
+          <span className="font-mono text-xs tracking-normal text-ink normal-case">
+            {service.snapshot.profileName}
+          </span>
         </span>
       }
       subtitle={`${descriptor.label} · ${series.length} metric${series.length === 1 ? "" : "s"}`}
@@ -307,7 +313,7 @@ function ConnectionMetrics({
                   <Rate trend={s.trend} unit={s.unit} />
                 </span>
                 <span
-                  className={cx("num shrink-0 text-[15px]", over ? "text-warn" : "text-ink")}
+                  className={cx("num shrink-0 text-lg", over ? "text-warn" : "text-ink")}
                   title={
                     s.warnAbove !== undefined
                       ? `Threshold ${formatMetricValue(s.warnAbove, s.unit)}`
@@ -325,7 +331,7 @@ function ConnectionMetrics({
                   {
                     key: s.key,
                     label: s.label,
-                    color: accent,
+                    color: line,
                     points: s.points,
                     warnAbove: s.warnAbove,
                   },

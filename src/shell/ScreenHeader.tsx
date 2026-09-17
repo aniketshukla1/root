@@ -31,14 +31,30 @@ export function ScreenHeader({
   useTick(15000);
 
   return (
-    <header className="sticky top-0 z-10 flex h-[52px] shrink-0 items-center gap-3 border-b border-line bg-page/95 px-4 backdrop-blur">
-      <h1 className="shrink-0 text-[22px] font-bold tracking-[-.03em] text-ink">{title}</h1>
+    <header className="sticky top-0 z-10 flex min-h-[52px] shrink-0 items-start gap-3 border-b border-line bg-page/95 px-4 py-[11px] backdrop-blur">
+      <h1 className="shrink-0 text-3xl leading-[30px] font-bold tracking-[-.03em] text-ink">
+        {title}
+      </h1>
       {meta && (
-        <div className="flex min-w-0 items-center gap-1.5 truncate text-xs text-ink-4">{meta}</div>
+        <div className="flex min-h-[30px] min-w-0 items-center gap-1.5 truncate text-xs text-ink-4">
+          {meta}
+        </div>
       )}
 
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        {children}
+      {/* The screen's own filters wrap; the controls every screen shares do
+          not. Both used to sit in one row that refused to shrink, so on
+          Alerts — a search, three segmented controls — the row was 88px wider
+          than a 1440px window, and at 1100px group-by and Ask were cut off the
+          edge entirely. Wrapping inside this group grows the band downward
+          and only when the width is genuinely short, so at a given window
+          size the header still holds still. */}
+      {children && (
+        <div className="ml-auto flex min-h-[30px] min-w-0 flex-wrap items-center justify-end gap-2">
+          {children}
+        </div>
+      )}
+
+      <div className={cx("flex min-h-[30px] shrink-0 items-center gap-2", !children && "ml-auto")}>
         {onAsk && (
           <Button onClick={onAsk} title="Ask the assistant  ⌘J" className="gap-1.5">
             <span className="flex text-accent">
@@ -118,7 +134,7 @@ export function Screen({
         // Screen that is not a flex column it is simply inert.
         "[&>*]:shrink-0",
         scroll ? "overflow-y-auto" : "overflow-hidden",
-        padded && "p-4",
+        padded && "screen-pad",
         className,
       )}
     >

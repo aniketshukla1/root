@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type { Catalog } from "../catalog";
-import { healthLabel, isProblem, markColor } from "../catalog";
+import { DATA_INK, healthLabel, isProblem } from "../catalog";
 import { formatMetricValue, formatRelative, isBreaching } from "../format";
 import {
   criticalityLabel,
@@ -140,6 +140,7 @@ export function Services({
           />
         </div>
         <Segmented
+          label="Attention"
           value={onlyProblems ? "problems" : "all"}
           onChange={(v) => setOnlyProblems(v === "problems")}
           options={[
@@ -148,6 +149,7 @@ export function Services({
           ]}
         />
         <Segmented
+          label="Group by"
           value={groupBy}
           onChange={setGroupBy}
           options={(Object.keys(GROUP_LABELS) as GroupBy[]).map((key) => ({
@@ -179,28 +181,28 @@ export function Services({
               <thead className="sticky top-0 z-[1] bg-panel">
                 <tr className="border-b border-line">
                   <th className="w-px" />
-                  <th className="label px-3 py-1.5 text-left font-semibold">Connection</th>
-                  <th className="label px-3 py-1.5 text-left font-semibold">Status</th>
-                  <th className="label hidden px-3 py-1.5 text-left font-semibold xl:table-cell">
+                  <th className="label cell-pad-x py-1.5 text-left font-semibold">Connection</th>
+                  <th className="label cell-pad-x py-1.5 text-left font-semibold">Status</th>
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold xl:table-cell">
                     Type
                   </th>
-                  <th className="label hidden px-3 py-1.5 text-left font-semibold lg:table-cell">
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold lg:table-cell">
                     Owner
                   </th>
-                  <th className="label px-3 py-1.5 text-right font-semibold">Components</th>
-                  <th className="label px-3 py-1.5 text-right font-semibold">Open</th>
-                  <th className="label hidden px-3 py-1.5 text-right font-semibold md:table-cell">
+                  <th className="label cell-pad-x py-1.5 text-right font-semibold">Components</th>
+                  <th className="label cell-pad-x py-1.5 text-right font-semibold">Open</th>
+                  <th className="label hidden cell-pad-x py-1.5 text-right font-semibold md:table-cell">
                     Key metric
                   </th>
-                  <th className="label px-3 py-1.5 text-right font-semibold">Trend</th>
-                  <th className="label px-3 py-1.5 text-right font-semibold">Checked</th>
+                  <th className="label cell-pad-x py-1.5 text-right font-semibold">Trend</th>
+                  <th className="label cell-pad-x py-1.5 text-right font-semibold">Checked</th>
                 </tr>
               </thead>
 
               {groups.map((group) => (
                 <tbody key={group.key}>
                   <tr className="border-y border-line bg-page/60">
-                    <td colSpan={10} className="px-3 py-1.5">
+                    <td colSpan={10} className="cell-pad-x py-1.5">
                       <div className="flex items-center gap-2">
                         <Dot health={group.health} />
                         <h2 className="text-xs font-semibold text-ink">{group.label}</h2>
@@ -271,7 +273,7 @@ function ServiceRow({
   return (
     <>
       <tr
-        className="group border-b border-line/50 hover:bg-white/[0.035]"
+        className="group border-b border-line/50 row-hover"
         style={{ height: "var(--row-h)" }}
       >
         <td className="pl-2">
@@ -285,13 +287,13 @@ function ServiceRow({
                   ? "Hide components"
                   : `Show ${problems.length} failing components`
             }
-            className="grid h-5 w-5 place-items-center rounded text-ink-4 transition-colors hover:text-ink disabled:opacity-25"
+            className="grid h-5 w-5 place-items-center rounded-md text-ink-4 transition-colors hover:text-ink disabled:opacity-25"
           >
             {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </button>
         </td>
 
-        <td className="max-w-64 px-3">
+        <td className="max-w-64 cell-pad-x">
           <button onClick={onOpen} className="flex min-w-0 items-center gap-2 text-left">
             <ServiceMark descriptor={descriptor} size={17} />
             <span className="truncate text-xs font-medium text-ink transition-colors group-hover:text-accent">
@@ -300,7 +302,7 @@ function ServiceRow({
           </button>
         </td>
 
-        <td className="px-3">
+        <td className="cell-pad-x">
           <div className="flex items-center gap-2">
             <HealthBadge health={service.health} />
             {incident && (
@@ -308,11 +310,22 @@ function ServiceRow({
                 color={
                   incident.severity === "critical" ? "var(--color-crit)" : "var(--color-warn)"
                 }
-                title={`${incident.title} — ${incident.profileIds.length} connections, started on ${incident.leadProfileId}`}
+                title={
+                  service.health === "healthy"
+                    ? `${incident.title} — this connection is reporting healthy but is grouped into the incident, which is still open.`
+                    : `${incident.title} — ${incident.profileIds.length} connections, started on ${incident.leadProfileId}`
+                }
               >
+                {/* A connection name, not a shout: uppercasing an identifier
+                    makes it a different string from the one in every other
+                    column. And a connection whose collector reports healthy
+                    while it sits in an open incident is not a contradiction to
+                    leave the reader to resolve — the tag says which it is. */}
                 {incident.leadProfileId === snapshot.profileId
-                  ? "INCIDENT ORIGIN"
-                  : `WITH ${incident.leadProfileId.toUpperCase()}`}
+                  ? "incident origin"
+                  : service.health === "healthy"
+                    ? "in open incident"
+                    : `with ${incident.leadProfileId}`}
               </Tag>
             )}
             <span
@@ -324,9 +337,9 @@ function ServiceRow({
           </div>
         </td>
 
-        <td className="hidden px-3 text-xs text-ink-3 xl:table-cell">{descriptor.label}</td>
+        <td className="hidden cell-pad-x text-xs text-ink-3 xl:table-cell">{descriptor.label}</td>
 
-        <td className="hidden max-w-48 px-3 lg:table-cell">
+        <td className="hidden max-w-48 cell-pad-x lg:table-cell">
           <div className="flex items-center gap-1.5">
             <span
               className={cx("truncate text-xs", ownership.assigned ? "text-ink-3" : "text-ink-4 italic")}
@@ -347,9 +360,9 @@ function ServiceRow({
           </div>
         </td>
 
-        <td className="num px-3 text-right text-ink-3">{service.entities.length}</td>
+        <td className="num cell-pad-x text-right text-ink-3">{service.entities.length}</td>
 
-        <td className="px-3 text-right">
+        <td className="cell-pad-x text-right">
           {service.issues.length > 0 ? (
             <span className="num text-warn">{service.issues.length}</span>
           ) : (
@@ -357,7 +370,7 @@ function ServiceRow({
           )}
         </td>
 
-        <td className="hidden px-3 text-right md:table-cell">
+        <td className="hidden cell-pad-x text-right md:table-cell">
           {primary ? (
             <span className="whitespace-nowrap" title={primary.label}>
               <span className={cx("num", isBreaching(primary) && "text-warn")}>
@@ -370,14 +383,14 @@ function ServiceRow({
           )}
         </td>
 
-        <td className="px-3">
+        <td className="cell-pad-x">
           <div className="flex justify-end">
             {trend ? (
               <Sparkline
                 points={trend.points}
                 width={64}
                 height={18}
-                color={markColor(descriptor.accent)}
+                color={DATA_INK}
                 warnAbove={trend.warnAbove}
               />
             ) : (
@@ -386,7 +399,7 @@ function ServiceRow({
           </div>
         </td>
 
-        <td className="num px-3 text-right whitespace-nowrap text-ink-4">
+        <td className="num cell-pad-x text-right whitespace-nowrap text-ink-4">
           {formatRelative(snapshot.checkedAt)}
         </td>
       </tr>
@@ -394,7 +407,7 @@ function ServiceRow({
       {expanded && problems.length > 0 && (
         <tr className="border-b border-line/50 bg-page/40">
           <td />
-          <td colSpan={9} className="px-3 py-2">
+          <td colSpan={9} className="cell-pad-x py-2">
             <ul className="flex flex-col gap-1">
               {problems.slice(0, 12).map((entity) => (
                 <li key={entity.id} className="flex min-w-0 items-baseline gap-2 text-xs">

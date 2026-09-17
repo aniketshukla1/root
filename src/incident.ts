@@ -367,18 +367,68 @@ export function groupingSentence(incident: Incident): string {
       : "Grouped by connection.";
   }
 
-  const parts = incident.grouping.map(describe);
-  return parts.join(" ");
+  return mergeReasons(incident.grouping).map(describe).join(" ");
 }
 
-function describe(reason: GroupingReason): string {
+/**
+ * One sentence per mechanism, not per edge.
+ *
+ * The backend emits a reason for every edge it read, so an origin that
+ * pressured two dependencies arrived as two reasons — and was written out as
+ * the same sentence twice with one name swapped. Edges that share a mechanism
+ * and an anchor (the same origin, the same root) are folded into one reason
+ * naming every service on the other end.
+ */
+type MergedReason =
+  | Exclude<GroupingReason, { kind: "dependencyFailedFirst" | "dependentPressuredIt" }>
+  | { kind: "dependencyFailedFirst"; root: string; dependents: string[] }
+  | { kind: "dependentPressuredIt"; origin: string; pressured: string[] };
+
+function mergeReasons(reasons: GroupingReason[]): MergedReason[] {
+  const merged: MergedReason[] = [];
+  for (const reason of reasons) {
+    if (reason.kind === "dependencyFailedFirst") {
+      const same = merged.find(
+        (m) => m.kind === "dependencyFailedFirst" && m.root === reason.root,
+      );
+      if (same?.kind === "dependencyFailedFirst") {
+        if (!same.dependents.includes(reason.dependent)) same.dependents.push(reason.dependent);
+      } else {
+        merged.push({ kind: reason.kind, root: reason.root, dependents: [reason.dependent] });
+      }
+    } else if (reason.kind === "dependentPressuredIt") {
+      const same = merged.find(
+        (m) => m.kind === "dependentPressuredIt" && m.origin === reason.origin,
+      );
+      if (same?.kind === "dependentPressuredIt") {
+        if (!same.pressured.includes(reason.pressured)) same.pressured.push(reason.pressured);
+      } else {
+        merged.push({ kind: reason.kind, origin: reason.origin, pressured: [reason.pressured] });
+      }
+    } else {
+      merged.push(reason);
+    }
+  }
+  return merged;
+}
+
+/** "a", "a and b", "a, b and c". */
+function listOf(names: string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+function describe(reason: MergedReason): string {
   switch (reason.kind) {
     case "sameConnection":
       return `Several conditions on ${reason.profileId} are one problem with it.`;
     case "dependencyFailedFirst":
-      return `${reason.dependent} depends on ${reason.root}, and ${reason.root} failed first.`;
-    case "dependentPressuredIt":
-      return `${reason.origin} failed first and ${reason.pressured}, which it depends on, degraded shortly after — back-pressure rather than the cause.`;
+      return `${listOf(reason.dependents)} depend${reason.dependents.length === 1 ? "s" : ""} on ${reason.root}, and ${reason.root} failed first.`;
+    case "dependentPressuredIt": {
+      const n = reason.pressured.length;
+      const which = n === 1 ? "which" : n === 2 ? "both of which" : "all of which";
+      return `${reason.origin} failed first; ${listOf(reason.pressured)}, ${which} it depends on, degraded shortly after — back-pressure rather than the cause.`;
+    }
     case "simultaneousOnset":
       return `${reason.count} independent failures began within ${reason.windowSecs} seconds of each other with nothing declared between them — this may be one event, or a coincidence worth splitting.`;
   }

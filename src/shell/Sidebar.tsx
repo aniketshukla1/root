@@ -65,7 +65,10 @@ export function Sidebar({
       label: "Alerts",
       icon: AlertsIcon,
       view: { name: "alerts" },
-      count: model.counts.alerts,
+      // The same number the Alerts screen opens on — its default filter is
+      // Open, which is the unacknowledged set. Counting every active alert
+      // here put a 5 beside a screen that then showed 3.
+      count: model.counts.unacknowledged,
       alarm: model.counts.unacknowledged > 0,
     },
     { key: "metrics", label: "Metrics", icon: MetricsIcon, view: { name: "metrics" } },
@@ -86,7 +89,7 @@ export function Sidebar({
         title={collapsed ? entry.label : undefined}
         aria-current={active ? "page" : undefined}
         className={cx(
-          "group relative flex h-[30px] items-center rounded-md text-[12.5px] transition-colors",
+          "group relative flex h-[30px] items-center rounded-md text-base transition-colors",
           collapsed ? "w-8 justify-center" : "w-full gap-2.5 px-2.5",
           active ? "bg-sunk text-ink" : "text-ink-2 hover:bg-sunk/60 hover:text-ink",
         )}
@@ -143,7 +146,7 @@ export function Sidebar({
             <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-sm bg-accent text-on-accent">
               <RootMark size={16} />
             </span>
-            <span className="font-mono text-[11px] tracking-[.18em] text-ink uppercase">root</span>
+            <span className="font-mono text-xs tracking-[.18em] text-ink uppercase">root</span>
             <span
               className="ml-auto h-1.5 w-1.5 shrink-0"
               style={{ background: healthColor(model.health) }}
@@ -212,7 +215,7 @@ export function Sidebar({
             onClick={onOpenWorkspace}
           >
             <span
-              className="grid h-6 w-6 shrink-0 place-items-center rounded-sm font-mono text-[9.5px] font-semibold"
+              className="grid h-6 w-6 shrink-0 place-items-center rounded-sm font-mono text-2xs font-semibold"
               style={{
                 color: team?.account ? "var(--color-series-6)" : "var(--color-ink-4)",
                 boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${
@@ -226,7 +229,7 @@ export function Sidebar({
               {team?.account ? initials(team.account.name) : <RootMark size={13} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[11.5px] text-ink">
+              <span className="block truncate text-xs text-ink">
                 {team?.account?.name ?? "Local"}
               </span>
               <span className="num block truncate text-2xs text-ink-4">

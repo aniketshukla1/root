@@ -16,7 +16,7 @@ import type {
   Verdict,
   Withheld,
 } from "../types";
-import { Button, cx, Empty, Panel, Tag } from "../ui/primitives";
+import { Button, Chip, cx, Empty, Panel, Tag } from "../ui/primitives";
 
 /**
  * Configuration, and what it means read against telemetry.
@@ -92,7 +92,7 @@ function FindingCard({
       style={{ borderLeftColor: severity.color, borderLeftWidth: 2 }}
     >
       <div className="flex items-baseline gap-2">
-        <span className="text-[13px] font-medium text-ink">{finding.title}</span>
+        <span className="text-base font-medium text-ink">{finding.title}</span>
         <Tag color={severity.color}>{severity.label}</Tag>
         {/* A rule cannot invent a setting and the assistant can, so which one
             is talking is part of how much to believe it. Rules carry no tag:
@@ -329,7 +329,9 @@ export function RecallStrip({
   const candidates = findings.filter((f) => incident.profileIds.includes(f.profileId));
 
   return (
-    <div className="panel flex flex-col gap-2 px-3 py-2.5">
+    // No panel of its own: this renders inside the incident panel, under the
+    // claim it asks about.
+    <div className="flex flex-col gap-2 px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="text-xs text-ink-2">Did root see this coming?</span>
         <Choice
@@ -362,22 +364,11 @@ export function RecallStrip({
           <span className="num text-2xs text-ink-4">Which one?</span>
           <div className="flex flex-wrap gap-1">
             {candidates.map((finding) => (
-              <button
-                key={finding.id}
-                type="button"
-                onClick={() => send(pending, finding.id)}
-                className="inline-flex h-[20px] items-center rounded-sm border border-line bg-panel px-1.5 font-mono text-2xs text-ink-3 transition-colors hover:border-accent hover:text-accent"
-              >
+              <Chip key={finding.id} onClick={() => send(pending, finding.id)}>
                 {finding.title}
-              </button>
+              </Chip>
             ))}
-            <button
-              type="button"
-              onClick={() => send(pending)}
-              className="inline-flex h-[20px] items-center rounded-sm border border-line bg-panel px-1.5 font-mono text-2xs text-ink-4 transition-colors hover:border-accent hover:text-accent"
-            >
-              none of these
-            </button>
+            <Chip onClick={() => send(pending)}>none of these</Chip>
           </div>
         </div>
       )}
@@ -411,19 +402,9 @@ function Choice<T extends string>({
   return (
     <div className="flex flex-wrap gap-1">
       {options.map(([option, label]) => (
-        <button
-          key={option}
-          type="button"
-          onClick={() => onChange(option)}
-          className={cx(
-            "inline-flex h-[20px] items-center rounded-sm border px-1.5 font-mono text-2xs transition-colors",
-            value === option
-              ? "border-accent bg-accent text-on-accent"
-              : "border-line bg-panel text-ink-3 hover:border-accent hover:text-accent",
-          )}
-        >
+        <Chip key={option} selected={value === option} onClick={() => onChange(option)}>
           {label}
-        </button>
+        </Chip>
       ))}
     </div>
   );

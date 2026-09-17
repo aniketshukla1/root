@@ -38,7 +38,7 @@ import {
 } from "../ui/incident";
 import { Bullet } from "../ui/plots";
 import { Heatmap } from "../ui/Heatmap";
-import { Button, cx, Dot, Empty, Panel, ServiceMark, Tag } from "../ui/primitives";
+import { Button, Chip, cx, Dot, Empty, Panel, ServiceMark, Tag } from "../ui/primitives";
 import { CheckIcon, ChevronRight } from "../ui/icons";
 
 /**
@@ -152,6 +152,24 @@ export function Overview({
     onAsk: onAskIncident,
   };
 
+  /**
+   * The recall question, rendered inside whichever hero is on screen. It is
+   * about one incident, so it travels with that incident's panel.
+   */
+  const recall = (incident: Incident) => (
+    <RecallStrip
+      incident={{
+        id: incident.id,
+        headline: incident.title,
+        profileIds: incident.profileIds,
+        startedAt: incident.started,
+      }}
+      findings={findings}
+      judged={judgedIncidents.includes(incident.id)}
+      onJudge={onJudgeIncident}
+    />
+  );
+
   const errors = useMemo(
     () => logs.filter((l) => l.level === "error" || l.level === "fatal").slice(0, 14),
     [logs],
@@ -251,28 +269,18 @@ export function Overview({
                     context={context}
                     actions={actions}
                     compact
+                    footer={recall(selected)}
                   />
                 )}
               </div>
             )}
 
             {state !== "triage" && selected && (
-              <IncidentHero incident={selected} context={context} actions={actions} />
-            )}
-
-            {/* Under the hero, above the evidence: after somebody has read
-                what happened and before they start working it. */}
-            {selected && (
-              <RecallStrip
-                incident={{
-                  id: selected.id,
-                  headline: selected.title,
-                  profileIds: selected.profileIds,
-                  startedAt: selected.started,
-                }}
-                findings={findings}
-                judged={judgedIncidents.includes(selected.id)}
-                onJudge={onJudgeIncident}
+              <IncidentHero
+                incident={selected}
+                context={context}
+                actions={actions}
+                footer={recall(selected)}
               />
             )}
 
@@ -338,7 +346,7 @@ export function Overview({
 function queueSubtitle(incidents: Incident[]): string {
   const acked = incidents.filter((i) => i.acknowledged).length;
   if (acked === 0) return "worst and oldest first";
-  return `${acked} acknowledged, below`;
+  return `${incidents.length - acked} open · ${acked} acknowledged, below`;
 }
 
 // ------------------------------------------------------------------ header
@@ -354,7 +362,14 @@ function HeaderState({
   model: EstateModel;
 }) {
   const live = incidents.filter((i) => !i.acknowledged);
-  const grouped = live.reduce((sum, i) => sum + i.alertIds.length, 0);
+  // Unacknowledged alerts, not every alert the open incidents hold. An open
+  // incident can contain an alert somebody already acknowledged, and counting
+  // it here put "4 alerts" in this header while Alerts — whose default view is
+  // exactly the unacknowledged ones — said 3.
+  const inLive = new Set(live.flatMap((i) => i.alertIds));
+  const unacknowledged = model.alerts.filter(
+    (a) => inLive.has(a.id) && a.active && !a.acknowledged,
+  ).length;
 
   if (state === "quiet") {
     return (
@@ -375,8 +390,9 @@ function HeaderState({
     <span className="flex items-center gap-2" style={{ color: tone }}>
       <Dot health={live[0]?.health ?? "degraded"} size={8} />
       <span className="num">
-        {live.length} incident{live.length === 1 ? "" : "s"}
-        {grouped > live.length && ` from ${grouped} alerts`}
+        {live.length} open incident{live.length === 1 ? "" : "s"}
+        {unacknowledged > 0 &&
+          ` · ${unacknowledged} unacknowledged alert${unacknowledged === 1 ? "" : "s"}`}
       </span>
     </span>
   );
@@ -446,10 +462,10 @@ function QuietState({
           <CheckIcon size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-[22px] leading-tight font-medium tracking-[-.025em] text-ink">
+          <h2 className="text-3xl leading-tight font-medium tracking-[-.025em] text-ink">
             Nothing is wrong.
           </h2>
-          <p className="mt-2 max-w-[92ch] text-[12.5px] leading-relaxed text-ink-2">
+          <p className="mt-2 max-w-[92ch] text-base leading-relaxed text-ink-2">
             All {model.counts.connections} connections reported on their last poll, and{" "}
             {model.counts.entities} components are healthy.
             {clearFor !== undefined
@@ -577,16 +593,15 @@ function QuietState({
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {flaps.map((flap) => (
-                  <button
+                  <Chip
                     key={flap.profileId}
-                    type="button"
                     onClick={() => onNavigate({ name: "service", profileId: flap.profileId })}
-                    className="row-hover num flex items-center gap-1.5 rounded-sm border border-line px-2 py-1 text-2xs text-ink-2"
+                    className="num text-ink-2"
                   >
                     <Dot health={flap.worst} size={7} />
                     {flap.profileName}
                     <span className="text-ink-4">recovered</span>
-                  </button>
+                  </Chip>
                 ))}
               </div>
             )}
@@ -666,7 +681,7 @@ function RestOfEstate({
       <button
         type="button"
         onClick={() => onNavigate({ name: "services" })}
-        className="row-hover num ml-auto flex items-center gap-1 rounded-sm text-2xs text-ink-4"
+        className="row-hover num ml-auto flex h-6 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-4"
       >
         Show all
         <ChevronRight size={11} />
@@ -785,7 +800,7 @@ function HealthKey() {
       {items.map((health) => (
         <span key={health} className="flex items-center gap-1.5">
           <span
-            className={cx("h-2 w-2 rounded-[1px]")}
+            className={cx("h-2 w-2 rounded-xs")}
             style={{ background: healthColor(health) }}
           />
           <span className="num text-2xs text-ink-4">{healthLabel(health)}</span>

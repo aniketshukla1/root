@@ -526,15 +526,7 @@ impl Collector for RabbitCollector {
 /// The default vhost is `/`, which must become `%2F` or the URL points at the
 /// wrong resource entirely — the single most common mistake against this API.
 fn urlencoding(value: &str) -> String {
-    value
-        .bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            other => format!("%{other:02X}"),
-        })
-        .collect()
+    super::path_segment(value)
 }
 
 #[cfg(test)]

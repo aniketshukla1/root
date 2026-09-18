@@ -378,6 +378,8 @@ pub fn catalog(mode: AgentMode) -> Vec<ToolDef> {
         ),
     ];
 
+    tools.extend(gigapipe_tools());
+
     if mode == AgentMode::ConfirmActions {
         tools.extend([
             tool(
@@ -450,6 +452,187 @@ pub fn catalog(mode: AgentMode) -> Vec<ToolDef> {
     }
 
     tools
+}
+
+/// The nine read APIs a gigapipe connection answers, one tool each.
+///
+/// Gigapipe is a store as well as a service, and these are how the assistant
+/// reaches what it holds: PromQL for metrics, LogQL for logs, and Tempo's tag
+/// and trace endpoints for spans. They exist because root's own history is a
+/// ring buffer of a few hours and its log buffer is in memory — so "what did
+/// this look like last Tuesday" is a question root cannot answer from itself,
+/// and can answer from here.
+///
+/// Every one is read-only, and each names a fixed endpoint rather than taking
+/// a path. That is the same boundary `database_diagnostic` draws: the model
+/// chooses among reviewed operations, never composes a request.
+///
+/// The `gigapipe_` prefix is load-bearing. root also monitors Prometheus
+/// directly, so an unprefixed `prometheus_query` would be ambiguous about
+/// which connection it addressed.
+fn gigapipe_tools() -> Vec<ToolDef> {
+    /// `start` and `end`, which every one of these accepts.
+    fn window() -> serde_json::Value {
+        json!({
+            "start": {
+                "type": "string",
+                "description": "Start of the window, RFC3339 or a Unix timestamp. \
+                                Omit to let the store apply its own default."
+            },
+            "end": {
+                "type": "string",
+                "description": "End of the window, RFC3339 or a Unix timestamp. \
+                                Omit to let the store apply its own default."
+            }
+        })
+    }
+
+    /// One tool's schema: the shared `connection`, the window, and its own
+    /// properties on top.
+    fn schema(extra: serde_json::Value, required: &[&str]) -> serde_json::Value {
+        let mut properties = json!({ "connection": connection_property() });
+        for source in [window(), extra] {
+            if let (Some(target), Some(source)) =
+                (properties.as_object_mut(), source.as_object())
+            {
+                for (key, value) in source {
+                    target.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        json!({
+            "type": "object",
+            "properties": properties,
+            "required": required,
+        })
+    }
+
+    vec![
+        tool(
+            "gigapipe_prometheus_query",
+            "Run a PromQL query against a gigapipe connection over a time range, returning the \
+             store's own `{status, data}` response with every series that matched. This is the \
+             exploratory path and reaches further back than root's own ring buffer; \
+             `get_metric_trend` is the one to use for a metric root already collects.",
+            schema(
+                json!({
+                    "query": {
+                        "type": "string",
+                        "description": "PromQL expression, e.g. rate(http_requests_total[5m])."
+                    },
+                    "step": {
+                        "type": "string",
+                        "description": "Resolution between points, e.g. 15s, 1m, 1h. Omit and \
+                                        the store chooses. A long range with a small step \
+                                        returns a great many points."
+                    }
+                }),
+                &["query"],
+            ),
+            false,
+        ),
+        tool(
+            "gigapipe_prometheus_labels",
+            "List every metric label name a gigapipe connection knows about. Start here when \
+             you do not yet know how the metrics in this store are labelled.",
+            schema(json!({}), &[]),
+            false,
+        ),
+        tool(
+            "gigapipe_prometheus_label_values",
+            "List every value one metric label takes in a gigapipe connection — which services, \
+             instances or jobs actually exist — before writing a PromQL selector against it.",
+            schema(
+                json!({
+                    "label": {
+                        "type": "string",
+                        "description": "Label name, e.g. instance or job."
+                    }
+                }),
+                &["label"],
+            ),
+            false,
+        ),
+        tool(
+            "gigapipe_loki_query",
+            "Run a LogQL query against a gigapipe connection over a time range. This searches \
+             what was shipped into the store, which is a different and much longer-lived body \
+             of logs than `search_logs` — that one searches root's own in-memory buffer.",
+            schema(
+                json!({
+                    "query": {
+                        "type": "string",
+                        "description": "LogQL expression, e.g. {job=\"varlogs\"} |= \"error\"."
+                    },
+                    "limit": {
+                        "type": "string",
+                        "description": "Maximum entries to return. Omit for the store's default."
+                    }
+                }),
+                &["query"],
+            ),
+            false,
+        ),
+        tool(
+            "gigapipe_loki_labels",
+            "List every log label name a gigapipe connection knows about — the stream selectors \
+             available to a LogQL query.",
+            schema(json!({}), &[]),
+            false,
+        ),
+        tool(
+            "gigapipe_loki_label_values",
+            "List every value one log label takes in a gigapipe connection, so a LogQL selector \
+             names a stream that exists rather than one that returns nothing.",
+            schema(
+                json!({
+                    "label": {
+                        "type": "string",
+                        "description": "Label name, e.g. job or namespace."
+                    }
+                }),
+                &["label"],
+            ),
+            false,
+        ),
+        tool(
+            "gigapipe_tempo_query",
+            "Fetch one trace from a gigapipe connection by id, as the store returns it. Use \
+             `trace` instead when you want the spans assembled into a tree with self time \
+             worked out; this one is the raw document.",
+            schema(
+                json!({
+                    "trace_id": {
+                        "type": "string",
+                        "description": "Trace id, as hexadecimal."
+                    }
+                }),
+                &["trace_id"],
+            ),
+            false,
+        ),
+        tool(
+            "gigapipe_tempo_tags",
+            "List every trace tag name available for search in a gigapipe connection.",
+            schema(json!({}), &[]),
+            false,
+        ),
+        tool(
+            "gigapipe_tempo_tag_values",
+            "List every value one trace tag takes in a gigapipe connection — which services are \
+             actually represented in its traces, for instance.",
+            schema(
+                json!({
+                    "tag": {
+                        "type": "string",
+                        "description": "Tag name, e.g. service.name."
+                    }
+                }),
+                &["tag"],
+            ),
+            false,
+        ),
+    ]
 }
 
 pub fn find(mode: AgentMode, name: &str) -> Option<ToolDef> {
@@ -960,6 +1143,67 @@ pub async fn run_read_only(
                 .await?
         }
 
+        name if name.starts_with("gigapipe_") => {
+            use crate::collectors::GigapipeRead as R;
+
+            let id = resolve_connection(state, args).await?;
+            let text = |key: &str| {
+                args.get(key)
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.trim().to_string())
+                    .filter(|v| !v.is_empty())
+            };
+            let required = |key: &str| {
+                text(key).ok_or_else(|| AppError::Collector(format!("`{key}` is required")))
+            };
+            let (start, end) = (text("start"), text("end"));
+
+            let read = match name {
+                "gigapipe_prometheus_query" => R::PrometheusQuery {
+                    query: required("query")?,
+                    start,
+                    end,
+                    step: text("step"),
+                },
+                "gigapipe_prometheus_labels" => R::PrometheusLabels { start, end },
+                "gigapipe_prometheus_label_values" => R::PrometheusLabelValues {
+                    label: required("label")?,
+                    start,
+                    end,
+                },
+                "gigapipe_loki_query" => R::LokiQuery {
+                    query: required("query")?,
+                    start,
+                    end,
+                    // Sent as written: the store takes a bare integer, and
+                    // re-typing it here would only add a second parser.
+                    limit: text("limit"),
+                },
+                "gigapipe_loki_labels" => R::LokiLabels { start, end },
+                "gigapipe_loki_label_values" => R::LokiLabelValues {
+                    label: required("label")?,
+                    start,
+                    end,
+                },
+                "gigapipe_tempo_query" => R::TempoTrace {
+                    trace_id: required("trace_id")?,
+                },
+                "gigapipe_tempo_tags" => R::TempoTags,
+                "gigapipe_tempo_tag_values" => R::TempoTagValues {
+                    tag: required("tag")?,
+                },
+                other => {
+                    return Err(AppError::Collector(format!("unknown tool `{other}`")));
+                }
+            };
+
+            state
+                .collector(&id)
+                .await?
+                .detail(&DetailQuery::GigapipeRead(read))
+                .await?
+        }
+
         "propose_command" => {
             // Recorded and surfaced in the UI; deliberately never executed.
             let command = args
@@ -1018,6 +1262,89 @@ mod tests {
         assert!(tools.iter().all(|t| !t.mutating));
         assert!(tools.iter().any(|t| t.spec.name == "propose_command"));
         assert!(tools.iter().all(|t| t.spec.name != "restart_container"));
+    }
+
+    /// Every gigapipe store read the assistant can make.
+    const GIGAPIPE_TOOLS: &[&str] = &[
+        "gigapipe_prometheus_query",
+        "gigapipe_prometheus_labels",
+        "gigapipe_prometheus_label_values",
+        "gigapipe_loki_query",
+        "gigapipe_loki_labels",
+        "gigapipe_loki_label_values",
+        "gigapipe_tempo_query",
+        "gigapipe_tempo_tags",
+        "gigapipe_tempo_tag_values",
+    ];
+
+    /// Reading a store changes nothing, so none of these may be gated behind
+    /// `ConfirmActions` — an operator who has deliberately kept the assistant
+    /// read-only still gets to ask what the warehouse holds.
+    #[test]
+    fn every_gigapipe_read_is_available_in_read_only_mode() {
+        for mode in [AgentMode::ReadOnly, AgentMode::ConfirmActions] {
+            for name in GIGAPIPE_TOOLS {
+                let found = find(mode, name)
+                    .unwrap_or_else(|| panic!("{name} is missing from the {mode:?} catalog"));
+                assert!(!found.mutating, "{name} must not be mutating");
+            }
+        }
+    }
+
+    /// The dispatch arm matches on the `gigapipe_` prefix, so a tool whose
+    /// name loses the prefix would be advertised and then fail to run.
+    #[test]
+    fn every_gigapipe_tool_is_reachable_by_its_prefix() {
+        let advertised: Vec<String> = catalog(AgentMode::ReadOnly)
+            .into_iter()
+            .map(|t| t.spec.name)
+            .filter(|n| n.starts_with("gigapipe_"))
+            .collect();
+        assert_eq!(advertised.len(), GIGAPIPE_TOOLS.len());
+        for name in GIGAPIPE_TOOLS {
+            assert!(advertised.iter().any(|n| n == name), "{name} not advertised");
+        }
+    }
+
+    /// Each schema has to declare the arguments its dispatch arm requires, or
+    /// the model is invited to call something that can only fail.
+    #[test]
+    fn gigapipe_schemas_require_what_the_dispatch_demands() {
+        let required = |name: &str| -> Vec<String> {
+            find(AgentMode::ReadOnly, name).unwrap().spec.input_schema["required"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(required("gigapipe_prometheus_query"), ["query"]);
+        assert_eq!(required("gigapipe_loki_query"), ["query"]);
+        assert_eq!(required("gigapipe_prometheus_label_values"), ["label"]);
+        assert_eq!(required("gigapipe_loki_label_values"), ["label"]);
+        assert_eq!(required("gigapipe_tempo_query"), ["trace_id"]);
+        assert_eq!(required("gigapipe_tempo_tag_values"), ["tag"]);
+        assert!(required("gigapipe_tempo_tags").is_empty());
+        assert!(required("gigapipe_prometheus_labels").is_empty());
+        assert!(required("gigapipe_loki_labels").is_empty());
+    }
+
+    /// `start` and `end` are offered on every one of these, because a question
+    /// about a store worth querying is nearly always a question about a window.
+    #[test]
+    fn every_gigapipe_tool_offers_a_time_window() {
+        for name in GIGAPIPE_TOOLS {
+            let schema = find(AgentMode::ReadOnly, name).unwrap().spec.input_schema;
+            let properties = &schema["properties"];
+            for key in ["connection", "start", "end"] {
+                assert!(
+                    properties.get(key).is_some(),
+                    "{name} does not offer `{key}`"
+                );
+            }
+        }
     }
 
     #[test]

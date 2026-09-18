@@ -224,15 +224,34 @@ parity.**
 | TraceQL | Built, in `gigapipe.rs::search_traces` |
 | Pyroscope | Not built — see gap 2 |
 
-One piece is missing that is worth more than the languages themselves: **the assistant
-cannot reach any of them.** root's advantage over gigapipe is an assistant that
-investigates; an assistant that can also ask "what did this look like last Tuesday"
-is a different tool from one limited to the last few hours in memory.
+**Built.** The assistant reaches all three. `DetailQuery::GigapipeRead` carries a closed
+set of nine reads — the same surface `gigapipe-mcp` exposes over MCP — and each is its
+own tool under a `gigapipe_` prefix:
 
-That means a `DetailQuery::LogqlQuery { expr, limit }` variant and a matching tool
-definition, with the same deliberate limits the Elasticsearch tool has — read-only, one
-endpoint, no arbitrary SQL. Size: about a day. **Highest value per hour of anything in
-this document.**
+| Tool | Endpoint |
+| --- | --- |
+| `gigapipe_prometheus_query` | `/api/v1/query_range` |
+| `gigapipe_prometheus_labels` | `/api/v1/labels` |
+| `gigapipe_prometheus_label_values` | `/api/v1/label/{name}/values` |
+| `gigapipe_loki_query` | `/loki/api/v1/query_range` |
+| `gigapipe_loki_labels` | `/loki/api/v1/label` |
+| `gigapipe_loki_label_values` | `/loki/api/v1/label/{name}/values` |
+| `gigapipe_tempo_query` | `/api/traces/{id}/json` |
+| `gigapipe_tempo_tags` | `/api/search/tags` |
+| `gigapipe_tempo_tag_values` | `/api/search/tag/{name}/values` |
+
+The limits are the Elasticsearch tool's: read-only, and a fixed set of endpoints rather
+than a path the model composes. Label and tag names are percent-encoded before they
+reach a URL, so a name carrying a slash addresses its own segment and not another
+resource. A rejected query carries the store's own parse error back rather than a bare
+status code, because the reason is the only part an operator can act on.
+
+The prefix is load-bearing: root monitors Prometheus directly as well, so an unprefixed
+`prometheus_query` would not say which connection it meant.
+
+`tests/gigapipe_read.rs` pins all nine to the wire under wiremock. The surface is
+entirely URLs, and `/label` against `/labels`, or a missing `/json`, fails by returning
+nothing rather than by erroring — which looks exactly like a store with nothing in it.
 
 ---
 
@@ -242,7 +261,7 @@ this document.**
 2. ~~Traces: model, section, waterfall~~ — done.
 3. Spans on `Correlate`'s lanes. About three days, and the thing that makes traces
    explanatory rather than merely present.
-4. Assistant access to LogQL, PromQL and TraceQL. One day. Highest value per hour.
+4. ~~Assistant access to LogQL, PromQL and TraceQL~~ — done, as nine `gigapipe_*` tools.
 5. Snapshot write-out over Influx line protocol, opt-in. Two days, after the product
    decision in gap 1.
 

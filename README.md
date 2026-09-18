@@ -373,13 +373,40 @@ Set in Settings:
 
 There is no arbitrary-SQL tool and no shell tool. Database access is a fixed set of five
 named diagnostics (`connections`, `long_queries`, `table_sizes`, `locks`, `replication`).
-The Elasticsearch tool can only reach `_search`. Anything the app cannot do safely is
-routed through `propose_command` for a human.
+The Elasticsearch tool can only reach `_search`. The nine gigapipe store reads each name
+one endpoint rather than taking a path. Anything the app cannot do safely is routed
+through `propose_command` for a human.
 
 Configuration reaches the model already redacted — the redaction lives in the reader, so
 no tool can return an unredacted body. And findings come back through a tool rather than
 in a sentence, which is what makes them attributable and rateable beside the rules on the
 Scorecard; see [Is it any good?](#is-it-any-good).
+
+### Reading the warehouse
+
+root's own history is a ring buffer of a few hours and its log buffer is in memory, so
+"what did this look like last Tuesday" is a question root cannot answer about itself. A
+[gigapipe](GIGAPIPE.md) connection can, and the assistant reaches it through nine
+read-only tools — the same surface `gigapipe-mcp` exposes over MCP, with root's limits
+on it:
+
+- **Metrics** — `gigapipe_prometheus_query` (PromQL over a range), plus `_labels` and
+  `_label_values` so a selector can be written against labels that exist rather than
+  guessed at.
+- **Logs** — `gigapipe_loki_query` (LogQL), plus `_labels` and `_label_values`. This
+  searches what was *shipped into* the store, which is a different and far longer-lived
+  body of logs than `search_logs`, which searches root's own buffer.
+- **Traces** — `gigapipe_tempo_query` for one trace as the store holds it, plus
+  `_tags` and `_tag_values`.
+
+Each names a fixed endpoint; none takes a path the model composes. Label and tag names
+are percent-encoded before they reach a URL, so a name carrying a slash cannot address a
+different resource. A rejected query comes back with the store's own parse error rather
+than a bare status code, because the reason is the only part anyone can act on. All nine
+are read-only, so they stay available in **Read-only** mode.
+
+The `gigapipe_` prefix matters: root monitors Prometheus directly too, and an unprefixed
+`prometheus_query` would not say which connection it meant.
 
 ### One reading of one component
 
@@ -491,13 +518,13 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-462 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+466 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
 detection, component history admission and eviction, log filtering and stream separation,
 section renderability, conversation trimming, the per-provider message translation, and
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
 grouping, config rules, and the journal.
 
-Eight integration suites sit in `src-tauri/tests/`, each against something real:
+Nine integration suites sit in `src-tauri/tests/`, each against something real:
 
 | Suite | Against | Why it is not a unit test |
 | --- | --- | --- |
@@ -508,6 +535,7 @@ Eight integration suites sit in `src-tauri/tests/`, each against something real:
 | `kafka.rs` | a real broker | consumer lag needs a per-group offset fetch that only exists over the wire, and a group that never committed looks identical to one fully caught up |
 | `kubernetes.rs` | a real cluster | whether the API shapes we ask for exist on a live server; a renamed field is a silently-empty section, never a compile error |
 | `promquery.rs` | wiremock always, a real Prometheus when asked | wiremock proves the parser handles documented shapes; a server proves those shapes are what it sends |
+| `gigapipe_read.rs` | wiremock, always | the nine store reads are entirely URLs, and `/label` against `/labels` or a missing `/json` fails by returning nothing — which looks exactly like a store holding nothing |
 | `demo_estate.rs` | `demo/compose.yml`, wrong on purpose | the only layer that proves the pieces *meet* — see [The demo estate](#the-demo-estate) |
 
 `tests/databases.rs` earns its keep twice over: writing it caught three genuine bugs —

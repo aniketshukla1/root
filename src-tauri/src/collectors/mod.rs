@@ -46,6 +46,25 @@ use crate::config::ConnectionProfile;
 use crate::error::{AppError, Result};
 use crate::model::{HealthSnapshot, LogEvent, ServiceKind};
 
+/// Percent-encode one path segment.
+///
+/// Anything a caller supplies that ends up *in a URL path* goes through this
+/// first. A RabbitMQ vhost is `/` by default and must become `%2F` or the URL
+/// addresses a different resource entirely; a label or tag name handed over by
+/// the assistant has no such convention and could contain anything at all.
+/// Only the RFC 3986 unreserved set survives unescaped.
+pub(crate) fn path_segment(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            other => format!("%{other:02X}"),
+        })
+        .collect()
+}
+
 /// A state-changing operation the assistant may request. Every variant here is
 /// gated behind explicit user approval before it runs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,6 +142,67 @@ pub enum DetailQuery {
     /// One assembled trace, by id. The spans come back as a tree rather than
     /// the flat list the backend hands over; see `crate::traces`.
     Trace { trace_id: String },
+    /// One of gigapipe's read APIs, named rather than composed.
+    GigapipeRead(GigapipeRead),
+}
+
+/// The read APIs a gigapipe connection exposes, as a closed set.
+///
+/// Gigapipe speaks Prometheus, Loki and Tempo over HTTP, and each of those is
+/// handed to the assistant as its own tool rather than as a path it composes.
+/// The discipline is the same one the database diagnostics follow: the set of
+/// reachable endpoints is fixed in this file, so a model cannot reach one
+/// nobody reviewed, and a new endpoint is a deliberate edit here.
+///
+/// `start` and `end` travel as the caller wrote them — RFC3339 or a Unix
+/// timestamp — because the store parses both and inventing a canonical form
+/// here would only add a second parser to disagree with it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "signal", rename_all = "snake_case")]
+pub enum GigapipeRead {
+    /// PromQL over a range. `step` is the store's default when omitted.
+    PrometheusQuery {
+        query: String,
+        start: Option<String>,
+        end: Option<String>,
+        step: Option<String>,
+    },
+    /// Every metric label name the store knows about.
+    PrometheusLabels {
+        start: Option<String>,
+        end: Option<String>,
+    },
+    /// Every value carried by one metric label.
+    PrometheusLabelValues {
+        label: String,
+        start: Option<String>,
+        end: Option<String>,
+    },
+    /// LogQL over a range.
+    LokiQuery {
+        query: String,
+        start: Option<String>,
+        end: Option<String>,
+        limit: Option<String>,
+    },
+    /// Every log label name the store knows about.
+    LokiLabels {
+        start: Option<String>,
+        end: Option<String>,
+    },
+    /// Every value carried by one log label.
+    LokiLabelValues {
+        label: String,
+        start: Option<String>,
+        end: Option<String>,
+    },
+    /// One trace as the store returns it, unassembled. `DetailQuery::Trace`
+    /// is the assembled tree; this is the raw document.
+    TempoTrace { trace_id: String },
+    /// Every trace tag name available for search.
+    TempoTags,
+    /// Every value carried by one trace tag.
+    TempoTagValues { tag: String },
 }
 
 #[async_trait]

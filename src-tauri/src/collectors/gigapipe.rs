@@ -369,6 +369,23 @@ impl WireSpan {
 
 /// Trace ids are hex. Sending anything else earns a 500 from gigapipe with no
 /// explanation, so it is refused here where the reason can be given.
+/// The leading part of an error body, for a message an operator will read.
+///
+/// Gigapipe answers a rejected query with the parse error in the body, which is
+/// the useful half; it can also answer with an HTML error page, which is not.
+/// Taking the first line and capping it keeps the first case intact without
+/// pasting a document into the conversation.
+fn first_line(body: &str, limit: usize) -> String {
+    let line = body.trim().lines().next().unwrap_or_default().trim();
+    if line.is_empty() {
+        return "no reason given".to_string();
+    }
+    match line.char_indices().nth(limit) {
+        Some((cut, _)) => format!("{}…", &line[..cut]),
+        None => line.to_string(),
+    }
+}
+
 fn is_hex_trace_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 32 && id.chars().all(|c| c.is_ascii_hexdigit())
 }
@@ -443,6 +460,122 @@ impl GigapipeCollector {
             return None;
         }
         response.text().await.ok()
+    }
+
+    /// GET one of the store's read APIs and hand back the JSON it answered
+    /// with, or an error that says what went wrong.
+    ///
+    /// A failure here is reported rather than swallowed, unlike [`get_text`],
+    /// because the caller is an operator asking a question and "nothing came
+    /// back" is not an answer. Gigapipe puts the reason a query was rejected
+    /// in the body — a malformed LogQL selector comes back as a 400 naming the
+    /// parse error — so the body is carried into the message instead of being
+    /// reduced to a status code.
+    ///
+    /// [`get_text`]: Self::get_text
+    async fn read_api(&self, path: &str, params: &[(&str, String)]) -> Result<serde_json::Value> {
+        let url = format!("{}{path}", self.base);
+        let mut request = self.authed(self.client.get(&url));
+        if !params.is_empty() {
+            request = request.query(params);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|e| AppError::Collector(format!("{} did not answer {path}: {e}", self.base)))?;
+
+        let status = response.status();
+        let body = response.text().await.map_err(|e| {
+            AppError::Collector(format!("{} response unreadable: {e}", self.base))
+        })?;
+
+        if !status.is_success() {
+            return Err(AppError::Collector(format!(
+                "{path} returned {status}: {}",
+                first_line(&body, 400)
+            )));
+        }
+
+        serde_json::from_str(&body).map_err(|e| {
+            AppError::Collector(format!(
+                "{path} returned {status} and something that is not JSON: {e}"
+            ))
+        })
+    }
+
+    /// Run one of the named read APIs. The match is the whole security
+    /// boundary: every path is a literal here, and the only caller-supplied
+    /// text that reaches a URL path is percent-encoded first.
+    async fn read(&self, read: &super::GigapipeRead) -> Result<serde_json::Value> {
+        use super::GigapipeRead as R;
+
+        /// Query parameters the caller left unset are omitted rather than sent
+        /// empty, because an empty `start` is not the same request as no
+        /// `start` — the store applies its own default only for the latter.
+        fn optional(pairs: &[(&'static str, &Option<String>)]) -> Vec<(&'static str, String)> {
+            pairs
+                .iter()
+                .filter_map(|(key, value)| {
+                    let value = value.as_ref()?.trim();
+                    (!value.is_empty()).then(|| (*key, value.to_string()))
+                })
+                .collect()
+        }
+
+        match read {
+            R::PrometheusQuery {
+                query,
+                start,
+                end,
+                step,
+            } => {
+                let mut params = vec![("query", query.clone())];
+                params.extend(optional(&[("start", start), ("end", end), ("step", step)]));
+                self.read_api("/api/v1/query_range", &params).await
+            }
+            R::PrometheusLabels { start, end } => {
+                let params = optional(&[("start", start), ("end", end)]);
+                self.read_api("/api/v1/labels", &params).await
+            }
+            R::PrometheusLabelValues { label, start, end } => {
+                let params = optional(&[("start", start), ("end", end)]);
+                let path = format!("/api/v1/label/{}/values", super::path_segment(label));
+                self.read_api(&path, &params).await
+            }
+            R::LokiQuery {
+                query,
+                start,
+                end,
+                limit,
+            } => {
+                let mut params = vec![("query", query.clone())];
+                params.extend(optional(&[
+                    ("start", start),
+                    ("end", end),
+                    ("limit", limit),
+                ]));
+                self.read_api("/loki/api/v1/query_range", &params).await
+            }
+            R::LokiLabels { start, end } => {
+                let params = optional(&[("start", start), ("end", end)]);
+                self.read_api("/loki/api/v1/label", &params).await
+            }
+            R::LokiLabelValues { label, start, end } => {
+                let params = optional(&[("start", start), ("end", end)]);
+                let path = format!("/loki/api/v1/label/{}/values", super::path_segment(label));
+                self.read_api(&path, &params).await
+            }
+            R::TempoTrace { trace_id } => {
+                let path = format!("/api/traces/{}/json", super::path_segment(trace_id));
+                self.read_api(&path, &[]).await
+            }
+            R::TempoTags => self.read_api("/api/search/tags", &[]).await,
+            R::TempoTagValues { tag } => {
+                let path = format!("/api/search/tag/{}/values", super::path_segment(tag));
+                self.read_api(&path, &[]).await
+            }
+        }
     }
 
     /// Time one request and report whether it answered. The latency is root's
@@ -1248,6 +1381,7 @@ impl Collector for GigapipeCollector {
                     AppError::Collector(format!("could not serialize the trace: {e}"))
                 })
             }
+            super::DetailQuery::GigapipeRead(read) => self.read(read).await,
             _ => Err(AppError::UnsupportedAction(
                 ServiceKind::Gigapipe.label().to_string(),
             )),

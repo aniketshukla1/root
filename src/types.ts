@@ -723,6 +723,21 @@ export interface Incident {
   grouping: GroupingReason[];
 }
 
+/**
+ * What the assistant makes of one failing component, for the matrix tooltip.
+ *
+ * `grounds` is every fact the model was given, in the order it was given them.
+ * It travels with the text because this is the one place a model speaks without
+ * being asked a question, and an unverifiable sentence in a monitoring tool is
+ * worse than none.
+ */
+export interface ComponentReading {
+  text: string;
+  model: string;
+  grounds: string[];
+  readAt: string;
+}
+
 /** A period a connection spent in one state, as observed by its collector. */
 export interface HealthRun {
   health: Health;

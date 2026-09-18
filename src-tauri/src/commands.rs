@@ -424,6 +424,25 @@ pub async fn get_build_console(
         .await
 }
 
+/// One assembled trace, for the waterfall.
+///
+/// Returns the tree rather than the flat span list the backend hands over:
+/// assembling it here means the orphan, cycle and duplicate cases are handled
+/// once, in `traces.rs`, where they are tested — rather than once per
+/// component that tries to render a trace.
+#[tauri::command]
+pub async fn get_trace(
+    state: Shared<'_>,
+    profile_id: String,
+    trace_id: String,
+) -> Result<serde_json::Value> {
+    state
+        .collector(&profile_id)
+        .await?
+        .detail(&crate::collectors::DetailQuery::Trace { trace_id })
+        .await
+}
+
 // ------------------------------------------------------------------ history
 
 // ------------------------------------------------------------- deploy ingest
@@ -1593,6 +1612,237 @@ pub async fn send_message(
         return Err(AppError::Llm("the message is empty".to_string()));
     }
     agent::run_turn(app, Arc::clone(&state), conversation_id, message).await
+}
+
+/// A short model reading of one failing component, for the matrix tooltip.
+///
+/// Deliberately not `send_message`. That runs the agent loop: a system prompt
+/// listing every tool, several round trips while it queries the estate, and a
+/// conversation that grows. None of it is affordable on a hover, and none of it
+/// is needed — everything worth saying about one row is already in this
+/// process. So this builds the facts itself and makes exactly one call with no
+/// tools and a small budget.
+///
+/// Healthy rows are refused rather than answered. A model asked what is wrong
+/// with something that is fine will find something, and a tooltip that
+/// speculates over 357 working components is worse than no tooltip at all.
+#[tauri::command]
+pub async fn explain_component(
+    state: Shared<'_>,
+    profile_id: String,
+    section_id: String,
+    row_id: String,
+) -> Result<crate::state::ComponentReading> {
+    let (snapshot, section, row) = {
+        let snapshots = state.snapshots.read().await;
+        let snapshot = snapshots
+            .get(&profile_id)
+            .ok_or_else(|| AppError::Collector("no snapshot for that connection".into()))?;
+        let section = snapshot
+            .sections
+            .iter()
+            .find(|s| s.id == section_id)
+            .ok_or_else(|| AppError::Collector("no such section".into()))?;
+        let row = section
+            .rows
+            .iter()
+            .find(|r| r.id == row_id)
+            .ok_or_else(|| AppError::Collector("no such component".into()))?;
+        (snapshot.clone(), section.clone(), row.clone())
+    };
+
+    if row.health == Health::Healthy {
+        return Err(AppError::Llm(
+            "this component is healthy — there is nothing to explain".to_string(),
+        ));
+    }
+
+    let alert = state
+        .alerts
+        .read()
+        .await
+        .all()
+        .into_iter()
+        .find(|a| {
+            a.profile_id == profile_id
+                && a.active
+                && a.component.as_deref().is_some_and(|c| c == row.name)
+        });
+
+    // The fingerprint is the state, not the clock: the same broken container
+    // asked about twice is one call, and a container that breaks differently is
+    // a new one.
+    let fingerprint = format!(
+        "{}|{}|{}|{}",
+        row.health.label(),
+        row.summary,
+        alert.as_ref().map(|a| a.id.as_str()).unwrap_or(""),
+        alert
+            .as_ref()
+            .map(|a| a.first_seen.to_rfc3339())
+            .unwrap_or_default(),
+    );
+    let key = format!("{profile_id}:{section_id}:{row_id}");
+
+    if let Some(cached) = state.readings.read().await.get(&key) {
+        if cached.fingerprint == fingerprint {
+            return Ok(cached.reading.clone());
+        }
+    }
+
+    let grounds = component_grounds(&state, &snapshot, &section, &row, alert.as_ref()).await;
+
+    let (settings, _mode) = {
+        let config = state.config.read().await;
+        (config.llm.clone(), config.llm.agent_mode)
+    };
+    let api_key = secrets::get_secret(settings.provider.secret_key()).await?;
+    let provider = build_provider(&settings, api_key)?;
+
+    let response = provider
+        .complete(crate::llm::CompletionRequest {
+            model: settings.model.clone(),
+            system: COMPONENT_READING_SYSTEM.to_string(),
+            messages: vec![ChatMessage::user(grounds.join("\n"))],
+            tools: Vec::new(),
+            max_tokens: 160,
+            temperature: 0.1,
+        })
+        .await?;
+
+    let text = response.text.trim().to_string();
+    if text.is_empty() {
+        return Err(AppError::Llm("the model returned nothing".to_string()));
+    }
+
+    let reading = crate::state::ComponentReading {
+        text,
+        model: settings.model.clone(),
+        grounds,
+        read_at: chrono::Utc::now(),
+    };
+
+    state.readings.write().await.insert(
+        key,
+        crate::state::CachedReading {
+            fingerprint,
+            reading: reading.clone(),
+        },
+    );
+
+    Ok(reading)
+}
+
+/// The instruction is mostly a list of refusals, because the failure mode of a
+/// two-sentence summary is confident invention.
+const COMPONENT_READING_SYSTEM: &str = "\
+You are reading the state of ONE component of an infrastructure estate for an \
+operator who is hovering over it and has not yet decided whether to open it.
+
+Answer in at most two sentences, under 40 words, no preamble. Do not restate \
+the component's name, health, or any number you were given — the operator can \
+already see those. Say what the evidence indicates and, if it supports one, the \
+single most likely cause. If it does not, say which of the facts below to check \
+first and why.
+
+Use only the facts given. If they are thin, say so plainly rather than \
+speculating: \"nothing here explains it\" is a useful answer and a guess is not.";
+
+/// The facts, in the order an operator would read them out.
+async fn component_grounds(
+    state: &AppState,
+    snapshot: &HealthSnapshot,
+    section: &crate::model::Section,
+    row: &crate::model::Row,
+    alert: Option<&Alert>,
+) -> Vec<String> {
+    let mut grounds = vec![
+        format!(
+            "connection: {} ({})",
+            snapshot.profile_name,
+            snapshot.kind.label()
+        ),
+        format!("component: {} · {}", row.name, section.label),
+        format!("health: {}", row.health.label()),
+    ];
+
+    if !row.summary.is_empty() {
+        grounds.push(format!("collector says: {}", row.summary));
+    }
+
+    for column in &section.columns {
+        if column.primary {
+            continue;
+        }
+        if let Some(value) = row.cells.get(&column.key) {
+            if let Some(text) = cell_text(value) {
+                grounds.push(format!("{}: {}", column.label, text));
+            }
+        }
+    }
+
+    if let Some(alert) = alert {
+        grounds.push(format!(
+            "alert: {} — {} ({}, firing since {})",
+            alert.title,
+            alert.detail,
+            format!("{:?}", alert.severity).to_lowercase(),
+            alert.first_seen.to_rfc3339(),
+        ));
+    }
+
+    // A deploy inside the window is the single most useful fact there is, and
+    // the one an operator most often has not checked yet.
+    let changes = state
+        .changes
+        .read()
+        .await
+        .query(Some(&snapshot.profile_id), None, 3);
+    for change in changes {
+        grounds.push(format!(
+            "change: {} {} on {} at {}",
+            change.component,
+            match change.from.as_deref() {
+                Some(from) => format!("{from} → {}", change.to),
+                None => change.to.clone(),
+            },
+            change.profile_name,
+            change.at.to_rfc3339(),
+        ));
+    }
+
+    let lines = state.logs.read().await.query(&LogFilter {
+        profile_ids: Some(vec![snapshot.profile_id.clone()]),
+        search: Some(row.name.clone()),
+        limit: Some(6),
+        ..Default::default()
+    });
+    for line in lines {
+        grounds.push(format!(
+            "log {} [{}] {}",
+            line.timestamp.to_rfc3339(),
+            format!("{:?}", line.level).to_lowercase(),
+            line.message,
+        ));
+    }
+
+    grounds
+}
+
+/// The same formatting the table uses, flattened to text for a prompt.
+fn cell_text(value: &crate::model::CellValue) -> Option<String> {
+    use crate::model::CellValue;
+    match value {
+        CellValue::Null => None,
+        CellValue::Text { value } => (!value.is_empty()).then(|| value.clone()),
+        CellValue::Number { value } | CellValue::Gauge { value, .. } => Some(format!("{value}")),
+        CellValue::Duration { value } => Some(format!("{value}s")),
+        CellValue::Timestamp { value } => Some(value.to_rfc3339()),
+        CellValue::Tags { value } => {
+            (!value.is_empty()).then(|| value.join(", "))
+        }
+        CellValue::Status { value } => Some(value.label().to_string()),
+    }
 }
 
 #[tauri::command]

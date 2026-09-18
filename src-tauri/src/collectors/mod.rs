@@ -120,6 +120,9 @@ pub enum DetailQuery {
     },
     /// One of a fixed set of database diagnostics — never arbitrary SQL.
     DbDiagnostic { check: String },
+    /// One assembled trace, by id. The spans come back as a tree rather than
+    /// the flat list the backend hands over; see `crate::traces`.
+    Trace { trace_id: String },
 }
 
 #[async_trait]

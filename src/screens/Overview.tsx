@@ -79,6 +79,7 @@ export function Overview({
   loading,
   minutes,
   syncedAt,
+  assistantReady,
   onNavigate,
   onRefresh,
   onAcknowledge,
@@ -106,6 +107,8 @@ export function Overview({
   loading: boolean;
   minutes: number;
   syncedAt?: string;
+  /** Whether a model is configured — the component tooltip asks for a read. */
+  assistantReady: boolean;
   onNavigate: (view: View) => void;
   onRefresh: () => void;
   onAcknowledge: (alertId: string) => void;
@@ -314,6 +317,7 @@ export function Overview({
             entities={model.entities}
             issues={model.issues}
             catalog={catalog}
+            assistantReady={assistantReady}
             onSelect={onSelectComponent}
           />
         </Panel>

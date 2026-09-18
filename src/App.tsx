@@ -549,6 +549,10 @@ export default function App() {
    */
   const reached = dashboard?.snapshots.length ?? 0;
   const configured = config?.profiles.length ?? 0;
+  /** The same test the dock uses: a key, or a local server that needs none. */
+  const assistantConfigured = Boolean(
+    config?.llm.hasApiKey || config?.llm.provider === "ollama",
+  );
   const bootReady =
     config !== null &&
     !catalog.isEmpty &&
@@ -653,6 +657,7 @@ export default function App() {
 
         {view.name === "overview" && (
           <Overview
+            assistantReady={assistantConfigured}
             model={model}
             catalog={catalog}
             incidents={incidents}
@@ -814,7 +819,7 @@ export default function App() {
       {explain && (
         <AssistantDock
           target={explain}
-          configured={Boolean(config?.llm.hasApiKey || config?.llm.provider === "ollama")}
+          configured={assistantConfigured}
           onClose={() => setExplain(null)}
           onExpand={() => {
             setExplain(null);

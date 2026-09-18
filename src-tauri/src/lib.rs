@@ -38,6 +38,7 @@ pub mod secrets;
 pub mod state;
 pub mod team;
 pub mod topology;
+pub mod traces;
 pub mod supervisor;
 
 use std::sync::Arc;
@@ -125,6 +126,7 @@ pub fn run() {
             commands::log_patterns,
             commands::correlate,
             commands::get_build_console,
+            commands::get_trace,
             commands::get_metric_history,
             commands::get_health_runs,
             commands::get_topology,
@@ -163,6 +165,7 @@ pub fn run() {
             commands::save_llm_settings,
             commands::list_models,
             commands::send_message,
+            commands::explain_component,
             commands::resolve_confirmation,
             commands::pending_confirmations,
             commands::get_conversation,

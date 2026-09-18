@@ -1258,6 +1258,34 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
                              up here without root needing a receiver of its own. Leave empty \
                              to monitor gigapipe and nothing else.",
                         ),
+                    FieldSpec::new("traceQuery", "TraceQL selector", FieldKind::Text)
+                        .placeholder("{ duration > 2s }")
+                        .help(
+                            "Traces matching this are listed, and each one opens as a \
+                             waterfall. Leave empty to skip trace search entirely — a \
+                             warehouse holding no traces should not grow an empty table.",
+                        ),
+                    FieldSpec::new("traceSlowMs", "Slow trace threshold (ms)", FieldKind::Number)
+                        .default(serde_json::json!(0))
+                        .range(0.0, 600_000.0)
+                        .help(
+                            "Traces longer than this are marked degraded and alerted on. \
+                             Zero means the listing carries no verdict, which is right when \
+                             the TraceQL already selects what you care about.",
+                        )
+                        .advanced(),
+                    FieldSpec::new("traceLimit", "Traces per search", FieldKind::Number)
+                        .default(serde_json::json!(20))
+                        .range(1.0, 200.0)
+                        .advanced(),
+                    FieldSpec::new(
+                        "traceLookbackMinutes",
+                        "Trace search window (minutes)",
+                        FieldKind::Number,
+                    )
+                    .default(serde_json::json!(15))
+                    .range(1.0, 1440.0)
+                    .advanced(),
                     FieldSpec::new(
                         "idleIngestMinutes",
                         "Degrade after idle minutes",

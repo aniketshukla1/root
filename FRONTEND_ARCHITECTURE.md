@@ -242,6 +242,28 @@ Other rules:
 - Thin marks, recessive grid, 2px surface gaps between stacked segments, and a
   hover layer on everything that plots.
 
+## Where the model may speak unasked
+
+Exactly one place: the component tooltip, and only over a component that is
+already failing. Three rules make that affordable and checkable.
+
+- **A hover is not a request.** Nothing is sent until the tooltip has been open
+  on the same component for 550ms. Dragging across one block touches a dozen
+  cells in a second, and there are 364 of them.
+- **A reading is computed once per state.** The backend caches by the
+  component's health, summary and alert, so the same broken container asked
+  about twice is one call; the frontend keeps the answer for the session, so a
+  re-hover does not even make the round trip.
+- **The facts travel with the text.** `ComponentReading.grounds` is every line
+  the model was given, and the tooltip says how many there were. A generated
+  sentence that cannot be checked against its inputs is the one thing this UI
+  will not show — see the evidence panel, which exists for the same reason.
+
+`explain_component` is deliberately not `send_message`: no tools, no
+conversation, 160 tokens. A healthy component is refused rather than answered,
+because a model asked what is wrong with something that is fine will find
+something.
+
 ## Time ranges are bounded by samples, not duration
 
 `src-tauri/src/history.rs` keeps a fixed **`MAX_POINTS = 720`** per metric — not

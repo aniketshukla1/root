@@ -1,10 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { api, errorMessage } from "../api";
 import { healthColor, healthLabel, isProblem, markColor, type Catalog } from "../catalog";
 import { cellText, formatRelative } from "../format";
 import type { Entity, Issue } from "../model";
-import type { ColumnSpec } from "../types";
+import type { ColumnSpec, ComponentReading } from "../types";
 import { HEALTH_ORDER } from "../types";
+import { AssistantIcon } from "./icons";
 import { cx, ServiceMark } from "./primitives";
 
 /**
@@ -112,11 +114,17 @@ export function Heatmap({
   entities,
   issues,
   catalog,
+  assistantReady,
   onSelect,
 }: {
   entities: Entity[];
   issues: Issue[];
   catalog: Catalog;
+  /**
+   * Whether a model is configured. False means the tooltip shows the numbers
+   * and stops there, rather than offering something the estate cannot deliver.
+   */
+  assistantReady: boolean;
   /** The issue is present only when this cell has something wrong with it. */
   onSelect: (entity: Entity, issue?: Issue) => void;
 }) {
@@ -128,6 +136,7 @@ export function Heatmap({
   }, [issues]);
 
   const [hover, setHover] = useState<{ entity: Entity; x: number; y: number } | null>(null);
+  const reading = useReading(hover?.entity ?? null, assistantReady);
 
   return (
     <div className="relative">
@@ -155,6 +164,7 @@ export function Heatmap({
         <Tip
           entity={hover.entity}
           issue={issueBy.get(hover.entity.id)}
+          reading={reading}
           x={hover.x}
           y={hover.y}
         />
@@ -342,6 +352,68 @@ function Cell({
  * still gets a readable label instead of one clipped by its own panel.
  */
 /**
+ * The assistant's read of one failing cell, fetched on dwell and never twice.
+ *
+ * A hover is not a decision to spend a model call. Dragging the pointer across
+ * one block touches a dozen cells in a second, and there are 364 of them, so
+ * nothing is requested until the tooltip has been open on the same component
+ * for `DWELL_MS` — long enough that the operator is reading it rather than
+ * passing over it. The answer is then kept for the session: the backend caches
+ * by the component's state, and this cache means a re-hover does not even make
+ * the round trip.
+ *
+ * Healthy cells are never asked about. A model asked what is wrong with
+ * something that is fine will find something.
+ */
+const DWELL_MS = 550;
+
+type ReadingState =
+  | { status: "idle" }
+  | { status: "reading" }
+  | { status: "done"; reading: ComponentReading }
+  | { status: "failed"; message: string };
+
+const readings = new Map<string, ReadingState>();
+
+function useReading(entity: Entity | null, enabled: boolean): ReadingState {
+  const [, bump] = useState(0);
+  const key = entity ? `${entity.id}:${entity.health}:${entity.summary}` : "";
+
+  useEffect(() => {
+    if (!entity || !enabled || !isProblem(entity.health)) return;
+    if (readings.has(key)) return;
+    if (!entity.sectionId || !entity.rowId) return;
+
+    let live = true;
+    const timer = setTimeout(async () => {
+      readings.set(key, { status: "reading" });
+      bump((n) => n + 1);
+      try {
+        const reading = await api.explainComponent(
+          entity.profileId,
+          entity.sectionId,
+          entity.rowId,
+        );
+        readings.set(key, { status: "done", reading });
+      } catch (error) {
+        // A missing key is the common case and is not a fault to shout about;
+        // the block simply says what is missing and how to fix it.
+        readings.set(key, { status: "failed", message: errorMessage(error) });
+      }
+      if (live) bump((n) => n + 1);
+    }, DWELL_MS);
+
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [entity, enabled, key]);
+
+  if (!entity || !enabled || !isProblem(entity.health)) return { status: "idle" };
+  return readings.get(key) ?? { status: "idle" };
+}
+
+/**
  * What the collector knows about one cell.
  *
  * The matrix answers "how many are broken" at a glance; the tooltip is where
@@ -358,7 +430,19 @@ function Cell({
 const TIP_W = 296;
 const TIP_CELLS = 6;
 
-function Tip({ entity, issue, x, y }: { entity: Entity; issue?: Issue; x: number; y: number }) {
+function Tip({
+  entity,
+  issue,
+  reading,
+  x,
+  y,
+}: {
+  entity: Entity;
+  issue?: Issue;
+  reading: ReadingState;
+  x: number;
+  y: number;
+}) {
   // Nulls carry nothing, and the primary column is the name in the title.
   const shown = entity.columns
     .filter((column) => !column.primary)
@@ -429,6 +513,34 @@ function Tip({ entity, issue, x, y }: { entity: Entity; issue?: Issue; x: number
                 {issue.acknowledged ? "Acknowledged · " : ""}
                 {issue.alert ? issue.alert.title : "Failing"} · {formatRelative(issue.firstSeen)}
               </div>
+            </div>
+          )}
+
+          {reading.status !== "idle" && (
+            <div className="mt-2 border-t border-line-soft pt-2">
+              <div className="label mb-1.5 flex items-center gap-1.5 text-accent">
+                <AssistantIcon size={11} />
+                Assistant
+              </div>
+              {reading.status === "reading" && (
+                <div className="num text-2xs text-ink-4">
+                  Reading the alert, the numbers and the lines naming it…
+                </div>
+              )}
+              {reading.status === "done" && (
+                <>
+                  <p className="text-2xs leading-relaxed text-ink-2">{reading.reading.text}</p>
+                  {/* The model, and how many facts it had. A generated sentence
+                      that does not say what it was generated from is the one
+                      thing this product refuses to show. */}
+                  <div className="num mt-1.5 text-2xs text-ink-4">
+                    {reading.reading.model} · from {reading.reading.grounds.length} facts on screen
+                  </div>
+                </>
+              )}
+              {reading.status === "failed" && (
+                <div className="num text-2xs text-ink-4">{reading.message}</div>
+              )}
             </div>
           )}
         </div>

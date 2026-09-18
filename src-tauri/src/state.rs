@@ -143,6 +143,30 @@ impl LogBuffer {
     }
 }
 
+/// A model reading and the state it was read from.
+#[derive(Clone)]
+pub struct CachedReading {
+    /// Health, summary and alert, hashed. A change here invalidates the text.
+    pub fingerprint: String,
+    pub reading: ComponentReading,
+}
+
+/// What the assistant makes of one failing component.
+///
+/// `grounds` is not decoration. This is the one place in the product where a
+/// model's words appear without the operator having asked a question, so the
+/// facts it was given travel with it — a reading nobody can check against its
+/// inputs is a rumour with good typography, and the rest of this UI refuses to
+/// show one.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentReading {
+    pub text: String,
+    pub model: String,
+    pub grounds: Vec<String>,
+    pub read_at: DateTime<Utc>,
+}
+
 /// Alerts keyed by fingerprint so a persistent condition updates in place
 /// instead of accumulating a new row on every poll.
 #[derive(Default)]
@@ -363,6 +387,16 @@ pub struct AppState {
     /// Rolling metric history feeding sparklines, charts, and trend questions.
     pub history: RwLock<HistoryStore>,
     pub conversations: RwLock<HashMap<String, Vec<ChatMessage>>>,
+    /// One-line model readings of a failing component, keyed by
+    /// `profile:section:row`.
+    ///
+    /// The matrix asks for these on hover, and a hover is not a decision to
+    /// spend money: 364 cells, and dragging the pointer across a block touches
+    /// a dozen in a second. A reading is therefore computed once per *state* —
+    /// the fingerprint covers the health, the summary and the alert behind it —
+    /// and every later hover of an unchanged cell is free. It lives in memory
+    /// with everything else here, so quitting forgets it.
+    pub readings: RwLock<HashMap<String, CachedReading>>,
     /// Approval channels for in-flight mutating tool calls.
     pub pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
     pub pending_meta: RwLock<HashMap<String, PendingConfirmation>>,
@@ -396,6 +430,7 @@ impl AppState {
             watermarks: RwLock::new(HashMap::new()),
             history: RwLock::new(HistoryStore::default()),
             conversations: RwLock::new(HashMap::new()),
+            readings: RwLock::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
             pending_meta: RwLock::new(HashMap::new()),
             pollers: Mutex::new(HashMap::new()),

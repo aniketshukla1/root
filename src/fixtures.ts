@@ -715,6 +715,43 @@ export function healthRuns(): Record<string, import("./types").HealthRun[]> {
 }
 
 /** A grounded answer, so the dock can be exercised without a model configured. */
+/**
+ * A canned reading for the browser build.
+ *
+ * The packaged app calls a model; this returns what that call would plausibly
+ * return for the demo estate, so the tooltip can be designed and reviewed
+ * without a key. It is deliberately specific — a lorem-ipsum sentence here
+ * would hide exactly the thing worth looking at, which is whether two sentences
+ * of generated text earn their place beside the numbers.
+ */
+export function componentReading(profileId: string, sectionId: string, rowId: string) {
+  const snapshot = SNAPSHOTS.find((s) => s.profileId === profileId);
+  const section = snapshot?.sections.find((s) => s.id === sectionId);
+  const row = section?.rows.find((r) => r.id === rowId);
+  const name = row?.name ?? rowId;
+
+  const oom = /137|OOMKilled/i.test(row?.summary ?? "");
+  const lag = /lag|replica/i.test(`${section?.label ?? ""} ${row?.summary ?? ""}`);
+
+  const text = oom
+    ? "Memory reached the 8G limit four minutes after 2.14.3 rolled out, and the kernel killed it — the restart count says this is the third time. Check whether the new build raised steady-state memory before raising the limit."
+    : lag
+      ? "Replication has been falling behind since the primary's write rate climbed, so this is back-pressure rather than a fault here. The primary is the thing to look at."
+      : `Nothing in the last hour explains ${name} on its own — no deploy, no threshold crossed, and the log lines naming it are routine. Open it and compare against a sibling before treating it as the cause.`;
+
+  return {
+    text,
+    model: "claude-opus-5 (fixture)",
+    grounds: [
+      `connection: ${snapshot?.profileName ?? profileId}`,
+      `component: ${name} · ${section?.label ?? sectionId}`,
+      `health: ${row?.health ?? "unknown"}`,
+      ...(row?.summary ? [`collector says: ${row.summary}`] : []),
+    ],
+    readAt: new Date().toISOString(),
+  };
+}
+
 export function agentTurn(conversationId: string, message: string) {
   const about137 = /137|OOMKilled/i.test(message);
   return {

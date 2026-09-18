@@ -759,3 +759,263 @@ async fn a_bad_logql_expression_surfaces_the_reason_gigapipe_gave() {
         "the operator needs gigapipe's own message to fix the query: {error}"
     );
 }
+
+/// The JSON shape gigapipe's `/api/traces/{id}` actually writes: one flat span
+/// list under the pre-1.0 `instrumentationLibrarySpans` key, each span
+/// carrying its own `serviceName`, and `startTimeUnixNano` as a **number**.
+fn gigapipe_trace_document(base_nanos: i64) -> serde_json::Value {
+    json!({
+        "resourceSpans": [{
+            "resource": { "attributes": [
+                { "key": "collector", "value": { "stringValue": "qryn" } }
+            ]},
+            "instrumentationLibrarySpans": [{ "spans": [
+                {
+                    "traceID": "abc123", "traceId": "abc123",
+                    "spanID": "aaaa", "spanId": "aaaa",
+                    "name": "GET /checkout",
+                    "serviceName": "gateway",
+                    "startTimeUnixNano": base_nanos,
+                    "endTimeUnixNano": base_nanos + 500_000_000i64,
+                    "attributes": [
+                        { "key": "http.method", "value": { "stringValue": "GET" } }
+                    ],
+                    "events": []
+                },
+                {
+                    "traceID": "abc123", "traceId": "abc123",
+                    "spanID": "bbbb", "spanId": "bbbb",
+                    "parentSpanId": "aaaa",
+                    "name": "SELECT orders",
+                    "serviceName": "postgres",
+                    "startTimeUnixNano": base_nanos + 50_000_000i64,
+                    "endTimeUnixNano": base_nanos + 480_000_000i64,
+                    "attributes": [],
+                    "events": [
+                        { "timeUnixNano": base_nanos + 60_000_000i64, "name": "query.start" }
+                    ],
+                    "status": { "code": 2, "message": "statement timeout" }
+                }
+            ]}]
+        }]
+    })
+}
+
+#[tokio::test]
+async fn gigapipe_lists_traces_matching_the_operators_traceql() {
+    let server = gigapipe_server(true).await;
+    let now_nanos = Utc::now().timestamp_nanos_opt().unwrap();
+
+    Mock::given(method("GET"))
+        .and(path("/api/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "traces": [
+                {
+                    "traceID": "abc123",
+                    "rootServiceName": "gateway",
+                    "rootTraceName": "GET /checkout",
+                    // The TraceQL route sends this as a string.
+                    "startTimeUnixNano": now_nanos.to_string(),
+                    "durationMs": 3400
+                },
+                {
+                    "traceID": "def456",
+                    "rootServiceName": "gateway",
+                    "rootTraceName": "POST /pay",
+                    // The tags route sends it as a number. Both must parse.
+                    "startTimeUnixNano": now_nanos,
+                    "durationMs": 120
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let mut options = ProfileOptions::default();
+    options.set("traceQuery", json!("{ duration > 100ms }"));
+    options.set("traceSlowMs", json!(2000));
+
+    let collector = build_collector(&gigapipe_profile(&server, options), None)
+        .await
+        .expect("collector builds");
+    let snapshot = collector.collect().await.expect("collect succeeds");
+
+    let traces = section(&snapshot, "traces");
+    assert_eq!(traces.len(), 2);
+
+    let slow = row(traces, "GET /checkout");
+    assert_eq!(cell_number(slow, "duration"), 3400.0);
+    assert_eq!(cell_text(slow, "service"), "gateway");
+    assert_eq!(
+        slow.health,
+        Health::Degraded,
+        "3.4s is past the declared 2s threshold"
+    );
+
+    // Under the threshold: listed, not judged.
+    assert_eq!(row(traces, "POST /pay").health, Health::Unknown);
+
+    assert_eq!(metric(&snapshot, "traces_slow"), 1.0);
+    assert_eq!(snapshot.health, Health::Degraded);
+}
+
+#[tokio::test]
+async fn gigapipe_without_a_threshold_lists_traces_without_judging_them() {
+    // The operator's TraceQL already said what it wanted. Grading every row
+    // again would raise an alert for exactly the traces they asked to see.
+    let server = gigapipe_server(true).await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "traces": [{
+                "traceID": "abc123",
+                "rootServiceName": "gateway",
+                "rootTraceName": "GET /checkout",
+                "startTimeUnixNano": Utc::now().timestamp_nanos_opt().unwrap(),
+                "durationMs": 9000
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let mut options = ProfileOptions::default();
+    options.set("traceQuery", json!("{ status = error }"));
+
+    let collector = build_collector(&gigapipe_profile(&server, options), None)
+        .await
+        .expect("collector builds");
+    let snapshot = collector.collect().await.expect("collect succeeds");
+
+    assert_eq!(section(&snapshot, "traces")[0].health, Health::Unknown);
+    assert_eq!(snapshot.health, Health::Healthy);
+}
+
+#[tokio::test]
+async fn a_failing_trace_search_does_not_take_the_connection_down() {
+    // A rejected TraceQL expression says something about the query, not about
+    // whether the warehouse is healthy.
+    let server = gigapipe_server(true).await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/search"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "status": "error",
+            "error": "traceql: unexpected token at position 4"
+        })))
+        .mount(&server)
+        .await;
+
+    let mut options = ProfileOptions::default();
+    options.set("traceQuery", json!("bad query"));
+
+    let collector = build_collector(&gigapipe_profile(&server, options), None)
+        .await
+        .expect("collector builds");
+    let snapshot = collector.collect().await.expect("collect succeeds");
+
+    assert_eq!(snapshot.health, Health::Healthy, "gigapipe itself is fine");
+    let traces = snapshot
+        .sections
+        .iter()
+        .find(|s| s.id == "traces")
+        .expect("the section is still there");
+    assert!(traces.rows.is_empty());
+    assert!(
+        traces.empty_text.contains("unexpected token"),
+        "the operator needs gigapipe's own reason to fix the query: {:?}",
+        traces.empty_text
+    );
+}
+
+#[tokio::test]
+async fn gigapipe_assembles_a_fetched_trace_into_a_tree() {
+    let server = gigapipe_server(true).await;
+    let base = Utc::now().timestamp_nanos_opt().unwrap() - 1_000_000_000;
+
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/api/traces/.+$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(gigapipe_trace_document(base)))
+        .mount(&server)
+        .await;
+
+    let collector = build_collector(&gigapipe_profile(&server, ProfileOptions::default()), None)
+        .await
+        .expect("collector builds");
+
+    let value = collector
+        .detail(&DetailQuery::Trace {
+            trace_id: "abc123".to_string(),
+        })
+        .await
+        .expect("the trace comes back");
+
+    let trace: inframonitoring_lib::traces::Trace =
+        serde_json::from_value(value).expect("it is a Trace");
+
+    assert_eq!(trace.span_count, 2);
+    assert_eq!(trace.root_service, "gateway");
+    assert_eq!(trace.error_count, 1);
+    assert_eq!(trace.orphan_count, 0);
+
+    // The tree, not the flat list the wire carried.
+    assert_eq!(trace.roots.len(), 1);
+    let root = &trace.roots[0];
+    assert_eq!(root.span.name, "GET /checkout");
+    assert_eq!(root.children.len(), 1);
+
+    let child = &root.children[0];
+    assert_eq!(child.span.service, "postgres");
+    assert_eq!(child.span.status_message.as_deref(), Some("statement timeout"));
+    assert_eq!(child.span.events.len(), 1);
+    assert_eq!(child.span.events[0].name, "query.start");
+    // 50ms after the trace started.
+    assert!((child.offset_ms - 50.0).abs() < 1.0, "offset {}", child.offset_ms);
+
+    // postgres held 430 of the root's 500ms, so the gateway's own time is 70.
+    assert!((root.self_ms - 70.0).abs() < 1.0, "self {}", root.self_ms);
+    assert_eq!(trace.services[0].service, "postgres");
+}
+
+#[tokio::test]
+async fn a_trace_id_that_is_not_hex_is_refused_before_the_request() {
+    // Gigapipe answers a non-hex id with a bare 500. Refusing it here is the
+    // only place the operator can be told what is actually wrong.
+    let server = gigapipe_server(true).await;
+    let collector = build_collector(&gigapipe_profile(&server, ProfileOptions::default()), None)
+        .await
+        .expect("collector builds");
+
+    let error = collector
+        .detail(&DetailQuery::Trace {
+            trace_id: "not a trace id".to_string(),
+        })
+        .await
+        .expect_err("refused");
+
+    assert!(error.to_string().contains("hexadecimal"), "{error}");
+}
+
+#[tokio::test]
+async fn a_trace_outside_retention_says_so_rather_than_failing_opaquely() {
+    let server = gigapipe_server(true).await;
+
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/api/traces/.+$"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+        .mount(&server)
+        .await;
+
+    let collector = build_collector(&gigapipe_profile(&server, ProfileOptions::default()), None)
+        .await
+        .expect("collector builds");
+
+    let error = collector
+        .detail(&DetailQuery::Trace {
+            trace_id: "abc123".to_string(),
+        })
+        .await
+        .expect_err("404 is an error here");
+
+    assert!(error.to_string().contains("retention"), "{error}");
+}

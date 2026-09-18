@@ -295,6 +295,15 @@ pub struct ColumnSpec {
     /// collector gets deploy detection without writing any, and the engine
     /// stays free of per-service knowledge.
     pub revision: bool,
+    /// This column holds a distributed-trace id, and the value in it opens as
+    /// a waterfall rather than rendering as text.
+    ///
+    /// Declared the same way `revision` is, and for the same reason: the
+    /// frontend must not learn which service types have traces. A collector
+    /// that can resolve a trace id marks the column, and every such cell
+    /// becomes openable — including for collectors that do not exist yet.
+    #[serde(default)]
+    pub trace_ref: bool,
 }
 
 impl ColumnSpec {
@@ -313,6 +322,7 @@ impl ColumnSpec {
             sortable: true,
             secondary: false,
             revision: false,
+            trace_ref: false,
         }
     }
 
@@ -359,6 +369,13 @@ impl ColumnSpec {
     }
 
     pub fn not_sortable(mut self) -> Self {
+        self.sortable = false;
+        self
+    }
+
+    /// Mark this column as holding a trace id. See [`ColumnSpec::trace_ref`].
+    pub fn trace(mut self) -> Self {
+        self.trace_ref = true;
         self.sortable = false;
         self
     }

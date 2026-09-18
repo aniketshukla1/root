@@ -80,6 +80,8 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   save_profile: ({ profile }) => fixtures.saveProfile(profile as never),
   delete_profile: ({ profileId }) => fixtures.deleteProfile(profileId as string),
+  explain_component: ({ profileId, sectionId, rowId }) =>
+    fixtures.componentReading(profileId as string, sectionId as string, rowId as string),
   send_message: ({ conversationId, message }) =>
     fixtures.agentTurn(conversationId as string, message as string),
   clear_conversation: () => undefined,
@@ -118,6 +120,7 @@ import type {
   AppConfig,
   ChangeEvent,
   CapacityRisk,
+  ComponentReading,
   ConfigDocument,
   ConnectionProfile,
   Finding,
@@ -348,6 +351,13 @@ export const api = {
     invoke<AppConfig>("save_llm_settings", { settings, apiKey: apiKey ?? null }),
 
   listModels: () => invoke<string[]>("list_models"),
+
+  /**
+   * A short reading of one failing component. Cached in the backend by the
+   * component's state, so hovering the same broken container twice is one call.
+   */
+  explainComponent: (profileId: string, sectionId: string, rowId: string) =>
+    invoke<ComponentReading>("explain_component", { profileId, sectionId, rowId }),
 
   sendMessage: (conversationId: string, message: string) =>
     invoke<AgentTurn>("send_message", { conversationId, message }),

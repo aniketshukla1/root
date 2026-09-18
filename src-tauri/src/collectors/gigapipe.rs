@@ -52,6 +52,7 @@ use crate::model::{
     CellValue, ColumnSpec, Health, HealthSnapshot, LogEvent, LogLevel, LogStream, Metric,
     MetricUnit, Row, Section, ServiceKind,
 };
+use crate::traces::{Span, SpanEvent, SpanStatus, Trace, TraceSummary};
 
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
@@ -78,6 +79,18 @@ pub struct GigapipeCollector {
     /// Empty means this connection reports on gigapipe and nothing else.
     log_query: String,
     log_limit: usize,
+    /// TraceQL selector listing traces worth looking at. Empty means traces
+    /// are not listed at all — a warehouse holding none should not grow an
+    /// empty table on every dashboard.
+    trace_query: String,
+    trace_limit: usize,
+    /// Milliseconds past which a listed trace is called slow. Zero means the
+    /// listing carries no verdict, which is the honest default: the operator's
+    /// TraceQL already said what it wanted, and re-judging it here would raise
+    /// an alert for every row they deliberately asked for.
+    trace_slow_ms: f64,
+    /// How far back the trace search looks on each poll.
+    trace_lookback_minutes: i64,
     /// Whether an unreachable read API degrades the connection.
     signals_degrade: bool,
     /// Minutes without an ingested row before the connection is degraded.
@@ -143,6 +156,223 @@ struct BuildInfo {
     version: String,
 }
 
+/// A nanosecond timestamp, which gigapipe sends two different ways.
+///
+/// `TraceResponse.startTimeUnixNano` is an `int64` and serializes as a JSON
+/// number; `TraceInfo.startTimeUnixNano` is a `string` and serializes quoted.
+/// Which one comes back depends on whether the search used TraceQL or tags.
+/// Accepting only one shape would make trace listing work right up until the
+/// operator wrote a TraceQL expression, and then stop.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Nanos(i64);
+
+impl Nanos {
+    fn to_utc(self) -> Option<DateTime<Utc>> {
+        Utc.timestamp_opt(self.0 / 1_000_000_000, (self.0 % 1_000_000_000) as u32)
+            .single()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Nanos {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        match serde_json::Value::deserialize(deserializer)? {
+            serde_json::Value::Number(n) => Ok(Nanos(n.as_i64().unwrap_or(0))),
+            serde_json::Value::String(s) => Ok(Nanos(s.trim().parse().unwrap_or(0))),
+            _ => Ok(Nanos(0)),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct TraceSearchData {
+    #[serde(default)]
+    traces: Vec<TraceHit>,
+}
+
+/// One row of `/api/search`.
+///
+/// No serde `alias` on `traceID`: gigapipe's trace document emits both
+/// `traceID` and `traceId` for the same value, and a field matched twice is a
+/// duplicate-field error, not a fallback. Declaring the one spelling every
+/// producer emits means the other is ignored, which is what is wanted.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TraceHit {
+    #[serde(rename = "traceID", default)]
+    trace_id: String,
+    #[serde(default)]
+    root_service_name: String,
+    #[serde(default)]
+    root_trace_name: String,
+    #[serde(default)]
+    start_time_unix_nano: Nanos,
+    #[serde(default)]
+    duration_ms: f64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TraceDocument {
+    #[serde(default)]
+    resource_spans: Vec<ResourceSpans>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResourceSpans {
+    /// gigapipe emits the pre-1.0 OTLP name. Every current producer emits
+    /// `scopeSpans`, so both are accepted and the same parser works against a
+    /// real Tempo without a second code path.
+    #[serde(default, alias = "scopeSpans")]
+    instrumentation_library_spans: Vec<ScopeSpans>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ScopeSpans {
+    #[serde(default)]
+    spans: Vec<WireSpan>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireSpan {
+    #[serde(rename = "spanID", default)]
+    span_id: String,
+    #[serde(default)]
+    parent_span_id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    service_name: String,
+    #[serde(default)]
+    start_time_unix_nano: Nanos,
+    #[serde(default)]
+    end_time_unix_nano: Nanos,
+    #[serde(default)]
+    attributes: Vec<WireAttribute>,
+    #[serde(default)]
+    events: Vec<WireEvent>,
+    #[serde(default)]
+    status: Option<WireStatus>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WireAttribute {
+    #[serde(default)]
+    key: String,
+    #[serde(default)]
+    value: WireAttributeValue,
+}
+
+/// Every attribute value arrives already coerced to a string — gigapipe
+/// stringifies ints, bools, doubles and bytes on the way out, so there is no
+/// type to preserve here even if root wanted one.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireAttributeValue {
+    #[serde(default)]
+    string_value: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireEvent {
+    #[serde(default)]
+    time_unix_nano: Nanos,
+    #[serde(default)]
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WireStatus {
+    #[serde(default)]
+    code: serde_json::Value,
+    #[serde(default)]
+    message: String,
+}
+
+impl WireSpan {
+    /// The span's own service, from whichever place the producer put it.
+    ///
+    /// gigapipe sets `serviceName` and also injects `service.name` into the
+    /// attributes; a stock OTLP exporter puts it only in the resource, which
+    /// this document shape flattens away. Falling through both keeps a span
+    /// attributable instead of landing it under an empty service name, which
+    /// would silently merge every such span into one row of the breakdown.
+    fn service(&self, attributes: &BTreeMap<String, String>) -> String {
+        if !self.service_name.is_empty() {
+            return self.service_name.clone();
+        }
+        attributes
+            .get("service.name")
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    fn into_span(self) -> Option<Span> {
+        if self.span_id.is_empty() {
+            return None;
+        }
+        let started_at = self.start_time_unix_nano.to_utc()?;
+        let ended_at = self.end_time_unix_nano.to_utc().unwrap_or(started_at);
+
+        let attributes: BTreeMap<String, String> = self
+            .attributes
+            .iter()
+            .filter(|a| !a.key.is_empty())
+            .map(|a| (a.key.clone(), a.value.string_value.clone()))
+            .collect();
+
+        let events = self
+            .events
+            .iter()
+            .filter_map(|e| {
+                Some(SpanEvent {
+                    at: e.time_unix_nano.to_utc()?,
+                    name: e.name.clone(),
+                })
+            })
+            .collect();
+
+        let (status, status_message) = match &self.status {
+            Some(status) => (
+                SpanStatus::from_wire(&status.code),
+                (!status.message.is_empty()).then(|| status.message.clone()),
+            ),
+            None => (SpanStatus::Unset, None),
+        };
+
+        let service = self.service(&attributes);
+        // A negative duration means the two clocks disagree about which came
+        // first. Zero is wrong but harmless; a negative bar cannot be drawn.
+        let duration_ms =
+            ((ended_at - started_at).num_microseconds().unwrap_or(0) as f64 / 1000.0).max(0.0);
+
+        Some(Span {
+            span_id: self.span_id,
+            parent_span_id: (!self.parent_span_id.is_empty()).then_some(self.parent_span_id),
+            name: if self.name.is_empty() {
+                "(unnamed)".to_string()
+            } else {
+                self.name
+            },
+            service,
+            started_at,
+            duration_ms,
+            status,
+            status_message,
+            attributes,
+            events,
+        })
+    }
+}
+
+/// Trace ids are hex. Sending anything else earns a 500 from gigapipe with no
+/// explanation, so it is refused here where the reason can be given.
+fn is_hex_trace_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 32 && id.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 impl GigapipeCollector {
     pub fn new(profile: &ConnectionProfile, secret: Option<String>) -> Result<Self> {
         let base = profile.endpoint.trim().trim_end_matches('/').to_string();
@@ -169,6 +399,19 @@ impl GigapipeCollector {
                 .trim()
                 .to_string(),
             log_limit: profile.options.log_limit(),
+            trace_query: profile
+                .options
+                .string("traceQuery")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+            trace_limit: profile.options.u64("traceLimit").unwrap_or(20).clamp(1, 200) as usize,
+            trace_slow_ms: profile.options.u64("traceSlowMs").unwrap_or(0) as f64,
+            trace_lookback_minutes: profile
+                .options
+                .u64("traceLookbackMinutes")
+                .unwrap_or(15)
+                .clamp(1, 1440) as i64,
             signals_degrade: profile.options.get("signalsDegrade").is_none_or(|v| {
                 // Absent means on: a store that cannot answer is the failure
                 // this collector is for.
@@ -272,6 +515,139 @@ impl GigapipeCollector {
             }
         }
         counters
+    }
+
+    /// List traces matching the operator's TraceQL, newest first.
+    ///
+    /// `start` and `end` are epoch **seconds** here, unlike the LogQL route
+    /// which wants nanoseconds. That is gigapipe's contract, not a choice.
+    async fn search_traces(&self) -> Result<Vec<TraceSummary>> {
+        let end = Utc::now();
+        let start = end - chrono::Duration::minutes(self.trace_lookback_minutes);
+
+        let url = format!("{}/api/search", self.base);
+        let response = self
+            .authed(self.client.get(&url))
+            .query(&[
+                ("q", self.trace_query.clone()),
+                ("start", start.timestamp().to_string()),
+                ("end", end.timestamp().to_string()),
+                ("limit", self.trace_limit.to_string()),
+            ])
+            .send()
+            .await
+            .map_err(|e| {
+                AppError::Collector(format!("{} did not answer the trace search: {e}", self.base))
+            })?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| AppError::Collector(format!("{} response unreadable: {e}", self.base)))?;
+
+        // The status is checked before the body is parsed. A rejected TraceQL
+        // expression comes back as `{"status":"error","error":"..."}`, which
+        // deserializes perfectly well into a search result holding no traces —
+        // so parsing first would report "no traces matched" for what is really
+        // a broken query, and the operator would never see the reason.
+        if !status.is_success() {
+            if let Ok(envelope) = serde_json::from_str::<ApiEnvelope<serde_json::Value>>(&body) {
+                if let Some(error) = envelope.error {
+                    return Err(AppError::Collector(error));
+                }
+            }
+            return Err(AppError::Collector(format!(
+                "{} returned {status} for the trace search",
+                self.base
+            )));
+        }
+
+        let Ok(data) = serde_json::from_str::<TraceSearchData>(&body) else {
+            return Err(AppError::Collector(format!(
+                "{} returned {status} and something that is not a trace search response",
+                self.base
+            )));
+        };
+
+        Ok(data
+            .traces
+            .into_iter()
+            .filter(|hit| !hit.trace_id.is_empty())
+            .map(|hit| TraceSummary {
+                trace_id: hit.trace_id,
+                root_service: hit.root_service_name,
+                root_name: hit.root_trace_name,
+                started_at: hit.start_time_unix_nano.to_utc().unwrap_or(end),
+                duration_ms: hit.duration_ms as f64,
+                // The search result carries no error count. Reporting zero
+                // would read as "checked, none found" rather than "not known".
+                error_count: None,
+            })
+            .collect())
+    }
+
+    /// One trace, assembled into a tree.
+    async fn fetch_trace(&self, trace_id: &str) -> Result<Trace> {
+        let trace_id = trace_id.trim();
+        if !is_hex_trace_id(trace_id) {
+            return Err(AppError::Collector(format!(
+                "`{trace_id}` is not a trace id — they are hexadecimal, at most 32 characters"
+            )));
+        }
+
+        let end = Utc::now();
+        let start = end - chrono::Duration::minutes(self.trace_lookback_minutes.max(60));
+
+        let url = format!("{}/api/traces/{trace_id}", self.base);
+        let response = self
+            .authed(self.client.get(&url))
+            .query(&[
+                ("start", start.timestamp().to_string()),
+                ("end", end.timestamp().to_string()),
+            ])
+            .send()
+            .await
+            .map_err(|e| {
+                AppError::Collector(format!("{} did not answer for that trace: {e}", self.base))
+            })?;
+
+        // Gigapipe answers 404 for a trace it holds no spans for, which is a
+        // different thing from a failure and deserves a different sentence.
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(AppError::Collector(format!(
+                "no spans for trace {trace_id} — it may have fallen outside retention"
+            )));
+        }
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| AppError::Collector(format!("{} response unreadable: {e}", self.base)))?;
+
+        let document: TraceDocument = serde_json::from_str(&body).map_err(|_| {
+            AppError::Collector(format!(
+                "{} returned {status} and something that is not a trace document",
+                self.base
+            ))
+        })?;
+
+        let spans: Vec<Span> = document
+            .resource_spans
+            .into_iter()
+            .flat_map(|resource| resource.instrumentation_library_spans)
+            .flat_map(|scope| scope.spans)
+            .filter_map(|wire| wire.into_span())
+            .collect();
+
+        if spans.is_empty() {
+            return Err(AppError::Collector(format!(
+                "trace {trace_id} came back with no readable spans"
+            )));
+        }
+
+        Ok(Trace::assemble(trace_id, spans))
     }
 }
 
@@ -477,6 +853,55 @@ impl Collector for GigapipeCollector {
 
         *self.previous.lock().await = Some(current.clone());
 
+        // -------------------------------------------------------- traces
+        //
+        // A failing trace search must not take the connection down: it means
+        // the operator's TraceQL is wrong, or the trace store is empty, and
+        // neither says anything about whether gigapipe is healthy. The reason
+        // goes in the section's empty text where they will actually see it.
+        let (trace_rows, trace_error, slow_traces) = if self.trace_query.is_empty() {
+            (Vec::new(), None, 0usize)
+        } else {
+            match self.search_traces().await {
+                Ok(found) => {
+                    let mut slow = 0usize;
+                    let rows = found
+                        .iter()
+                        .map(|trace| {
+                            let is_slow =
+                                self.trace_slow_ms > 0.0 && trace.duration_ms > self.trace_slow_ms;
+                            if is_slow {
+                                slow += 1;
+                            }
+                            let label = if trace.root_name.is_empty() {
+                                trace.trace_id.clone()
+                            } else {
+                                trace.root_name.clone()
+                            };
+                            Row::new(
+                                format!("trace:{}", trace.trace_id),
+                                &label,
+                                // Without a declared threshold a listing
+                                // carries no verdict: the operator's TraceQL
+                                // already said what it wanted, and grading it
+                                // again here would alert on every row they
+                                // deliberately asked for.
+                                if is_slow { Health::Degraded } else { Health::Unknown },
+                            )
+                            .summary(format!("{:.0} ms", trace.duration_ms))
+                            .cell("trace", CellValue::text(&label))
+                            .cell("service", CellValue::text(&trace.root_service))
+                            .cell("duration", CellValue::number(trace.duration_ms))
+                            .cell("started", CellValue::timestamp(trace.started_at))
+                            .cell("id", CellValue::text(&trace.trace_id))
+                        })
+                        .collect();
+                    (rows, None, slow)
+                }
+                Err(error) => (Vec::new(), Some(error.to_string()), 0usize),
+            }
+        };
+
         // -------------------------------------------------------- rollup
         let idle_breach = self.idle_ingest_minutes > 0 && idle_minutes >= self.idle_ingest_minutes;
 
@@ -486,6 +911,7 @@ impl Collector for GigapipeCollector {
             || new_parse_errors > 0.0
             || new_resets > 0.0
             || idle_breach
+            || slow_traces > 0
         {
             Health::Degraded
         } else {
@@ -505,6 +931,12 @@ impl Collector for GigapipeCollector {
             format!("{new_parse_errors:.0} payloads rejected as malformed")
         } else if idle_breach {
             format!("nothing ingested for {idle_minutes} minutes")
+        } else if slow_traces > 0 {
+            format!(
+                "{slow_traces} trace{} over {:.0} ms",
+                if slow_traces == 1 { "" } else { "s" },
+                self.trace_slow_ms
+            )
         } else if rate_known {
             format!(
                 "{total_rate:.0} rows/s across {} pipeline{}",
@@ -551,6 +983,28 @@ impl Collector for GigapipeCollector {
                     MetricUnit::PerSecond,
                 ),
             );
+        }
+        if !self.trace_query.is_empty() {
+            metrics.push(Metric::new(
+                "traces_listed",
+                "Traces matched",
+                trace_rows.len() as f64,
+                MetricUnit::Count,
+            ));
+            if self.trace_slow_ms > 0.0 {
+                // Only warn when a threshold was declared. Without one there
+                // is no such thing as a slow trace here, and a metric that
+                // always breaches trains an operator to ignore it.
+                metrics.push(
+                    Metric::new(
+                        "traces_slow",
+                        "Slow traces",
+                        slow_traces as f64,
+                        MetricUnit::Count,
+                    )
+                    .warn_above(0.0),
+                );
+            }
         }
         if let Some(memory) = super::promtext::gauge(&samples, "process_resident_memory_bytes") {
             metrics.push(Metric::new(
@@ -602,6 +1056,29 @@ impl Collector for GigapipeCollector {
             .priority(10)
             .empty_text("Nothing has been ingested since this instance started."),
         ];
+
+        if !self.trace_query.is_empty() {
+            let empty_text = match &trace_error {
+                Some(reason) => format!("Trace search failed: {reason}"),
+                None => "No traces matched in the search window.".to_string(),
+            };
+            sections.push(
+                Section::new(
+                    "traces",
+                    "Traces",
+                    vec![
+                        ColumnSpec::text("trace", "Trace").primary(),
+                        ColumnSpec::text("service", "Root service"),
+                        ColumnSpec::metric("duration", "Duration", MetricUnit::Millis),
+                        ColumnSpec::timestamp("started", "Started"),
+                        ColumnSpec::code("id", "Trace id").trace(),
+                    ],
+                )
+                .rows(trace_rows)
+                .priority(8)
+                .empty_text(&empty_text),
+            );
+        }
 
         if let Some(version) = &version {
             sections.push(
@@ -753,6 +1230,22 @@ impl Collector for GigapipeCollector {
         out.sort_by_key(|event| event.timestamp);
         out.truncate(want);
         Ok(out)
+    }
+
+    /// The only drill-down this collector offers, and the only one it needs:
+    /// a trace is the one thing here that a table cannot show.
+    async fn detail(&self, query: &super::DetailQuery) -> Result<serde_json::Value> {
+        match query {
+            super::DetailQuery::Trace { trace_id } => {
+                let trace = self.fetch_trace(trace_id).await?;
+                serde_json::to_value(trace).map_err(|e| {
+                    AppError::Collector(format!("could not serialize the trace: {e}"))
+                })
+            }
+            _ => Err(AppError::UnsupportedAction(
+                ServiceKind::Gigapipe.label().to_string(),
+            )),
+        }
     }
 
     async fn config(&self) -> Result<Vec<ConfigDocument>> {

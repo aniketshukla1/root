@@ -6,7 +6,7 @@ service type in particular.
 
 ## Navigation
 
-Seven destinations, flat. Ownership, category, and environment are *properties*
+Eight destinations, flat. Ownership, category, and environment are *properties*
 of a connection — they are columns, filters, and group-by keys, not screens.
 
 | Screen | Answers |
@@ -17,13 +17,20 @@ of a connection — they are columns, filters, and group-by keys, not screens.
 | **Metrics** | How has a measure moved, across connections? |
 | **Logs** | What was written, and when did the rate change? |
 | **Assistant** | Investigate across all of the above. |
-| **Settings** | Connections, credentials, ownership, model, display. |
+| **Scorecard** | Is root any good yet — precision from findings, recall from incidents. |
+| **Settings** | Connections, workspace, assistant, deploy ingest, display. |
 
 Three drill-downs are reachable from several screens and are deliberately not in
 the nav: **service detail**
-(`Dashboard · Components · Alerts · Metrics · Logs · Configuration`),
+(`Dashboard · Components · Alerts · Metrics · Logs · Config · Connection`, where
+**Config** carries the rule findings and **Connection** the profile itself),
 **component detail** — one container, node, or job — and **correlate**, one
 moment across every connection, from any log line or alert.
+
+Two gates render outside the nav rather than as destinations: **Onboarding**,
+when no connection is configured yet, and **SignIn**, when a workspace server is
+configured. `nav.ts` holds the `View` union and is the only place a destination
+is declared.
 
 ### Three levels
 
@@ -119,13 +126,20 @@ src/
   api.ts           typed invoke wrappers                     ← backend contract
   model.ts         pure cross-connection read model
   catalog.ts       service descriptors + the colour rules
+  incident.ts      reading a backend incident — home state and presentation
+  explain.ts       what the operator clicked, and the sentence that explains it
   ranges.ts        what the metric ring can actually answer
   format.ts        value formatting
   density.ts       the compact/comfortable switch
+  theme.ts         dark/light/system, one attribute on <html>
+  events.ts        event subscription that no-ops outside Tauri
+  fixtures.ts      development fixtures for preview.html, and the isTauri gate
   app.css          Tailwind v4 theme: tokens, density, base
-  shell/           Sidebar, ScreenHeader, CommandPalette, Toasts, ConfirmDialog
-  screens/         Overview, Services, Alerts, Metrics, Logs, ServiceDetail,
-                   ServiceDashboard, Correlate, Assistant, Settings
+  shell/           Sidebar, ScreenHeader, CommandPalette, AssistantDock,
+                   ComponentDialog, ConfirmDialog, Splash, Toasts
+  screens/         Overview, Services, Alerts, Metrics, Logs, Assistant,
+                   Scorecard, Settings, ServiceDetail, ServiceDashboard,
+                   ComponentDetail, Correlate, TeamSettings, Onboarding, SignIn
   ui/              primitives, charts, icons, SectionTable, AlertList
   icons/marks/     brand marks, auto-discovered per kind
 ```
@@ -282,8 +296,12 @@ buttons draw the same chart under different labels. `src/ranges.ts` owns this:
 **Keep `MAX_POINTS` in `ranges.ts` in step with the Rust constant.** Raising it
 there without raising it here just re-introduces the silent version.
 
-Longer windows need real retention work in Rust — a bigger ring, or downsampled
-rollups so 24h is answerable without holding every sample.
+Longer windows do not come from a bigger ring. `src-tauri/src/promquery.rs`
+reads long-range history from a Prometheus the operator already runs, which is
+where a window measured in weeks has to come from — root's own ring stays a few
+hours deliberately, so there is no retention policy to manage. Growing the ring
+or adding downsampled rollups remains the only way to answer a long window with
+*no* Prometheus configured.
 
 ## Component history: tracked vs live
 
@@ -421,6 +439,13 @@ purpose-built per-kind views, auto-discovered by `import.meta.glob`. It was
 removed with the rewrite. Every collector's data still renders in full through
 the generic section tables — that is the guarantee the descriptor model exists to
 provide — but one genuinely additive capability went with it: the **Jenkins build
-console** (`api.getBuildConsole`), which read `Row.extra.builds` to fetch console
-output for a failing build. Re-adding it means reintroducing an additive registry
-and one view file; no existing file needs to change.
+console**, which read `Row.extra.builds` to fetch console output for a failing
+build. The typed wrapper survived the rewrite — `api.getBuildConsole` is still
+there, with no caller anywhere in `src/` — so re-adding it means reintroducing an
+additive registry and one view file; no existing file needs to change.
+
+`LogStream` has a `build` variant for the same capability, excluded from the
+shared view by `in_global_stream()` and filterable in Logs as **Build output**.
+No collector emits it today: Jenkins puts build *outcomes* in `event` and leaves
+console output to the per-build detail query. The classification is ready for a
+producer that does not exist yet.

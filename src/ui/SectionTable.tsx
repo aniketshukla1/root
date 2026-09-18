@@ -32,6 +32,27 @@ function sortKey(value: CellValue | undefined): number | string | null {
   }
 }
 
+/** A trace id, rendered as the thing that opens it. */
+function TraceCell({
+  value,
+  onOpen,
+}: {
+  value: CellValue | undefined;
+  onOpen: (traceId: string) => void;
+}) {
+  const id = value && value.type === "text" ? value.value : "";
+  if (!id) return <span className="text-ink-4/60">—</span>;
+  return (
+    <button
+      onClick={() => onOpen(id)}
+      title={`Open trace ${id}`}
+      className="num truncate text-2xs text-accent underline decoration-accent/30 underline-offset-2 transition-colors hover:decoration-accent"
+    >
+      {id}
+    </button>
+  );
+}
+
 function Cell({ column, value }: { column: ColumnSpec; value: CellValue | undefined }) {
   if (!value || value.type === "null") return <span className="text-ink-4/60">—</span>;
 
@@ -99,6 +120,7 @@ export function SectionTable({
   section,
   onAction,
   onOpenRow,
+  onOpenTrace,
   initialLimit = 25,
   /** Prefixed to the primary column, for tables that span connections. */
   originOf,
@@ -107,6 +129,7 @@ export function SectionTable({
   onAction?: (action: RowAction, row: Row) => void;
   /** Drill into one component. Omit to leave rows inert. */
   onOpenRow?: (row: Row) => void;
+  onOpenTrace?: (traceId: string) => void;
   initialLimit?: number;
   originOf?: (row: Row) => React.ReactNode;
 }) {
@@ -252,6 +275,14 @@ export function SectionTable({
                               </span>
                             )}
                           </span>
+                        ) : column.traceRef && onOpenTrace ? (
+                          // Declared by the collector, not inferred from the
+                          // section id — any collector that can resolve a
+                          // trace id gets this, including ones not written yet.
+                          <TraceCell
+                            value={row.cells[column.key]}
+                            onOpen={(traceId) => onOpenTrace(traceId)}
+                          />
                         ) : (
                           <Cell column={column} value={row.cells[column.key]} />
                         )}
@@ -302,10 +333,12 @@ export function SectionList({
   sections,
   onAction,
   onOpenRow,
+  onOpenTrace,
 }: {
   sections: Section[];
   onAction?: (action: RowAction, row: Row) => void;
   onOpenRow?: (section: Section, row: Row) => void;
+  onOpenTrace?: (traceId: string) => void;
 }) {
   const ordered = useMemo(
     () => [...sections].sort((a, b) => a.priority - b.priority),
@@ -321,6 +354,7 @@ export function SectionList({
           section={section}
           onAction={onAction}
           onOpenRow={onOpenRow ? (row) => onOpenRow(section, row) : undefined}
+          onOpenTrace={onOpenTrace}
         />
       ))}
     </div>

@@ -110,6 +110,66 @@ export interface ColumnSpec {
    * it like any other column.
    */
   revision: boolean;
+  /**
+   * This column holds a distributed-trace id. The table renders such a cell as
+   * an opener rather than as text, for any collector that declares one — the
+   * frontend never learns which service types have traces.
+   */
+  traceRef?: boolean;
+}
+
+export type SpanStatus = "unset" | "ok" | "error";
+
+export interface SpanEvent {
+  at: string;
+  name: string;
+}
+
+export interface Span {
+  spanId: string;
+  parentSpanId?: string;
+  name: string;
+  service: string;
+  startedAt: string;
+  durationMs: number;
+  status: SpanStatus;
+  statusMessage?: string;
+  attributes?: Record<string, string>;
+  events?: SpanEvent[];
+}
+
+export interface TraceNode {
+  span: Span;
+  /** Milliseconds from the start of the trace; the bar's left edge. */
+  offsetMs: number;
+  /** Duration minus what the children accounted for — where time went. */
+  selfMs: number;
+  depth: number;
+  /** Parent missing from the trace, so it hangs at the root. */
+  orphaned?: boolean;
+  children: TraceNode[];
+}
+
+export interface ServiceTime {
+  service: string;
+  selfMs: number;
+  spanCount: number;
+  errorCount: number;
+}
+
+export interface Trace {
+  traceId: string;
+  rootService: string;
+  rootName: string;
+  startedAt: string;
+  durationMs: number;
+  spanCount: number;
+  errorCount: number;
+  /** Nonzero means the trace is partial: some parents were never received. */
+  orphanCount: number;
+  /** Descending by self time. */
+  services: ServiceTime[];
+  roots: TraceNode[];
 }
 
 export type CellValue =

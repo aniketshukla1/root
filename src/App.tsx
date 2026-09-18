@@ -53,6 +53,7 @@ import { SignIn } from "./screens/SignIn";
 import { Overview } from "./screens/Overview";
 import { Scorecard } from "./screens/Scorecard";
 import { ServiceDetail } from "./screens/ServiceDetail";
+import { TraceDetail } from "./screens/TraceDetail";
 import { Services } from "./screens/Services";
 import { Settings } from "./screens/Settings";
 
@@ -776,6 +777,15 @@ export default function App() {
             onNavigate={setView}
             onAcknowledge={acknowledge}
             onRefresh={refreshAll}
+          />
+        )}
+
+        {view.name === "trace" && (
+          <TraceDetail
+            profileId={view.profileId}
+            traceId={view.traceId}
+            model={model}
+            onNavigate={setView}
           />
         )}
 

@@ -327,6 +327,9 @@ export function ServiceDetail({
                       rowId: row.id,
                     })
                   }
+                  onOpenTrace={(traceId) =>
+                    onNavigate({ name: "trace", profileId, traceId })
+                  }
                 />
               )
             )}

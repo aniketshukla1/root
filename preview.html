@@ -47,6 +47,57 @@
         const sect = (id, label, columns, rows, priority = 50, emptyText = "Nothing to show.", tracked = false) =>
           ({ id, label, columns, rows, priority, emptyText, tracked });
 
+        // A warehouse connection. The point of previewing it is the traces
+        // section: its `id` column is marked traceRef, which is what turns the
+        // cell into the waterfall opener with no frontend knowledge of gigapipe.
+        const gigapipeSections = [
+          sect("signals", "Query APIs", [
+            col("signal", "Signal", { type: "text" }, { primary: true }),
+            col("api", "Endpoint", { type: "text" }),
+            col("state", "State", { type: "status" }),
+            col("latency", "Answered in", { type: "metric", unit: "millis" }),
+          ], [
+            mkRow("signal:logs", "logs", "healthy", "answering in 14 ms", {
+              signal: txt("logs"), api: txt("/loki/api/v1/labels"), state: stat("healthy"), latency: num(14),
+            }),
+            mkRow("signal:metrics", "metrics", "healthy", "answering in 11 ms", {
+              signal: txt("metrics"), api: txt("/api/v1/labels"), state: stat("healthy"), latency: num(11),
+            }),
+            mkRow("signal:traces", "traces", "healthy", "answering in 9 ms", {
+              signal: txt("traces"), api: txt("/api/echo"), state: stat("healthy"), latency: num(9),
+            }),
+          ], 5, "No query APIs probed."),
+          sect("traces", "Traces", [
+            col("trace", "Trace", { type: "text" }, { primary: true }),
+            col("service", "Root service", { type: "text" }),
+            col("duration", "Duration", { type: "metric", unit: "millis" }),
+            col("started", "Started", { type: "timestamp" }),
+            col("id", "Trace id", { type: "code" }, { sortable: false, traceRef: true }),
+          ], [
+            mkRow("trace:4bf92f3577b34da6a3ce929d0e0e4736", "GET /checkout", "degraded", "3400 ms", {
+              trace: txt("GET /checkout"), service: txt("gateway"), duration: num(3400),
+              started: ts(iso(240)), id: txt("4bf92f3577b34da6a3ce929d0e0e4736"),
+            }),
+            mkRow("trace:9c1a7e5b2d8f40c3b6e1a4d7f0c2b593", "POST /pay", "unknown", "180 ms", {
+              trace: txt("POST /pay"), service: txt("gateway"), duration: num(180),
+              started: ts(iso(320)), id: txt("9c1a7e5b2d8f40c3b6e1a4d7f0c2b593"),
+            }),
+          ], 8, "No traces matched in the search window."),
+          sect("ingest", "Ingest pipelines", [
+            col("pipeline", "Pipeline", { type: "text" }, { primary: true }),
+            col("rate", "Rows/s", { type: "metric", unit: "per_second" }),
+            col("rows", "Rows written", { type: "metric", unit: "count" }),
+            col("bytes", "Bytes written", { type: "metric", unit: "bytes" }),
+          ], [
+            mkRow("ingest:logs", "logs", "healthy", "1840.0 rows/s", {
+              pipeline: txt("logs"), rate: num(1840), rows: num(94812331), bytes: num(41234567890),
+            }),
+            mkRow("ingest:traces", "traces", "healthy", "260.0 rows/s", {
+              pipeline: txt("traces"), rate: num(260), rows: num(8123991), bytes: num(6234567890),
+            }),
+          ], 10, "Nothing has been ingested since this instance started.", true),
+        ];
+
         const dockerSections = [sect("containers", "Containers", [
             col("name", "Container", { type: "text" }, { primary: true }),
             col("state", "State", { type: "text" }),
@@ -212,6 +263,10 @@
             endpoint: { key: "endpoint", label: "Docker host", kind: "text", required: false, advanced: false },
             fields: [], defaultPollSecs: 5,
             capabilities: { logs: true, actions: [{ tool: "restart_container", label: "Restart a container" }], diagnostics: [] } },
+          { kind: "gigapipe", label: "Gigapipe", monogram: "GP", accent: 27, category: "Observability",
+            blurb: "Ingest rates per pipeline, query APIs that answer or do not, and \u2014 with a LogQL selector \u2014 the applications shipping into it.",
+            endpoint: { key: "endpoint", label: "Server URL", kind: "url", placeholder: "http://gigapipe.internal:3100", required: true, advanced: false },
+            fields: [], defaultPollSecs: 30, capabilities: { logs: true, actions: [], diagnostics: [] } },
           { kind: "jenkins", label: "Jenkins", monogram: "JK", accent: 1, category: "CI/CD",
             blurb: "Job results, build queue, agents, and console output from failing builds.",
             endpoint: { key: "endpoint", label: "Controller URL", kind: "url", required: true, advanced: false },
@@ -302,6 +357,16 @@
               { key: "replication_lag", label: "Replication lag", value: 0.4, unit: "seconds", warnAbove: 30 },
             ],
             sections: pgSections, checkedAt: iso(3000), latencyMs: 12 },
+          { profileId: "p6", profileName: "warehouse", kind: "gigapipe", health: "degraded",
+            summary: "1 trace over 2000 ms",
+            metrics: [
+              { key: "ingest_rows_per_sec", label: "Ingest rate", value: 2100, unit: "per_second" },
+              { key: "signals_up", label: "Query APIs up", value: 3, unit: "count" },
+              { key: "traces_listed", label: "Traces matched", value: 2, unit: "count" },
+              { key: "traces_slow", label: "Slow traces", value: 1, unit: "count", warnAbove: 0 },
+              { key: "ingest_bytes", label: "Bytes written", value: 47469135780, unit: "bytes" },
+            ],
+            sections: gigapipeSections, checkedAt: iso(4000), latencyMs: 18 },
           { profileId: "p5", profileName: "status.acme.dev", kind: "http_endpoint", health: "degraded",
             summary: "200 OK in 1840ms — slower than 1000ms",
             metrics: [
@@ -563,6 +628,80 @@
               "Build step 'Execute shell' marked build as failure",
             ].join("\n"),
           }),
+          // The preview stub answers every command the app calls on boot.
+          // An unhandled one resolves to null, and a null where the app
+          // expects a record takes the whole page down — which is what was
+          // happening before these were added.
+          get_topology: () => ({ dependsOn: {}, dependents: {}, roots: [] }),
+          get_team: () => ({ hasSession: false }),
+          get_incidents: () => [],
+          get_health_runs: () => [],
+          get_capacity_risks: () => [],
+          get_findings: () => [],
+          get_verdicts: () => [],
+          get_judged_incidents: () => [],
+
+          get_trace: (args) => {
+            const base = Date.now() - 240000;
+            const at = (offset) => new Date(base + offset).toISOString();
+            const span = (spanId, parentSpanId, name, service, offsetMs, durationMs, extra = {}) => ({
+              span: {
+                spanId, parentSpanId, name, service,
+                startedAt: at(offsetMs), durationMs,
+                status: extra.status ?? "unset",
+                statusMessage: extra.statusMessage,
+                attributes: extra.attributes ?? {},
+                events: extra.events ?? [],
+              },
+              offsetMs, selfMs: extra.selfMs ?? durationMs, depth: extra.depth ?? 0,
+              orphaned: extra.orphaned ?? false,
+              children: extra.children ?? [],
+            });
+            return {
+              traceId: args.traceId,
+              rootService: "gateway", rootName: "GET /checkout",
+              startedAt: at(0), durationMs: 3400,
+              spanCount: 6, errorCount: 1, orphanCount: 1,
+              services: [
+                { service: "orders-db", selfMs: 2180, spanCount: 2, errorCount: 1 },
+                { service: "checkout", selfMs: 690, spanCount: 2, errorCount: 0 },
+                { service: "gateway", selfMs: 410, spanCount: 1, errorCount: 0 },
+                { service: "payments", selfMs: 120, spanCount: 1, errorCount: 0 },
+              ],
+              roots: [
+                span("aaaa1111", undefined, "GET /checkout", "gateway", 0, 3400, {
+                  selfMs: 410,
+                  attributes: { "http.method": "GET", "http.route": "/checkout", "http.status_code": "200" },
+                  children: [
+                    span("bbbb2222", "aaaa1111", "checkout.submit", "checkout", 60, 2900, {
+                      selfMs: 400, depth: 1,
+                      attributes: { "cart.items": "3", "user.tier": "pro" },
+                      children: [
+                        span("cccc3333", "bbbb2222", "SELECT orders", "orders-db", 120, 2100, {
+                          selfMs: 2100, depth: 2, status: "error",
+                          statusMessage: "canceling statement due to statement timeout",
+                          attributes: { "db.system": "postgresql", "db.statement": "SELECT * FROM orders WHERE user_id = $1" },
+                          events: [{ at: at(180), name: "lock.wait.start" }],
+                        }),
+                        span("dddd4444", "bbbb2222", "UPDATE inventory", "orders-db", 2280, 80, {
+                          selfMs: 80, depth: 2,
+                          attributes: { "db.system": "postgresql" },
+                        }),
+                        span("eeee5555", "bbbb2222", "charge", "payments", 2400, 120, {
+                          selfMs: 120, depth: 2,
+                          attributes: { "payment.provider": "stripe" },
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+                span("ffff6666", "not-in-this-trace", "checkout.retry", "checkout", 3100, 290, {
+                  selfMs: 290, orphaned: true,
+                  attributes: { "retry.attempt": "2" },
+                }),
+              ],
+            };
+          },
           correlate: (args) => {
             const center = args.at;
             const c = new Date(center).getTime();

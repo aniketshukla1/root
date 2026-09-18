@@ -146,6 +146,7 @@ import type {
   ServiceDescriptor,
   TeamState,
   TopologyView,
+  Trace,
   Workspace,
 } from "./types";
 
@@ -178,6 +179,10 @@ export const api = {
       "get_build_console",
       { profileId, job, build: build ?? null, tailLines: tailLines ?? null },
     ),
+
+  /** One trace, already assembled into a tree by the backend. */
+  getTrace: (profileId: string, traceId: string) =>
+    invoke<Trace>("get_trace", { profileId, traceId }),
 
   getMetricHistory: (profileId: string, minutes?: number) =>
     invoke<MetricSeries[]>("get_metric_history", { profileId, minutes: minutes ?? null }),

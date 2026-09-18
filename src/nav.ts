@@ -13,6 +13,8 @@ export type View =
   | { name: "service"; profileId: string; tab?: ServiceTab }
   /** One component inside a service — a container, a cluster node, a job. */
   | { name: "component"; profileId: string; sectionId: string; rowId: string }
+  /** One distributed trace, as a waterfall. */
+  | { name: "trace"; profileId: string; traceId: string }
   | { name: "correlate"; at: string };
 
 export type ServiceTab =
@@ -26,7 +28,8 @@ export type ServiceTab =
 
 /** Which nav entry should read as current, including for drill-downs. */
 export function rootOf(view: View): string {
-  if (view.name === "service" || view.name === "component") return "services";
+  if (view.name === "service" || view.name === "component" || view.name === "trace")
+    return "services";
   if (view.name === "correlate") return "logs";
   return view.name;
 }

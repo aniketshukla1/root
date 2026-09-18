@@ -78,10 +78,16 @@ opposite of what happened.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `logQuery` | empty | LogQL selector whose lines join root's shared stream |
+| `traceQuery` | empty | TraceQL selector listing traces, each of which opens as a waterfall |
+| `traceSlowMs` | `0` (off) | Past this, a listed trace is degraded and alerted on |
+| `traceLimit` | `20` | Traces per search |
+| `traceLookbackMinutes` | `15` | How far back the trace search looks |
 | `idleIngestMinutes` | `0` (off) | Degrade when nothing has been ingested for this long |
 | `signalsDegrade` | `true` | Degrade when a query API stops answering |
 
-`idleIngestMinutes` defaults off because a warehouse waiting for its first write is idle,
+`traceSlowMs` defaults off because the operator's TraceQL already said what it wanted;
+grading every returned row again would raise an alert for exactly the traces they asked
+to see. `idleIngestMinutes` defaults off because a warehouse waiting for its first write is idle,
 not broken. Idleness is measured from when root first saw the store, not from the
 counter's own start — a store that went quiet long before root launched has not just
 gone quiet.
@@ -127,32 +133,44 @@ opt-in, off by default, named plainly in Settings.**
 
 Size: about two days, once that decision is made.
 
-### 2. Traces and profiling — root has neither
+### 2. Traces — built. Profiling — not
 
 Gigapipe serves TraceQL at `/api/search` and `/api/traces/{traceId}`, and Pyroscope at
 `/pyroscope/render`.
 
-This is the largest gap and the only one that needs new concepts in root rather than new
-endpoints. A span is not a component: it has a duration, a parent, and a position in a
-tree, and none of `HealthSnapshot`, `Section` or `Row` can express that. Forcing a trace
-into a table would produce something technically present and useless.
+A span is not a component: it has a duration, a parent, and a position in a tree, and
+none of `HealthSnapshot`, `Section` or `Row` can express that. So traces got their own
+type rather than being forced into a table.
 
-What it needs:
+**Built:**
 
-1. A `Span` type and a trace tree in `model.rs` — the honest part of the work.
-2. A `traceQuery` option and a `traces` section listing slow or failing traces, which
-   `Section`/`Row` *can* express: one row per trace, with duration, span count, and the
-   service where it spent its time.
-3. A trace-detail drill-down screen. New UI, not a variation on an existing one.
-4. `Correlate` learning to place spans on its lanes, which is where traces stop being a
-   separate feature and start being the thing that explains an incident.
+1. `traces.rs` — `Span`, `TraceNode`, `Trace`, and `Trace::assemble`, which turns a flat
+   span list into a tree. The tree is built in Rust, once, rather than in the frontend on
+   every render.
+2. `traceQuery` on a gigapipe connection, and a `traces` section listing what it matched.
+   That table renders itself, because `Section` already knew how.
+3. `ColumnSpec::trace()` — a column marked this way holds a trace id, and the table turns
+   the cell into an opener. Declared the same way `revision()` is, so the frontend never
+   learns which service types have traces and a future collector gets this free.
+4. `TraceDetail` — the waterfall, which leads with *where the time went* rather than with
+   the duration the operator already saw in the list.
 
-Profiling is a smaller version of the same problem: a flame graph is one component, one
-screen, and one query.
+**Three things deliberately kept rather than dropped.** A span whose parent is missing is
+attached at the root and flagged, because it is where the request was when the trace went
+dark. A parent cycle terminates instead of recursing. A duplicate span id is a retried
+export, not a second occurrence. A span that vanishes silently is worse than one in the
+wrong place: the operator cannot tell "it did not happen" from "we did not show it".
 
-Size: two to three weeks for traces end to end. Roughly one for profiling.
-**This is the one to build after gap 1's write half, because it is the only gap where
-gigapipe can do something root structurally cannot.**
+**Self time, not total time.** A span that took 900 ms because its child took 890 did not
+spend 900. Ranking the per-service breakdown by total duration would point at the wrong
+service every time.
+
+**Not built:** `Correlate` does not yet place spans on its lanes. That is where traces
+stop being a separate feature and start being the thing that explains an incident — about
+three days, and the obvious next move.
+
+Profiling is untouched: a flame graph is one component, one screen, one query, about a
+week.
 
 ### 3. Push ingest — closed by proxy
 
@@ -166,9 +184,9 @@ exists.
 It does not need one. Anything shipped into gigapipe is readable out of it, so the
 `logQuery` selector already brings OTLP-shipped application logs into root's shared
 stream, and the history source already brings metrics from anything scraping into it.
-The remaining hole is traces, which is gap 2.
+Traces arrive the same way, through TraceQL.
 
-**Status: closed for logs and metrics. Closed for traces when gap 2 lands.**
+**Status: closed for logs, metrics and traces.**
 
 ### 4. Multi-user — a genuine gap that root should not close this way
 
@@ -202,9 +220,9 @@ parity.**
 | Language | Status |
 | --- | --- |
 | PromQL | Already built, in `promquery.rs`, before gigapipe existed here |
-| LogQL | Built now, in `gigapipe.rs::fetch_logs` |
-| TraceQL | Gap 2 |
-| Pyroscope | Gap 2 |
+| LogQL | Built, in `gigapipe.rs::fetch_logs` |
+| TraceQL | Built, in `gigapipe.rs::search_traces` |
+| Pyroscope | Not built — see gap 2 |
 
 One piece is missing that is worth more than the languages themselves: **the assistant
 cannot reach any of them.** root's advantage over gigapipe is an assistant that
@@ -221,11 +239,14 @@ this document.**
 ## Order
 
 1. ~~Connection type, LogQL tail, history source~~ — done.
-2. Assistant access to LogQL and PromQL. One day. Highest value per hour.
-3. Snapshot write-out over Influx line protocol, opt-in. Two days, after the product
+2. ~~Traces: model, section, waterfall~~ — done.
+3. Spans on `Correlate`'s lanes. About three days, and the thing that makes traces
+   explanatory rather than merely present.
+4. Assistant access to LogQL, PromQL and TraceQL. One day. Highest value per hour.
+5. Snapshot write-out over Influx line protocol, opt-in. Two days, after the product
    decision in gap 1.
-4. Traces: model, section, detail screen, correlation lanes. Two to three weeks.
-5. Profiling: one flame graph screen. About a week.
+
+Then profiling: one flame graph screen, about a week.
 
 Multi-user is deliberately absent. It closes as a consequence of 3, in the only form
 root should want.

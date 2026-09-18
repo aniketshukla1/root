@@ -18,7 +18,7 @@ of a connection — they are columns, filters, and group-by keys, not screens.
 | **Logs** | What was written, and when did the rate change? |
 | **Assistant** | Investigate across all of the above. |
 | **Scorecard** | Is root any good yet — precision from findings, recall from incidents. |
-| **Settings** | Connections, workspace, assistant, deploy ingest, display. |
+| **Settings** | Connections, workspace, assistant, deploy ingest, MCP server, display. |
 
 Four drill-downs are reachable from several screens and are deliberately not in
 the nav: **service detail**

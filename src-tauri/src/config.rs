@@ -297,6 +297,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub ingest: IngestSettings,
     #[serde(default)]
+    pub mcp: McpSettings,
+    #[serde(default)]
     pub team: TeamSettings,
 }
 
@@ -387,6 +389,33 @@ pub struct IngestSettings {
 
 fn default_ingest_port() -> u16 {
     7717
+}
+
+/// The in-app MCP server.
+///
+/// Same posture as [`IngestSettings`] and for the same reasons: off by default,
+/// loopback only, bearer token in the OS keychain. What it exposes is root's
+/// read-only tool surface, so a client can read the estate and change nothing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_mcp_port")]
+    pub port: u16,
+}
+
+fn default_mcp_port() -> u16 {
+    7718
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        McpSettings {
+            enabled: false,
+            port: default_mcp_port(),
+        }
+    }
 }
 
 impl Default for IngestSettings {

@@ -4,6 +4,10 @@
 //! running copy of root, no port and no token; see [`inframonitoring_lib::mcp`]
 //! for why that shape was chosen and where connections come from.
 //!
+//! This serves gigapipe only. Root's other read-only tools answer from state a
+//! *running* app holds, so they are served by the in-app HTTP server instead —
+//! see [`inframonitoring_lib::mcp::http`].
+//!
 //! Configure a client with:
 //!
 //! ```json
@@ -35,7 +39,7 @@ fn main() -> std::process::ExitCode {
         }
     };
 
-    let server = mcp::Server::from_environment_or_config(config_dir());
+    let server = mcp::standalone::Server::from_environment_or_config(config_dir());
 
     match runtime.block_on(mcp::serve_stdio(server)) {
         Ok(()) => std::process::ExitCode::SUCCESS,

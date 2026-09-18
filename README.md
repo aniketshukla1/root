@@ -424,6 +424,22 @@ cargo build --bin root-mcp        # target/debug/root-mcp
 { "mcpServers": { "root": { "command": "/path/to/root-mcp" } } }
 ```
 
+There are two of them, and the split is not arbitrary:
+
+| | `root-mcp` | in-app server |
+| --- | --- | --- |
+| Transport | stdio, the client spawns it | HTTP on loopback, the client connects |
+| Needs root running | no | yes — it *is* root |
+| Tools | the nine gigapipe store reads | every read-only tool root has |
+| Auth | none needed; it is a child process | bearer token |
+
+Most of root's tools answer from state a *running* app accumulates — the latest
+snapshots, the log ring buffer, the active alert set. A cold subprocess has none of
+that, and a `get_health` that always answered "no snapshot" would be a trap rather than
+a tool. So the standalone server offers only what a connection profile alone can answer.
+
+### The standalone server
+
 **It is a drop-in for `gigapipe-mcp`.** The tool names are that server's own —
 `prometheus_query`, `loki_labels`, `tempo_tag_values` and the rest, without root's
 `gigapipe_` prefix, which exists only because root also monitors Prometheus directly and
@@ -453,6 +469,40 @@ Three things are deliberate:
 failure that matters most cannot be unit tested: one stray line on stdout — a
 `println!`, a log that went to the wrong stream, a response missing its newline — turns
 every request into a parse error whose message names JSON rather than the cause.
+
+### The in-app server
+
+Settings → **MCP server**. **Off by default.** While on, root serves its whole read-only
+tool surface over loopback HTTP, so a connected program can ask what `list_connections`,
+`get_health`, `search_logs`, `list_alerts` and `config_findings` know — none of which the
+standalone server can answer, because none of them exist until root is polling.
+
+```json
+{ "mcpServers": { "root": {
+    "url": "http://127.0.0.1:7718/mcp",
+    "headers": { "Authorization": "Bearer $ROOT_MCP_TOKEN" }
+} } }
+```
+
+It follows [Deploy ingest](#deploy-ingest)'s posture exactly, for the same reasons: off
+by default, binds `127.0.0.1` and never `0.0.0.0`, bearer token generated on first enable
+and held in the OS keychain, compared in constant time, body capped.
+
+One rule is this listener's own, and it is the one worth stating plainly: **an MCP client
+is not the operator.** It is a program the operator pointed at root, so it gets the
+read-only surface and nothing else — it can never restart a container, trigger a build or
+terminate a query, *even while the assistant here is set to allow actions*. Those stop at
+a confirmation dialog naming the target, and an HTTP request has no dialog. Advertising is
+not the gate either: a client that knows a mutating tool's name anyway is told no such
+read-only tool exists.
+
+The transport is Streamable HTTP in its simplest valid form — `POST /mcp` carrying one
+JSON-RPC message, answered with one JSON response. A notification gets `202` and no body.
+`GET` returns `405`, which is how a server says it pushes nothing; the tool list does not
+change while the process runs, so there is nothing to stream.
+
+`tests/mcp_http.rs` binds a real port and tries to get more out of it than it should
+give — no token, a wrong token, a token prefix, and a direct call to `restart_container`.
 
 ### One reading of one component
 
@@ -564,13 +614,13 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-480 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+491 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
 detection, component history admission and eviction, log filtering and stream separation,
 section renderability, conversation trimming, the per-provider message translation, and
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
 grouping, config rules, and the journal.
 
-Ten integration suites sit in `src-tauri/tests/`, each against something real:
+Eleven integration suites sit in `src-tauri/tests/`, each against something real:
 
 | Suite | Against | Why it is not a unit test |
 | --- | --- | --- |
@@ -581,6 +631,7 @@ Ten integration suites sit in `src-tauri/tests/`, each against something real:
 | `kafka.rs` | a real broker | consumer lag needs a per-group offset fetch that only exists over the wire, and a group that never committed looks identical to one fully caught up |
 | `kubernetes.rs` | a real cluster | whether the API shapes we ask for exist on a live server; a renamed field is a silently-empty section, never a compile error |
 | `promquery.rs` | wiremock always, a real Prometheus when asked | wiremock proves the parser handles documented shapes; a server proves those shapes are what it sends |
+| `mcp_http.rs` | a real loopback port, always | the assertions that matter are the ones that try to get more out of the listener than it should give: no token, a wrong token, and a mutating tool named directly |
 | `mcp_server.rs` | the real `root-mcp` binary, spawned over a pipe | a server can pass every handler test and still be unusable: one stray line on stdout makes every request a parse error on the client side |
 | `gigapipe_read.rs` | wiremock, always | the nine store reads are entirely URLs, and `/label` against `/labels` or a missing `/json` fails by returning nothing — which looks exactly like a store holding nothing |
 | `demo_estate.rs` | `demo/compose.yml`, wrong on purpose | the only layer that proves the pieces *meet* — see [The demo estate](#the-demo-estate) |
@@ -693,7 +744,8 @@ src-tauri/src/
   state.rs        Shared state, log ring buffer, alert store + alert engine
   supervisor.rs   Per-connection polling tasks
   commands.rs     The Tauri command surface
-  mcp.rs          root as an MCP server: JSON-RPC over stdio, read-only
+  mcp/            root as an MCP server — protocol, plus the stdio and
+                  loopback-HTTP transports that share it
   config.rs       Persisted connection profiles and assistant settings
   secrets.rs      OS keychain wrapper
   error.rs        AppError, serialized to a string across the Tauri boundary

@@ -120,6 +120,11 @@ pub fn run() {
                 if let Err(e) = ingest::restart(&state, &handle).await {
                     tracing::warn!("deploy ingest did not start: {e}");
                 }
+                // Same contract: nothing listens unless it was switched on and
+                // a token exists.
+                if let Err(e) = mcp::http::restart(&state).await {
+                    tracing::warn!("the MCP server did not start: {e}");
+                }
                 supervisor::reload_all(handle, state).await;
             });
 
@@ -165,6 +170,9 @@ pub fn run() {
             commands::get_ingest_settings,
             commands::save_ingest_settings,
             commands::rotate_ingest_token,
+            commands::get_mcp_settings,
+            commands::save_mcp_settings,
+            commands::rotate_mcp_token,
             commands::get_all_metric_history,
             commands::get_service_catalog,
             commands::get_config,

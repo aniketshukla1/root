@@ -16,6 +16,7 @@ import type {
   FieldSpec,
   HealthSnapshot,
   IngestStatus,
+  McpStatus,
   LlmProviderKind,
   LlmSettings,
   OperationalMetadata,
@@ -39,7 +40,7 @@ import {
 } from "../ui/primitives";
 import { CloseIcon, PlusIcon, TrashIcon } from "../ui/icons";
 
-type Tab = "connections" | "team" | "assistant" | "ingest" | "display";
+type Tab = "connections" | "team" | "assistant" | "ingest" | "mcp" | "display";
 
 export function Settings({
   config,
@@ -69,6 +70,7 @@ export function Settings({
             { value: "team", label: "Workspace" },
             { value: "assistant", label: "Assistant" },
             { value: "ingest", label: "Deploy ingest" },
+            { value: "mcp", label: "MCP server" },
             { value: "display", label: "Display" },
           ]}
         />
@@ -86,6 +88,7 @@ export function Settings({
             <AssistantSettings config={config} onConfigChange={onConfigChange} />
           )}
           {tab === "ingest" && <IngestSettings />}
+          {tab === "mcp" && <McpSettings />}
           {tab === "display" && <DisplaySettings />}
         </div>
       </Screen>
@@ -1317,6 +1320,259 @@ function IngestSettings() {
               <span className="num text-ink-3">at</span> and{" "}
               <span className="num text-ink-3">note</span> are optional.
             </p>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+
+// ----------------------------------------------------------------- MCP server
+
+function McpSettings() {
+  const [status, setStatus] = useState<McpStatus | null>(null);
+  const [port, setPort] = useState(7718);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /** Held only until the panel unmounts — the backend cannot return it again. */
+  const [freshToken, setFreshToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getMcpSettings()
+      .then((s) => {
+        setStatus(s);
+        setPort(s.port);
+      })
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+
+  if (!status) {
+    return <Empty title={error ?? "Loading…"} />;
+  }
+
+  const apply = async (enabled: boolean, nextPort: number) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await api.saveMcpSettings(enabled, nextPort);
+      setStatus(next);
+      setPort(next.port);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rotate = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setFreshToken(await api.rotateMcpToken());
+      setStatus(await api.getMcpSettings());
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copy = async (text: string, what: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(what);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {
+      setError("Could not reach the clipboard.");
+    }
+  };
+
+  const example = JSON.stringify(
+    {
+      mcpServers: {
+        root: {
+          url: status.url,
+          headers: { Authorization: "Bearer $ROOT_MCP_TOKEN" },
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  return (
+    <div className="grid max-w-4xl gap-3 lg:grid-cols-2">
+      <Panel title="Listener">
+        <div className="flex flex-col gap-3">
+          <label
+            className={cx(
+              "flex cursor-pointer gap-2.5 rounded-md border p-2.5 transition-colors",
+              status.enabled ? "border-accent/50 bg-accent/8" : "border-line bg-page",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={status.enabled}
+              disabled={busy}
+              onChange={(e) => apply(e.target.checked, port)}
+              className="mt-0.5 accent-accent"
+            />
+            <span className="min-w-0">
+              <span className="block text-xs font-medium text-ink">
+                Let other programs read this estate over MCP
+              </span>
+              <span className="block text-2xs leading-snug text-ink-4">
+                Off by default. While on, anything that speaks the Model Context Protocol —
+                another assistant, an editor, an agent — can ask root what it knows.
+              </span>
+            </span>
+          </label>
+
+          <Field
+            label="Port"
+            help="Above 1023, and not the deploy-ingest port. Changing it moves the listener immediately."
+          >
+            <div className="flex gap-1.5">
+              <Input
+                type="number"
+                min={1024}
+                max={65535}
+                className="w-28"
+                value={port}
+                onChange={(e) => setPort(Number(e.target.value) || 7718)}
+              />
+              <Button
+                onClick={() => apply(status.enabled, port)}
+                disabled={busy || port === status.port}
+              >
+                Apply
+              </Button>
+            </div>
+          </Field>
+
+          <Field label="Endpoint">
+            <div className="flex items-center gap-1.5">
+              <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-page px-2 py-1 text-2xs text-ink-2">
+                {status.url}
+              </code>
+              <Button onClick={() => copy(status.url, "url")}>
+                {copied === "url" ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </Field>
+
+          {error && (
+            <p className="text-xs text-crit" role="alert">
+              {error}
+            </p>
+          )}
+
+          <div className="rounded-md border border-line bg-page p-2.5">
+            <h4 className="label mb-1.5">What this does and does not expose</h4>
+            <ul className="flex flex-col gap-1 text-2xs leading-snug text-ink-3">
+              <li>
+                Binds <span className="num text-ink-2">127.0.0.1</span> only — never
+                <span className="num text-ink-2"> 0.0.0.0</span>. Nothing off this machine can
+                reach it, whatever your firewall says.
+              </li>
+              <li>Every request needs the bearer token; it is compared in constant time.</li>
+              <li>
+                <span className="text-ink-2">Read-only, always.</span> A connected program can
+                never restart a container, trigger a build, or terminate a query — not even
+                while the assistant here is set to allow actions. Those stop at a confirmation
+                dialog, and a request has no dialog.
+              </li>
+              <li>
+                A client that reads your estate can also repeat it. Point this at programs you
+                would already trust with the same screens.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Token">
+        <div className="flex flex-col gap-3">
+          {status.keychainAvailable ? (
+            <p className="text-xs leading-relaxed text-ink-3">
+              Stored in the OS keychain, never in the config file. It is shown once when
+              created — root cannot read it back, so rotate if you lose it.
+            </p>
+          ) : (
+            <p className="text-xs text-warn">
+              The keychain is unavailable on this system, so no token can be stored and the
+              listener will refuse to start.
+            </p>
+          )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-ink-4">Status</span>
+            {status.hasToken ? (
+              <Tag color="var(--color-ok)">Token stored</Tag>
+            ) : (
+              <Tag color="var(--color-warn)">No token</Tag>
+            )}
+            <Button className="ml-auto" onClick={rotate} disabled={busy}>
+              {status.hasToken ? "Rotate" : "Generate"}
+            </Button>
+          </div>
+
+          {freshToken && (
+            <div
+              className="rounded-md border p-2.5"
+              style={{
+                borderColor: "color-mix(in oklab, var(--color-warn) 40%, transparent)",
+                background: "color-mix(in oklab, var(--color-warn) 8%, transparent)",
+              }}
+            >
+              <p className="mb-1.5 text-2xs text-warn">
+                Copy this now — it will not be shown again. Any client using the previous token
+                has already stopped working.
+              </p>
+              <div className="flex items-center gap-1.5">
+                <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-page px-2 py-1 text-2xs text-ink">
+                  {freshToken}
+                </code>
+                <Button onClick={() => copy(freshToken, "token")}>
+                  {copied === "token" ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="mb-1 flex items-center gap-2">
+              <span className="label">Client configuration</span>
+              <Button
+                variant="ghost"
+                className="ml-auto"
+                onClick={() => copy(example, "config")}
+              >
+                {copied === "config" ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            <pre className="overflow-x-auto rounded-md border border-line bg-page p-2.5 text-2xs leading-relaxed text-ink-2">
+              {example}
+            </pre>
+          </div>
+
+          <div>
+            <span className="label">
+              Tools served <span className="num text-ink-4">({status.tools.length})</span>
+            </span>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {status.tools.map((tool) => (
+                <code
+                  key={tool}
+                  className="rounded border border-line bg-page px-1.5 py-0.5 text-2xs text-ink-3"
+                >
+                  {tool}
+                </code>
+              ))}
+            </div>
           </div>
         </div>
       </Panel>

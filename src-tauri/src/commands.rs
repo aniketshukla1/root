@@ -520,6 +520,103 @@ pub async fn rotate_ingest_token(app: tauri::AppHandle, state: Shared<'_>) -> Re
     Ok(token)
 }
 
+// ---------------------------------------------------------------- MCP server
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpStatus {
+    pub enabled: bool,
+    pub port: u16,
+    /// Whether a bearer token exists. The token itself is never returned here —
+    /// only `rotate_mcp_token` ever hands it back, and only once.
+    pub has_token: bool,
+    /// Loopback by construction; shown so the UI need not rebuild the string.
+    pub url: String,
+    pub keychain_available: bool,
+    /// What a client would be able to call. Shown in Settings because the
+    /// honest answer to "what does enabling this give away" is a list, not a
+    /// sentence — and because it is read-only regardless of the assistant's
+    /// own authority setting.
+    pub tools: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn get_mcp_settings(state: Shared<'_>) -> Result<McpStatus> {
+    let settings = state.config.read().await.mcp.clone();
+    let has_token = crate::secrets::get_secret(crate::mcp::http::TOKEN_KEY)
+        .await
+        .unwrap_or(None)
+        .is_some();
+
+    Ok(McpStatus {
+        enabled: settings.enabled,
+        port: settings.port,
+        has_token,
+        url: format!(
+            "http://127.0.0.1:{}{}",
+            settings.port,
+            crate::mcp::http::ENDPOINT
+        ),
+        keychain_available: crate::secrets::store_available(),
+        tools: crate::agent::tools::catalog(crate::config::AgentMode::ReadOnly)
+            .into_iter()
+            .filter(|t| !t.mutating)
+            .map(|t| t.spec.name)
+            .collect(),
+    })
+}
+
+/// Enable, disable, or move the MCP listener. Returns the resulting status.
+///
+/// Enabling with no token stored mints one, so a user never ends up with a
+/// listener that cannot authenticate anybody.
+#[tauri::command]
+pub async fn save_mcp_settings(
+    state: Shared<'_>,
+    enabled: bool,
+    port: u16,
+) -> Result<McpStatus> {
+    if enabled && port < 1024 {
+        return Err(AppError::Rejected(
+            "choose a port above 1023; privileged ports need elevation".into(),
+        ));
+    }
+    if enabled && port == state.config.read().await.ingest.port {
+        return Err(AppError::Rejected(
+            "that is the deploy-ingest port; give the MCP server one of its own".into(),
+        ));
+    }
+
+    {
+        let mut config = state.config.write().await;
+        config.mcp.enabled = enabled;
+        config.mcp.port = port;
+    }
+    state.save_config().await?;
+
+    if enabled
+        && crate::secrets::get_secret(crate::mcp::http::TOKEN_KEY)
+            .await?
+            .is_none()
+    {
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        crate::secrets::set_secret(crate::mcp::http::TOKEN_KEY, &token).await?;
+    }
+
+    crate::mcp::http::restart(&state).await?;
+    get_mcp_settings(state).await
+}
+
+/// Mint a new token and return it once. Any client using the old one stops
+/// working immediately, which is the point.
+#[tauri::command]
+pub async fn rotate_mcp_token(state: Shared<'_>) -> Result<String> {
+    let token = uuid::Uuid::new_v4().simple().to_string();
+    crate::secrets::set_secret(crate::mcp::http::TOKEN_KEY, &token).await?;
+    crate::mcp::http::restart(&state).await?;
+    Ok(token)
+}
+
 /// Deploys and other changes, newest first.
 ///
 /// Omit `profile_id` for the whole estate — the correlation view wants every

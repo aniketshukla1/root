@@ -974,6 +974,7 @@ export interface AppConfig {
   llm: LlmSettings;
   retention: { logCapacity: number };
   ingest: { enabled: boolean; port: number };
+  mcp: { enabled: boolean; port: number };
   team: { serverUrl?: string; account?: Account };
 }
 
@@ -987,6 +988,20 @@ export interface IngestStatus {
   hasToken: boolean;
   url: string;
   keychainAvailable: boolean;
+}
+
+/**
+ * The in-app MCP server. Same shape as {@link IngestStatus}, plus the tool
+ * names it would serve — the honest answer to "what does enabling this give
+ * away" is a list rather than a sentence.
+ */
+export interface McpStatus {
+  enabled: boolean;
+  port: number;
+  hasToken: boolean;
+  url: string;
+  keychainAvailable: boolean;
+  tools: string[];
 }
 
 export interface LogFilter {

@@ -1,16 +1,8 @@
-//! root as an MCP server, so other clients can read the warehouse too.
+//! The standalone gigapipe server — what `root-mcp` spawns.
 //!
-//! The assistant inside root reaches a gigapipe connection through nine tools
-//! (see [`crate::agent::tools`]). This exposes that same surface over the
-//! Model Context Protocol, on stdio, for anything that speaks it.
-//!
-//! ## Why a second binary rather than a port
-//!
-//! MCP clients spawn their servers. A stdio server needs no listening socket,
-//! no token, and no running copy of root — which matters, because `ingest.rs`
-//! already explains at length why opening a port in a desktop app that holds
-//! infrastructure credentials is a decision with a cost. This has none of that
-//! surface: it is a child process reading one pipe and writing another.
+//! Serves the nine gigapipe store reads over stdio, with no running copy of
+//! root and no port. See [`super`] for the protocol and for why this serves a
+//! narrower surface than the in-app server does.
 //!
 //! ## Where connections come from
 //!
@@ -23,101 +15,19 @@
 //! secrets from the OS keychain. A `connection` argument picks between them
 //! when there is more than one; with exactly one, it is the default and can be
 //! left off.
-//!
-//! ## Read-only, and that is structural
-//!
-//! Only tools root marks non-mutating are served, and today that is the nine
-//! store reads. Root's mutating tools stop at a confirmation dialog for a human
-//! before they touch anything, and there is no such dialog on the other end of
-//! a pipe — so rather than inventing a weaker approval, they are not offered.
-//!
-//! ## stdout belongs to the protocol
-//!
-//! Every diagnostic goes to stderr. A stray `println!` corrupts the stream and
-//! the client's error will name JSON, not this file.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use async_trait::async_trait;
+use serde_json::Value;
 
+use super::{advertise, ToolBackend};
 use crate::agent::tools::{gigapipe_read_from_args, GIGAPIPE_PREFIX};
 use crate::collectors::{self, Collector};
 use crate::config::{AgentMode, AppConfig, ConnectionProfile};
 use crate::error::{AppError, Result};
 use crate::model::ServiceKind;
-
-/// Protocol revisions this server knows how to speak.
-///
-/// A client asks for one in `initialize`. Echoing back a version we recognise
-/// keeps older clients working; anything else gets our default rather than an
-/// error, which is what the specification asks for — the client then decides
-/// whether it can live with the answer.
-const SUPPORTED_PROTOCOLS: &[&str] = &["2024-11-05", "2025-03-26", "2025-06-18"];
-const DEFAULT_PROTOCOL: &str = "2024-11-05";
-
-const SERVER_NAME: &str = "root";
-const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-// JSON-RPC 2.0 error codes, as the specification numbers them.
-const PARSE_ERROR: i64 = -32700;
-const INVALID_REQUEST: i64 = -32600;
-const METHOD_NOT_FOUND: i64 = -32601;
-const INVALID_PARAMS: i64 = -32602;
-
-/// One JSON-RPC message from the client.
-///
-/// `id` is absent on a notification, and a notification must never be answered
-/// — that distinction is the whole of the difference in this protocol.
-#[derive(Debug, Deserialize)]
-struct Request {
-    #[serde(default)]
-    id: Option<Value>,
-    method: String,
-    #[serde(default)]
-    params: Option<Value>,
-}
-
-#[derive(Debug, Serialize)]
-struct Response {
-    jsonrpc: &'static str,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<RpcError>,
-}
-
-#[derive(Debug, Serialize)]
-struct RpcError {
-    code: i64,
-    message: String,
-}
-
-impl Response {
-    fn ok(id: Value, result: Value) -> Self {
-        Response {
-            jsonrpc: "2.0",
-            id,
-            result: Some(result),
-            error: None,
-        }
-    }
-
-    fn err(id: Value, code: i64, message: impl Into<String>) -> Self {
-        Response {
-            jsonrpc: "2.0",
-            id,
-            result: None,
-            error: Some(RpcError {
-                code,
-                message: message.into(),
-            }),
-        }
-    }
-}
 
 /// Where this server gets a gigapipe to talk to.
 pub enum Source {
@@ -167,30 +77,6 @@ impl Server {
         }
     }
 
-    /// The tools this server advertises: root's gigapipe reads, with the
-    /// `gigapipe_` prefix removed.
-    ///
-    /// The prefix exists inside root because it also monitors Prometheus
-    /// directly and `prometheus_query` would be ambiguous there. Here nothing
-    /// else is served, so the bare names are unambiguous — and they are the
-    /// names `gigapipe-mcp` uses, which makes this a drop-in for it.
-    ///
-    /// Derived from root's own catalog rather than written out again, so the
-    /// two surfaces cannot drift apart.
-    pub fn tools(&self) -> Vec<Value> {
-        crate::agent::tools::catalog(AgentMode::ReadOnly)
-            .into_iter()
-            .filter(|t| t.spec.name.starts_with(GIGAPIPE_PREFIX) && !t.mutating)
-            .map(|t| {
-                json!({
-                    "name": t.spec.name.trim_start_matches(GIGAPIPE_PREFIX),
-                    "description": t.spec.description,
-                    "inputSchema": t.spec.input_schema,
-                })
-            })
-            .collect()
-    }
-
     /// Pick the profile a call addresses.
     fn profile(&self, wanted: Option<&str>) -> Result<&ConnectionProfile> {
         match &self.source {
@@ -234,18 +120,45 @@ impl Server {
         collectors::build_collector(profile, secret).await
     }
 
-    /// Run one tool call and return what the client should see as content.
-    pub async fn call(&self, name: &str, args: &Value) -> Result<Value> {
+}
+
+#[async_trait]
+impl ToolBackend for Server {
+    /// Root's gigapipe reads, with the `gigapipe_` prefix removed.
+    ///
+    /// The prefix exists inside root because it also monitors Prometheus
+    /// directly and `prometheus_query` would be ambiguous there. Here nothing
+    /// else is served, so the bare names are unambiguous — and they are the
+    /// names `gigapipe-mcp` uses, which makes this a drop-in for it.
+    ///
+    /// Derived from root's own catalog rather than written out again, so the
+    /// two surfaces cannot drift apart.
+    fn tools(&self) -> Vec<Value> {
+        let gigapipe = crate::agent::tools::catalog(AgentMode::ReadOnly)
+            .into_iter()
+            .filter(|t| t.spec.name.starts_with(GIGAPIPE_PREFIX));
+        advertise(gigapipe, GIGAPIPE_PREFIX)
+    }
+
+    async fn call(&self, name: &str, args: &Value) -> Result<String> {
         let read = gigapipe_read_from_args(name, args)?;
         let wanted = args
             .get("connection")
             .and_then(|v| v.as_str())
             .map(str::trim)
             .filter(|v| !v.is_empty());
-        self.collector(wanted)
+        let value = self
+            .collector(wanted)
             .await?
             .detail(&collectors::DetailQuery::GigapipeRead(read))
-            .await
+            .await?;
+        Ok(serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()))
+    }
+
+    fn instructions(&self) -> &'static str {
+        "Reads metrics, logs and traces from a gigapipe observability warehouse. \
+         Start with the label and tag listings to find out what the store actually \
+         holds before writing a PromQL or LogQL selector against it."
     }
 }
 
@@ -290,140 +203,12 @@ fn profile_from_env() -> Option<ConnectionProfile> {
     })
 }
 
-/// Handle one parsed request. `None` means the message was a notification and
-/// must not be answered.
-///
-/// Private because `Request` and `Response` are this module's wire types:
-/// [`serve_stdio`] is the entry point, and [`Server::call`] is the seam for
-/// anything that wants to run a tool without the protocol around it.
-async fn handle(server: &Server, request: Request) -> Option<Response> {
-    let id = request.id.clone();
-    let is_notification = id.is_none();
-    // A notification carries no id, and a response must carry one; null is
-    // what the specification uses when a request could not be identified.
-    let id = id.unwrap_or(Value::Null);
-
-    let response = match request.method.as_str() {
-        "initialize" => {
-            let asked = request
-                .params
-                .as_ref()
-                .and_then(|p| p.get("protocolVersion"))
-                .and_then(|v| v.as_str());
-            let version = asked
-                .filter(|v| SUPPORTED_PROTOCOLS.contains(v))
-                .unwrap_or(DEFAULT_PROTOCOL);
-
-            Response::ok(
-                id,
-                json!({
-                    "protocolVersion": version,
-                    "capabilities": { "tools": { "listChanged": false } },
-                    "serverInfo": { "name": SERVER_NAME, "version": SERVER_VERSION },
-                    "instructions": "Reads metrics, logs and traces from a gigapipe \
-                                     observability warehouse. Start with the label and tag \
-                                     listings to find out what the store actually holds \
-                                     before writing a PromQL or LogQL selector against it.",
-                }),
-            )
-        }
-
-        // Nothing to do, and nothing to answer.
-        "notifications/initialized" | "notifications/cancelled" => return None,
-
-        "ping" => Response::ok(id, json!({})),
-
-        "tools/list" => Response::ok(id, json!({ "tools": server.tools() })),
-
-        "tools/call" => {
-            let params = request.params.unwrap_or(Value::Null);
-            let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
-                return Some(Response::err(id, INVALID_PARAMS, "`name` is required"));
-            };
-            let args = params
-                .get("arguments")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
-
-            // A tool that fails is a *result* carrying isError, not a protocol
-            // error: the model is meant to read the reason and try something
-            // else, which it cannot do with a transport-level failure.
-            match server.call(name, &args).await {
-                Ok(value) => Response::ok(
-                    id,
-                    json!({
-                        "content": [{
-                            "type": "text",
-                            "text": serde_json::to_string_pretty(&value)
-                                .unwrap_or_else(|_| value.to_string()),
-                        }],
-                        "isError": false,
-                    }),
-                ),
-                Err(error) => Response::ok(
-                    id,
-                    json!({
-                        "content": [{ "type": "text", "text": error.to_string() }],
-                        "isError": true,
-                    }),
-                ),
-            }
-        }
-
-        // Declared as unsupported rather than answered empty: a client that
-        // asks is entitled to know the difference between "none" and "not a
-        // thing this server does".
-        other => Response::err(id, METHOD_NOT_FOUND, format!("unknown method `{other}`")),
-    };
-
-    // Belt and braces: nothing above returns a response for a notification,
-    // and if something ever does, the protocol says drop it.
-    if is_notification {
-        return None;
-    }
-    Some(response)
-}
-
-/// Read requests from stdin and write responses to stdout until the pipe
-/// closes, which is how an MCP client says it is finished.
-pub async fn serve_stdio(server: Server) -> std::io::Result<()> {
-    let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    let mut stdout = tokio::io::stdout();
-
-    while let Some(line) = lines.next_line().await? {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        let response = match serde_json::from_str::<Request>(line) {
-            Ok(request) => handle(&server, request).await,
-            Err(error) => Some(Response::err(
-                Value::Null,
-                if line.starts_with('{') {
-                    INVALID_REQUEST
-                } else {
-                    PARSE_ERROR
-                },
-                error.to_string(),
-            )),
-        };
-
-        let Some(response) = response else { continue };
-        let mut encoded = serde_json::to_vec(&response).unwrap_or_else(|_| {
-            br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"could not encode the response"}}"#.to_vec()
-        });
-        encoded.push(b'\n');
-        stdout.write_all(&encoded).await?;
-        stdout.flush().await?;
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use super::super::{handle, Request, DEFAULT_PROTOCOL, INVALID_PARAMS, METHOD_NOT_FOUND};
+    use serde_json::json;
 
     fn server() -> Server {
         Server {

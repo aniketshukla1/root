@@ -404,6 +404,8 @@ pub struct AppState {
     pub pollers: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     /// The deploy-ingest listener, so toggling it off actually closes the port.
     pub ingest: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// The MCP listener, held for the same reason.
+    pub mcp: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The judgement record — the one thing here that outlives the process.
     ///
     /// `None` when the store could not be opened. A journal that will not open
@@ -435,6 +437,7 @@ impl AppState {
             pending_meta: RwLock::new(HashMap::new()),
             pollers: Mutex::new(HashMap::new()),
             ingest: Mutex::new(None),
+            mcp: Mutex::new(None),
             journal: RwLock::new(None),
             journal_error: RwLock::new(None),
         }

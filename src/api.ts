@@ -60,6 +60,14 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
     fixtures.correlation((at as string) ?? new Date().toISOString(), (windowSecs as number) ?? 120),
   pending_confirmations: () => [],
   get_ingest_settings: () => ({ enabled: false, port: 7717, hasToken: false }),
+  get_mcp_settings: () => ({
+    enabled: false,
+    port: 7718,
+    hasToken: false,
+    url: "http://127.0.0.1:7718/mcp",
+    keychainAvailable: true,
+    tools: ["list_connections", "get_health", "search_logs"],
+  }),
   secret_store_available: () => true,
   list_models: () => ["claude-opus-5", "claude-sonnet-5"],
   // A HealthSnapshot, not a string: the form reads snapshot.summary and
@@ -138,6 +146,7 @@ import type {
   HistogramBucket,
   Incident,
   IngestStatus,
+  McpStatus,
   LlmSettings,
   LogEvent,
   LogFilter,
@@ -302,6 +311,14 @@ export const api = {
 
   /** Returns the new token once. It cannot be read back afterwards. */
   rotateIngestToken: () => invoke<string>("rotate_ingest_token"),
+
+  getMcpSettings: () => invoke<McpStatus>("get_mcp_settings"),
+
+  saveMcpSettings: (enabled: boolean, port: number) =>
+    invoke<McpStatus>("save_mcp_settings", { enabled, port }),
+
+  /** Returns the new token once. It cannot be read back afterwards. */
+  rotateMcpToken: () => invoke<string>("rotate_mcp_token"),
 
   /** The service registry — what kinds exist and how to render their forms. */
   getServiceCatalog: () => invoke<ServiceDescriptor[]>("get_service_catalog"),

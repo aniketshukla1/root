@@ -13,8 +13,8 @@ nor the config file says so alone.
 Built with Tauri 2 (Rust backend, React + TypeScript frontend).
 
 The frontend is eight flat screens — Overview, Services, Alerts, Metrics, Logs,
-Assistant, Scorecard, Settings — with service detail, component detail, and
-correlation as drill-downs. See
+Assistant, Scorecard, Settings — with service detail, component detail, a trace
+waterfall, and correlation as drill-downs. See
 [`FRONTEND_ARCHITECTURE.md`](FRONTEND_ARCHITECTURE.md) for the extension
 contract, the read-model rules, and the colour rules.
 
@@ -79,6 +79,17 @@ loud series, not the relevant one. Metrics are scored against a baseline four ti
 window's length immediately preceding it, with a two-sample Kolmogorov–Smirnov test and a
 volume heuristic beside it — because KS is blind to the case that matters most in
 practice, a metric that was flat at zero and then switched on.
+
+**Traces, as a tree rather than a table.** Everything else root collects is a list of
+things with numbers on them, which `Section` plus `Row` renders. A span is not that — it
+has a duration, a parent, and a position in a tree, and the whole value of a trace is
+seeing that the 900 ms went *there*, three levels down, in a service nobody suspected. So
+traces get their own type and their own waterfall. It leads with the per-service breakdown
+ranked by *self* time — each span's duration minus what its children accounted for — so a
+span that took 900 ms because its child took 890 does not get the blame, and ranking does
+not just name the root span every time. Spans whose parent never arrived are drawn at the
+root under an `ORPHAN` tag rather than dropped, because an operator cannot otherwise tell
+"it did not happen" from "we did not show it".
 
 **Incidents, not a list of alerts.** When orders-api OOMs and three things that talk to
 it start complaining, an operator does not have four problems. Alerts are grouped into
@@ -217,11 +228,13 @@ So adding one is three steps, all in Rust:
 3. Append a `ServiceDescriptor` to `registry::catalog()` — label, monogram, accent,
    category, blurb, and the `FieldSpec`s its settings form needs.
 
-Two optional one-line opt-ins come with it, both on the sections a collector already
+Three optional one-line opt-ins come with it, all on the sections a collector already
 declares. `ColumnSpec::revision()` marks the column whose value identifies a version, and
-the change engine turns a move in it into a deploy marker. `Section::tracked()` keeps
-per-row history for that section's numeric columns, giving its components charts of their
-own. Neither needs any detection code, and a collector that uses neither still works.
+the change engine turns a move in it into a deploy marker. `ColumnSpec::trace()` marks a
+column as holding a trace id, and every cell in it opens as a waterfall instead of
+rendering as text. `Section::tracked()` keeps per-row history for that section's numeric
+columns, giving its components charts of their own. None needs any detection code, and a
+collector that uses none of them still works.
 
 Nothing in `src/` changes. The **HTTP endpoint** collector was deliberately added after
 the UI was finished to prove this: it declares four options of its own
@@ -240,7 +253,7 @@ Two things make this hold rather than merely being a convention:
 
 ## Collectors
 
-Twenty-seven service types, grouped by the `category` each one declares in
+Twenty-eight service types, grouped by the `category` each one declares in
 `registry::catalog()`. A collector that emits no log lines says so — most do not,
 because most infrastructure exposes an API and not a stream.
 
@@ -299,6 +312,7 @@ because most infrastructure exposes an API and not a stream.
 | --- | --- | --- |
 | **Jenkins** | Job results and durations, build queue depth *and the reason each item is blocked*, executor counts, agent online/offline with cause | Build outcomes as they finish, as `event` lines. Console output is not in the stream at all — it is a per-build detail fetch, because forty lines per failed build in the shared view buried everything else |
 | **Prometheus** | Scrape target health, firing alert rules, and TSDB series count. A target that silently stopped being scraped is invisible in a dashboard built on its data; the graph just goes flat. Deliberately not a PromQL client — the question here is whether Prometheus is scraping what it thinks it is | Each alert once, as it starts firing |
+| **Gigapipe** | The one connection that is two things: a service root watches, and a store root reads *from*. Query APIs are probed per signal — logs, metrics, traces — because `/ready` answers from the process, and a ClickHouse that has gone away leaves gigapipe answering happily while every query fails. Ingest rate is derived between polls from monotonic counters, and an interval where a counter went *down* is dropped rather than reported as a negative rate, because that means the process restarted. Plus rejected payloads, backend resets, traces matched and slow. See [`GIGAPIPE.md`](GIGAPIPE.md) | Version transitions, and — with a LogQL selector set — real application logs pulled from whatever ships *into* gigapipe, which is why root needs no OTLP receiver of its own |
 | **AWS** | One connection is an account and region; buckets and queues are components inside it. S3 object count and stored bytes against lifecycle policy — growth that nothing will ever delete. SQS depth, in-flight count, and dead-letter configuration: depth with *nothing in flight* means no consumer is even trying. Object counts walk a bounded number of pages and say when they stopped rather than reporting a fraction as a total | None. Oldest-message age is left to CloudWatch on purpose: reading it off the queue would increment every message's receive count and dead-letter the backlog the monitor was watching |
 
 ### On log delivery
@@ -366,6 +380,29 @@ Configuration reaches the model already redacted — the redaction lives in the 
 no tool can return an unredacted body. And findings come back through a tool rather than
 in a sentence, which is what makes them attributable and rateable beside the rules on the
 Scorecard; see [Is it any good?](#is-it-any-good).
+
+### One reading of one component
+
+Hovering a failing cell in the component matrix asks a different question from the
+assistant's: given this restart count, the image that changed and the four log lines
+naming this container, *what is this?* That is a sentence, and `explain_component`
+answers it without the agent loop — no system prompt listing every tool, no round trips,
+no conversation that grows. It builds the facts in-process from the row's cells, the alert
+naming it, any deploy in the window and the most recent log lines mentioning it, then
+makes one call with no tools and a small budget.
+
+Four rules keep it honest and cheap:
+
+- **A hover is not a request.** Nothing is sent until the tooltip has been open on the
+  same component for 550ms; dragging across one block touches a dozen cells in a second.
+- **A reading is computed once per state**, not once per hover — cached by a fingerprint
+  of the health, the summary and the alert behind it, so the same broken container asked
+  about twice is one call and one that breaks differently is a new one.
+- **The facts travel with the text.** `grounds` is every line the model was given, and the
+  tooltip says how many there were and which model said it. A summary nobody can check is
+  a rumour with good typography.
+- **Healthy components are refused rather than answered.** A model asked what is wrong
+  with something that is fine will find something, and most cells are fine.
 
 ---
 
@@ -454,7 +491,7 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-437 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+462 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
 detection, component history admission and eviction, log filtering and stream separation,
 section renderability, conversation trimming, the per-provider message translation, and
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
@@ -538,6 +575,7 @@ collection cycle and reports what came back.
 | etcd | `http://etcd-1.internal:2379` — a client port, read via `/metrics` | optional username + password |
 | Jenkins | `https://jenkins.internal` | username + API token |
 | Prometheus | `http://prometheus.internal:9090` | optional password or bearer token |
+| Gigapipe | `http://gigapipe.internal:3100` | optional password or bearer token |
 | AWS | empty for real AWS, or a URL for an S3/SQS-compatible service | access key id + secret, or leave both empty to use the default credential chain |
 
 Every type also takes **max log lines per poll**, and every TLS one takes **skip TLS
@@ -551,6 +589,9 @@ actually watches:
 - **AWS** — **region** defaults to `us-east-1`, and one connection covers one region.
 - **Jenkins** — **job filter** narrows to jobs containing a string; empty watches every job
   the credential can see.
+- **Gigapipe** — a **LogQL selector** turns the connection into a log source for whatever
+  ships into it, and a **TraceQL selector** with a slow-trace threshold decides which
+  traces are listed.
 - **NFS exports** and **RabbitMQ** — **path prefix** and **virtual host** narrow a busy
   host to the exports or vhost you care about.
 
@@ -564,7 +605,7 @@ have to set the bar for the estate.
 
 ```
 src-tauri/src/
-  collectors/     Collector trait + 25 modules covering all 27 service kinds
+  collectors/     Collector trait + 26 modules covering all 28 service kinds
                   (docker serves Podman, database serves PostgreSQL and MySQL),
                   plus promtext, the shared Prometheus text-format parser
   llm/            LlmProvider trait + anthropic, openai, ollama
@@ -581,6 +622,7 @@ src-tauri/src/
   error.rs        AppError, serialized to a string across the Tauri boundary
 
   history.rs      Rolling metric history and log bucketing — the data behind charts
+  traces.rs       Spans as a tree — the one shape Section/Row cannot express
   changes.rs      Deploy detection by diffing each component's revision column
   ingest.rs       Opt-in loopback listener for externally reported deploys
   incidents.rs    Correlating alerts into incidents, without a model
@@ -620,7 +662,8 @@ src/
   app.css         Tailwind v4 theme: tokens, density, base
   shell/          Sidebar, ScreenHeader, CommandPalette, AssistantDock,
                   ComponentDialog, ConfirmDialog, Splash, Toasts
-  screens/        One file per destination, plus Onboarding and SignIn gates
+  screens/        One file per destination, incl. TraceDetail's waterfall,
+                  plus the Onboarding and SignIn gates
   ui/             Primitives, charts, icons, generic section table
   icons/marks/    Brand marks, auto-discovered per kind
 ```

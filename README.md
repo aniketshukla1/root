@@ -1,13 +1,20 @@
 # root
 
-A black-box infrastructure intelligence console that watches your entire estate from one window — live health,
+Agentic infrastructure management for your whole estate, from one window — live health,
 metric history, a unified log stream, alerting, and an AI assistant that can actually
 investigate rather than guess.
 
+Monitoring is half of it. Watching tells you a thing is wrong; reading the configuration
+that governs it tells you why, and which number to change. A Redis at 1.9 GB of a 2 GB
+`maxmemory` with `maxmemory-policy noeviction` is not a memory graph to keep an eye on —
+it is a decision that starts refusing writes in about four hours, and neither the metric
+nor the config file says so alone.
+
 Built with Tauri 2 (Rust backend, React + TypeScript frontend).
 
-The frontend is seven flat screens — Overview, Services, Alerts, Metrics, Logs,
-Assistant, Settings — with service detail and correlation as drill-downs. See
+The frontend is eight flat screens — Overview, Services, Alerts, Metrics, Logs,
+Assistant, Scorecard, Settings — with service detail, component detail, and
+correlation as drill-downs. See
 [`FRONTEND_ARCHITECTURE.md`](FRONTEND_ARCHITECTURE.md) for the extension
 contract, the read-model rules, and the colour rules.
 
@@ -33,12 +40,13 @@ recovers is marked resolved rather than silently vanishing.
 
 **Logs that separate, and correlate.** Every line is classified by stream —
 `runtime` (container stdout, ES documents), `event` (build results, endpoint
-transitions), `build` (Jenkins console), `diagnostic` (derived). The shared view
-shows runtime and events by default; build console lives with its build, and
-database slow queries are rows in Active queries rather than duplicate log
-lines. Correlation is then a *lane* view: pick any moment and see what every
-system was doing, grouped by source and aligned on time, ordered by likely
-relevance.
+transitions), `diagnostic` (Redis slow commands, long-running Mongo operations),
+and `build`, which is reserved for console output and which no collector emits
+today. The shared view shows runtime and events by default; database slow
+queries are rows in Active queries rather than duplicate log lines, and a
+Jenkins console is fetched for one build rather than pushed at everyone.
+Correlation is then a *lane* view: pick any moment and see what every system was
+doing, grouped by source and aligned on time, ordered by likely relevance.
 
 **Metric history everywhere.** Every service-level metric is kept as a rolling series, so
 each card carries a sparkline, each detail page a set of charts, and the assistant can
@@ -62,10 +70,135 @@ observation. See [Deploy ingest](#deploy-ingest).
 
 **Log analytics, not just a tail.** A severity-stacked activity histogram over the whole
 server-side buffer, click-to-zoom on any bucket, and severity facets with live counts.
+Nobody can read a log tail, so lines are also clustered with Drain into *templates* — the
+message with its variable parts replaced by `<*>` — which can be ranked, counted and
+sparklined. The line you care about becomes one row instead of something you scroll past.
+
+**Which metrics actually moved.** Picking a window and eyeballing the charts finds the
+loud series, not the relevant one. Metrics are scored against a baseline four times the
+window's length immediately preceding it, with a two-sample Kolmogorov–Smirnov test and a
+volume heuristic beside it — because KS is blind to the case that matters most in
+practice, a metric that was flat at zero and then switched on.
+
+**Incidents, not a list of alerts.** When orders-api OOMs and three things that talk to
+it start complaining, an operator does not have four problems. Alerts are grouped into
+incidents from what the collectors already recorded — onset times, the declared dependency
+graph, observed changes — with no model involved, so an estate with no LLM configured gets
+the whole benefit and a model that is wrong can only mis-describe an incident, never
+invent one. Every incident carries the reasons its members were grouped, so a wrong
+grouping is arguable rather than mysterious. Dependency edges are *declared*, never
+discovered: root watches connections, not the network between them, so it narrows
+candidates and still leaves the caller needing evidence.
+
+**What a container is running, and where a connection lives.** One connection, one system
+stops holding the moment everything is containerised — a Docker host is twenty systems of
+a dozen kinds, and listing twenty containers is true and useless. An image name is the
+container's own statement about what it runs, so `postgres:16` is read rather than
+guessed. A connection can also *declare* where it runs, which root then reconciles against
+its own inference on every poll; the disagreements are the output, because a disagreement
+is either root being wrong or the estate having changed.
 
 **An assistant with real access.** It reads your monitoring data through a fixed set of
 tools and correlates across services — an alert leads to a snapshot, which leads to logs,
 which leads to a container inspect. It cites the exit code and the log line.
+
+---
+
+## Reading configuration
+
+Monitoring says a thing is wrong. Configuration says why, and what to change. Telemetry
+alone says a Redis is at 1.9 GB and climbing — a fact with no action attached, because the
+metric cannot tell you whether that is fine forever or four hours from an outage. Config
+alone says `maxmemory 2gb` and `maxmemory-policy noeviction`, which is a reasonable
+setting for an instance that never fills. Together they say: this stops accepting writes
+in about four hours, here is the setting that decides it, here is the number to change.
+
+**Declared, never discovered.** An operator names the paths. Nothing crawls a filesystem
+looking for things that might be config — a tool that goes looking eventually finds
+something it should not have opened, and the first time that is a private key it does not
+matter how good the intent was. Reads are read-only and stay that way.
+
+**Redacted in the reader, not in the prompt.** Config files are where credentials live:
+`requirepass` in redis.conf, the environment block of a compose file, a datasource
+password in application.yml. The assistant sends what it reads to a third-party API, so
+redaction happens between the file and *every* consumer — there is no accessor that
+returns an unredacted body. A prompt is one caller among many and the next one will
+forget. Over-redaction has a real cost too, so this aims at values that are secrets rather
+than at settings that merely sound sensitive: a review that cannot see `maxmemory`,
+`max_connections` or `worker_processes` is worthless.
+
+**Rules, not prompts.** The assistant could be handed the config and the metrics and asked
+to spot this, and it would — often. "Often" is the problem: a recommendation that is
+usually right is one nobody can build a process on. The findings that matter are derived
+by rules that always fire on the same input, and the assistant's own findings are kept
+separate and scored separately (below).
+
+### When it becomes a problem, not just that it is one
+
+Fill level answers whether something is a problem now; capacity planning needs the other
+question. That is one derivation applied wherever a limit is declared — a disk filling, a
+connection pool filling, an inode table filling, etcd's backend quota filling — rather
+than re-implemented per collector.
+
+The hard part is not the arithmetic, it is refusing to answer. A straight line through any
+history produces a slope, and a slope always produces a date. On a disk climbing steadily
+for a week that date is worth acting on; on CPU oscillating between 20% and 80% all day
+the identical arithmetic yields a confident "full in four hours" that is pure artefact.
+A projection nobody can trust is worse than none, because the first wrong one teaches
+people to ignore the rest.
+
+Which is why root can read from a Prometheus you already run. Its own history is a ring
+buffer holding a few hours, deliberately, so there is no retention policy to manage — and
+a volume that fills in three weeks is invisible to a forecast built on that. Prometheus is
+read here and never written; it is a source, not a store.
+
+---
+
+## Is it any good?
+
+Everything else in this app is disposable: metric history is a ring buffer, logs are a
+ring buffer, incidents are derived fresh on every read, and all of it is gone when the
+process stops. The judgement record is the exception, and the only thing on disk besides
+configuration.
+
+A record of which findings were right, which were noise, and which problems root missed
+entirely is the only dataset here that gets **more** valuable with age. It is also the only
+thing that can answer the question every step of this product's roadmap depends on. The
+**Scorecard** screen is that record: precision from rated findings, recall from incidents
+root should have caught and did not.
+
+Three things feed it, for three different reasons:
+
+- **The assistant reports findings through a tool**, not in prose. Prose cannot be scored,
+  so the column for the model would have stayed empty forever and the loop this
+  measurement exists to run would never have started. The set of things the model found
+  that no rule covers, *and that a human confirmed were real*, is the queue of rules worth
+  writing next — and each one written moves a class of problem from the half that has to
+  be trusted to the half that can be checked.
+- **Backtesting** replays today's rules over the estate's own Prometheus history, because
+  ratings arrive slowly: one estate produces a handful of findings a week, and waiting for
+  a sample large enough to gate a decision on would stall the roadmap for a year. The one
+  thing it cannot do is replay configuration — Prometheus stores numbers, not `redis.conf`
+  — so a replay uses today's config and says so.
+- **Scenarios** are known situations with known right answers. A unit test fails a build,
+  which is the right tool for "this rule's arithmetic is correct" and a bad tool for the
+  question that actually comes up: somebody widened a threshold or swapped a model, so is
+  the product better or worse than it was? A suite reporting 18/20 with the two names that
+  regressed answers that directly, and can be run by somebody who is not debugging.
+
+---
+
+## Shared workspaces
+
+Optional, and additive. With no server configured root reads a config file on this machine
+and answers to nobody — the mode that needs no trust in anything beyond the OS keychain.
+
+What a server adds is a shared identity: several people looking at the same estate, told
+apart, with a role attached. This client stores what the server told it and offers what
+that role can do; it does not enforce anything. A cached role is a hint about which
+buttons to draw, never a permission check — a client enforcing its own permissions would
+be enforcing nothing, since the person it is enforcing against owns the machine it runs
+on. Every mutating call still goes to the server.
 
 ---
 
@@ -164,7 +297,7 @@ because most infrastructure exposes an API and not a stream.
 
 | Source | What is collected | Logs |
 | --- | --- | --- |
-| **Jenkins** | Job results and durations, build queue depth *and the reason each item is blocked*, executor counts, agent online/offline with cause | Build outcomes as they finish. Console output is fetched per build into the `build` stream instead — forty lines per failed build in the shared view buried everything else |
+| **Jenkins** | Job results and durations, build queue depth *and the reason each item is blocked*, executor counts, agent online/offline with cause | Build outcomes as they finish, as `event` lines. Console output is not in the stream at all — it is a per-build detail fetch, because forty lines per failed build in the shared view buried everything else |
 | **Prometheus** | Scrape target health, firing alert rules, and TSDB series count. A target that silently stopped being scraped is invisible in a dashboard built on its data; the graph just goes flat. Deliberately not a PromQL client — the question here is whether Prometheus is scraping what it thinks it is | Each alert once, as it starts firing |
 | **AWS** | One connection is an account and region; buckets and queues are components inside it. S3 object count and stored bytes against lifecycle policy — growth that nothing will ever delete. SQS depth, in-flight count, and dead-letter configuration: depth with *nothing in flight* means no consumer is even trying. Object counts walk a bounded number of pages and say when they stopped rather than reporting a fraction as a total | None. Oldest-message age is left to CloudWatch on purpose: reading it off the queue would increment every message's receive count and dead-letter the backlog the monitor was watching |
 
@@ -228,6 +361,11 @@ There is no arbitrary-SQL tool and no shell tool. Database access is a fixed set
 named diagnostics (`connections`, `long_queries`, `table_sizes`, `locks`, `replication`).
 The Elasticsearch tool can only reach `_search`. Anything the app cannot do safely is
 routed through `propose_command` for a human.
+
+Configuration reaches the model already redacted — the redaction lives in the reader, so
+no tool can return an unredacted body. And findings come back through a tool rather than
+in a sentence, which is what makes them attributable and rateable beside the rules on the
+Scorecard; see [Is it any good?](#is-it-any-good).
 
 ---
 
@@ -316,24 +454,54 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-141 unit tests. They cover health mapping, alert lifecycle, deploy detection, component
-history admission and eviction, log filtering and stream separation, section renderability,
-conversation trimming, and the per-provider message translation.
+437 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+detection, component history admission and eviction, log filtering and stream separation,
+section renderability, conversation trimming, the per-provider message translation, and
+the parts with the most judgement in them — redaction, forecasting's refusals, incident
+grouping, config rules, and the journal.
 
-`tests/collectors.rs` runs the Jenkins and Elasticsearch collectors end to end against a
-mock HTTP server — real requests, real parsing of the payload shapes those services
-actually return — and exercises the Docker collector against a live daemon when one is
-present.
+Eight integration suites sit in `src-tauri/tests/`, each against something real:
 
-`tests/databases.rs` runs the real SQL against real PostgreSQL and MySQL servers (the
-`docker run` commands are in the file header). This one earns its keep: the collector
-falls back rather than erroring, so a wrong column name surfaces as a silently-zero
-metric instead of a failure. Writing it caught three genuine bugs — MySQL rejecting bind
-parameters in `SHOW ... LIKE ?`, `rows` being reserved in MySQL 8, and the event-scheduler
-daemon being counted as a permanently long-running query.
+| Suite | Against | Why it is not a unit test |
+| --- | --- | --- |
+| `collectors.rs` | a mock HTTP server, plus a live Docker daemon when present | real requests and real parsing of the payload shapes Jenkins and Elasticsearch actually return |
+| `databases.rs` | real PostgreSQL and MySQL | the collector falls back rather than erroring, so a wrong column name is a silently-zero metric, not a failure |
+| `stores.rs` | real Redis and MongoDB | text and BSON whose shape varies by server version, and both degrade rather than error |
+| `http_services.rs` | real Prometheus, RabbitMQ and Nginx | all three parse version-dependent payloads and read a missing key as a permanent zero |
+| `kafka.rs` | a real broker | consumer lag needs a per-group offset fetch that only exists over the wire, and a group that never committed looks identical to one fully caught up |
+| `kubernetes.rs` | a real cluster | whether the API shapes we ask for exist on a live server; a renamed field is a silently-empty section, never a compile error |
+| `promquery.rs` | wiremock always, a real Prometheus when asked | wiremock proves the parser handles documented shapes; a server proves those shapes are what it sends |
+| `demo_estate.rs` | `demo/compose.yml`, wrong on purpose | the only layer that proves the pieces *meet* — see [The demo estate](#the-demo-estate) |
 
-Every integration test skips cleanly when its dependency is absent, so `cargo test` passes
-on a bare machine.
+`tests/databases.rs` earns its keep twice over: writing it caught three genuine bugs —
+MySQL rejecting bind parameters in `SHOW ... LIKE ?`, `rows` being reserved in MySQL 8,
+and the event-scheduler daemon being counted as a permanently long-running query.
+
+Every integration test except `demo_estate.rs` skips cleanly when its dependency is
+absent, so `cargo test` passes on a bare machine. The 17 `#[ignore]`d tests want a real
+dependency and are opted into explicitly; the `docker run` commands are in each file's
+header.
+
+### The demo estate
+
+`demo/compose.yml` starts a small estate that is **wrong on purpose** — a Redis with
+`maxmemory-policy noeviction` filling up, a Postgres at `max_connections=25` leaking
+sessions, buckets with no lifecycle policy, a queue nobody reads — each misconfigured in
+the specific way one of the rules exists to catch. One service is configured correctly and
+root must stay quiet about it, because an estate where everything is flagged teaches the
+same wrong lesson as one where nothing is.
+
+```bash
+docker compose -f demo/compose.yml up -d
+cargo test --test demo_estate -- --ignored --nocapture
+```
+
+Those tests **fail rather than skip** when a service is missing: the entire point is that
+the assertions ran against something real. It is the only layer that catches a whole class
+of bug — every unit test and every scenario builds its own snapshot by hand, so a rule can
+read a metric key no collector emits and still pass everything. Two rules were doing
+exactly that when this estate was first pointed at them. See
+[`demo/README.md`](demo/README.md).
 
 ---
 
@@ -401,24 +569,60 @@ src-tauri/src/
                   plus promtext, the shared Prometheus text-format parser
   llm/            LlmProvider trait + anthropic, openai, ollama
   agent/          Tool catalog, dispatch, confirmation gate, the agent loop
+  scenarios/      library.json — the known-situation cases themselves
+
+  model.rs        Domain types, serialized straight to the frontend as camelCase
+  registry.rs     The service catalog — what the UI renders without knowing kinds
   state.rs        Shared state, log ring buffer, alert store + alert engine
-  changes.rs      Deploy detection by diffing each component's revision column
-  ingest.rs       Opt-in loopback listener for externally reported deploys
   supervisor.rs   Per-connection polling tasks
+  commands.rs     The Tauri command surface
   config.rs       Persisted connection profiles and assistant settings
   secrets.rs      OS keychain wrapper
-  commands.rs     The Tauri command surface
+  error.rs        AppError, serialized to a string across the Tauri boundary
+
+  history.rs      Rolling metric history and log bucketing — the data behind charts
+  changes.rs      Deploy detection by diffing each component's revision column
+  ingest.rs       Opt-in loopback listener for externally reported deploys
+  incidents.rs    Correlating alerts into incidents, without a model
+  topology.rs     The declared dependency graph, and what follows from it
+  patterns.rs     Log clustering with Drain — ten thousand lines to a few templates
+  stats.rs        KS test + volume heuristic for ranking which metrics moved
+  forecast.rs     Where a metric is heading, and when to refuse to say
+  promquery.rs    Long-range history read from a Prometheus you already run
+
+  configsource.rs Where a connection's config lives, and reading it safely
+  redact.rs       Removing secrets from text before it can leave the process
+  advisor.rs      Config read against telemetry, producing actionable findings
+  identify.rs     What a container is actually running, from its image name
+  runtime.rs      Declared placement, reconciled against root's own inference
+
+  journal.rs      The judgement record — what root said, and whether it was right
+  claims.rs       The assistant's findings, structured so they can be scored
+  backtest.rs     Today's rules replayed over yesterday's Prometheus data
+  scenarios.rs    Known situations with known right answers
+  team.rs         Shared workspaces, against a root server you run yourself
 
 src/
   App.tsx         Runtime: polling, event subscriptions, routing
+  nav.ts          The View union — every destination in the app
   types.ts        Mirrors the Rust serde representations
   api.ts          Typed invoke wrappers
   model.ts        Pure read model — entities, issues, groups, counts
+  incident.ts     Reading a backend incident — home state, and how one presents
+  explain.ts      What the operator clicked, and the sentence that explains it
   catalog.ts      Service descriptors and the colour rules
+  ranges.ts       What the metric ring can actually answer
+  format.ts       Value formatting
+  density.ts      The compact/comfortable switch
+  theme.ts        Dark/light/system
+  events.ts       Event subscription that no-ops outside Tauri
+  fixtures.ts     Development fixtures for preview.html, and the isTauri gate
   app.css         Tailwind v4 theme: tokens, density, base
-  shell/          Sidebar, ScreenHeader, CommandPalette, Toasts, ConfirmDialog
-  screens/        One file per destination
+  shell/          Sidebar, ScreenHeader, CommandPalette, AssistantDock,
+                  ComponentDialog, ConfirmDialog, Splash, Toasts
+  screens/        One file per destination, plus Onboarding and SignIn gates
   ui/             Primitives, charts, icons, generic section table
+  icons/marks/    Brand marks, auto-discovered per kind
 ```
 
 The backend owns everything stateful; the UI is a view over it, driven by Tauri events

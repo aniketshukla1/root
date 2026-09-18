@@ -250,6 +250,34 @@ pub struct CorrelationLane {
     pub events: Vec<LogEvent>,
     /// Metrics that moved meaningfully during the window.
     pub movements: Vec<MetricMovement>,
+    /// Traces that spent time in *this* connection during the window.
+    ///
+    /// A trace is not one service's, which is the whole reason it explains
+    /// anything: the spans of one request land on the lane of whichever
+    /// connection each service maps to, so a slow checkout shows its database
+    /// time on the database's lane at the same instant as its own.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub traces: Vec<LaneTrace>,
+}
+
+/// One trace's presence on one lane.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaneTrace {
+    pub trace_id: String,
+    /// What the whole request was, named by its root span.
+    pub root_service: String,
+    pub root_name: String,
+    pub started_at: chrono::DateTime<chrono::Utc>,
+    /// End to end, across every service.
+    pub duration_ms: f64,
+    /// Time this connection's own service spent, excluding what it was waiting
+    /// on downstream. The number that says whether this lane is the cause or a
+    /// bystander.
+    pub self_ms: f64,
+    /// Spans this connection contributed.
+    pub span_count: usize,
+    pub error_count: usize,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -273,8 +301,145 @@ pub struct Correlation {
     pub alerts: Vec<Alert>,
 }
 
+/// Ask every connection for traces in the window, and put each trace's time on
+/// the lane of the service that spent it.
+///
+/// Two things make this worth the requests it costs.
+///
+/// A trace crosses services, so the interesting fact is never "this store holds
+/// a trace" — it is *which* of the connections already on screen that trace was
+/// inside, and for how long. `ServiceTime::self_ms` is the number that
+/// separates a cause from a bystander: a span that took 900ms because its child
+/// took 890 did not spend 900.
+///
+/// And nothing here knows what a gigapipe is. Every collector is asked; the ones
+/// with no traces refuse and are skipped, so a collector that grows a trace
+/// store later lands on these lanes without a line changing in this function.
+async fn attach_traces(
+    state: &Arc<AppState>,
+    lanes: &mut [CorrelationLane],
+    from: chrono::DateTime<chrono::Utc>,
+    to: chrono::DateTime<chrono::Utc>,
+) {
+    // Resolve a span's service name to a lane. Connections are matched by name
+    // first, then by the runtime an operator declared for them — the same
+    // declaration `runtime.rs` reconciles against root's own inference — so a
+    // service called `checkout-api` finds the connection watching it even when
+    // the connection is named something else.
+    let runtimes: Vec<(usize, String, String)> = lanes
+        .iter()
+        .enumerate()
+        .map(|(i, lane)| (i, lane.profile_name.to_lowercase(), lane.profile_id.clone()))
+        .collect();
+    let lane_for = |service: &str| -> Option<usize> {
+        let service = service.trim().to_lowercase();
+        if service.is_empty() {
+            return None;
+        }
+        runtimes
+            .iter()
+            .find(|(_, name, id)| *name == service || *id == service)
+            .map(|(i, _, _)| *i)
+    };
+
+    let mut found: Vec<(usize, LaneTrace)> = Vec::new();
+
+    for index in 0..lanes.len() {
+        let profile_id = lanes[index].profile_id.clone();
+        let Ok(collector) = state.collector(&profile_id).await else {
+            continue;
+        };
+
+        // A collector without traces refuses, and refusing is not a failure.
+        let Ok(value) = collector
+            .detail(&crate::collectors::DetailQuery::TracesInWindow {
+                from,
+                to,
+                limit: TRACE_SEARCH_CAP,
+            })
+            .await
+        else {
+            continue;
+        };
+        let Ok(mut summaries) =
+            serde_json::from_value::<Vec<crate::traces::TraceSummary>>(value)
+        else {
+            continue;
+        };
+
+        // Worst first, so the few that get assembled are the ones worth the
+        // request: anything with errors, then the slowest.
+        summaries.sort_by(|a, b| {
+            b.error_count
+                .unwrap_or(0)
+                .cmp(&a.error_count.unwrap_or(0))
+                .then_with(|| {
+                    b.duration_ms
+                        .partial_cmp(&a.duration_ms)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+        });
+        summaries.truncate(TRACE_DETAIL_CAP);
+
+        for summary in summaries {
+            let Ok(assembled) = collector
+                .detail(&crate::collectors::DetailQuery::Trace {
+                    trace_id: summary.trace_id.clone(),
+                })
+                .await
+            else {
+                continue;
+            };
+            let Ok(trace) = serde_json::from_value::<crate::traces::Trace>(assembled) else {
+                continue;
+            };
+
+            for service in &trace.services {
+                // A service root does not recognise lands on the store's own
+                // lane, which is where the trace was actually read from. It is
+                // still evidence, and dropping it would hide a whole tier.
+                let lane = lane_for(&service.service).unwrap_or(index);
+                found.push((
+                    lane,
+                    LaneTrace {
+                        trace_id: trace.trace_id.clone(),
+                        root_service: trace.root_service.clone(),
+                        root_name: trace.root_name.clone(),
+                        started_at: trace.started_at,
+                        duration_ms: trace.duration_ms,
+                        self_ms: service.self_ms,
+                        span_count: service.span_count,
+                        error_count: service.error_count,
+                    },
+                ));
+            }
+        }
+    }
+
+    for (lane, trace) in found {
+        lanes[lane].traces.push(trace);
+    }
+    for lane in lanes.iter_mut() {
+        // Most time spent here first — the lane's own claim on the incident.
+        lane.traces.sort_by(|a, b| {
+            b.error_count
+                .cmp(&a.error_count)
+                .then_with(|| b.self_ms.partial_cmp(&a.self_ms).unwrap_or(std::cmp::Ordering::Equal))
+        });
+        lane.traces.truncate(LANE_TRACE_CAP);
+    }
+}
+
 /// Lines per lane. Enough to see the shape; the log view has the rest.
 const LANE_EVENT_CAP: usize = 12;
+/// Traces searched per store inside the correlation window.
+const TRACE_SEARCH_CAP: usize = 40;
+/// Traces assembled in full. A search answers with summaries, and only an
+/// assembled trace knows which services its time went to — so the worst few are
+/// fetched and the rest are left as they came.
+const TRACE_DETAIL_CAP: usize = 5;
+/// Traces shown on any one lane.
+const LANE_TRACE_CAP: usize = 6;
 /// A metric has to move this much to be worth naming.
 const MOVEMENT_THRESHOLD_PCT: f64 = 15.0;
 
@@ -357,13 +522,10 @@ pub async fn correlate(
             })
             .collect();
 
-        // A lane with nothing in it is still worth showing — "elasticsearch
-        // logged nothing" is evidence too. But drop it when the connection
-        // contributed neither events nor movement anywhere in the window.
-        if total == 0 && movements.is_empty() {
-            continue;
-        }
-
+        // Emptiness is decided after traces are attached, not here: a service
+        // that logged nothing and moved no metric can still have spent 900ms
+        // inside a trace, and that is exactly the lane an operator needs to
+        // see. Dropping it now would make traces decorative.
         lanes.push(CorrelationLane {
             profile_id,
             profile_name,
@@ -372,13 +534,38 @@ pub async fn correlate(
             error_count,
             events: lane_events,
             movements,
+            // Filled below, once every store has been asked.
+            traces: Vec::new(),
         });
     }
 
-    // Most likely culprit first: errors, then volume, then movement.
+    attach_traces(&state, &mut lanes, from, to).await;
+
+    // Now that every source has reported, drop the lanes that carry nothing.
+    // "elasticsearch logged nothing" is evidence, but only for a connection
+    // that was involved at all.
+    lanes.retain(|lane| lane.total > 0 || !lane.movements.is_empty() || !lane.traces.is_empty());
+
+
+    // Most likely culprit first: errors — from logs or from spans — then the
+    // time a lane actually spent inside a trace, then volume and movement.
+    // Self time ranks above volume deliberately: a service that logged twice
+    // and held the request for 900ms is the cause, and one that logged two
+    // hundred lines while waiting on it is not.
+    let trace_errors = |lane: &CorrelationLane| -> usize {
+        lane.traces.iter().map(|t| t.error_count).sum()
+    };
+    let self_ms = |lane: &CorrelationLane| -> f64 {
+        lane.traces.iter().map(|t| t.self_ms).sum()
+    };
     lanes.sort_by(|a, b| {
-        b.error_count
-            .cmp(&a.error_count)
+        (b.error_count + trace_errors(b))
+            .cmp(&(a.error_count + trace_errors(a)))
+            .then_with(|| {
+                self_ms(b)
+                    .partial_cmp(&self_ms(a))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .then_with(|| b.total.cmp(&a.total))
             .then_with(|| b.movements.len().cmp(&a.movements.len()))
     });

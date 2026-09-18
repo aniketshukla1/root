@@ -682,6 +682,21 @@ impl GigapipeCollector {
     async fn search_traces(&self) -> Result<Vec<TraceSummary>> {
         let end = Utc::now();
         let start = end - chrono::Duration::minutes(self.trace_lookback_minutes);
+        self.search_traces_between(start, end, self.trace_limit).await
+    }
+
+    /// The same search over an arbitrary window.
+    ///
+    /// The polling path asks for "the last N minutes"; a correlation asks for
+    /// the window the operator clicked. One implementation, two callers, so a
+    /// trace that shows on the dashboard and a trace that shows on a lane are
+    /// found the same way.
+    async fn search_traces_between(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        limit: usize,
+    ) -> Result<Vec<TraceSummary>> {
 
         let url = format!("{}/api/search", self.base);
         let response = self
@@ -690,7 +705,7 @@ impl GigapipeCollector {
                 ("q", self.trace_query.clone()),
                 ("start", start.timestamp().to_string()),
                 ("end", end.timestamp().to_string()),
-                ("limit", self.trace_limit.to_string()),
+                ("limit", limit.to_string()),
             ])
             .send()
             .await
@@ -1407,6 +1422,19 @@ impl Collector for GigapipeCollector {
                 })
             }
             super::DetailQuery::GigapipeRead(read) => self.read(read).await,
+            super::DetailQuery::TracesInWindow { from, to, limit } => {
+                // No TraceQL selector means this connection lists no traces at
+                // all, which is the honest empty answer rather than an error:
+                // the store is reachable, the operator just has not said what
+                // to look for.
+                if self.trace_query.is_empty() {
+                    return Ok(serde_json::Value::Array(Vec::new()));
+                }
+                let traces = self.search_traces_between(*from, *to, *limit).await?;
+                serde_json::to_value(traces).map_err(|e| {
+                    AppError::Collector(format!("could not serialize the traces: {e}"))
+                })
+            }
             _ => Err(AppError::UnsupportedAction(
                 ServiceKind::Gigapipe.label().to_string(),
             )),

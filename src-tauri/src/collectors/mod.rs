@@ -144,6 +144,21 @@ pub enum DetailQuery {
     Trace { trace_id: String },
     /// One of gigapipe's read APIs, named rather than composed.
     GigapipeRead(GigapipeRead),
+    /// Traces that overlap a window, as summaries.
+    ///
+    /// Asked of *every* collector during a correlation, and answered only by
+    /// those that hold traces. That is the point: `correlate` must not learn
+    /// which service kinds have spans, for the same reason the frontend does
+    /// not — a collector that grows a trace store later answers this and
+    /// appears on the lanes with no edit anywhere else.
+    ///
+    /// A collector without traces returns [`AppError::UnsupportedAction`] and
+    /// the caller moves on.
+    TracesInWindow {
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        limit: usize,
+    },
 }
 
 /// The read APIs a gigapipe connection exposes, as a closed set.

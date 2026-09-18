@@ -37,6 +37,7 @@ pub mod incidents;
 pub mod journal;
 pub mod ingest;
 pub mod llm;
+pub mod mcp;
 pub mod model;
 pub mod patterns;
 pub mod promquery;

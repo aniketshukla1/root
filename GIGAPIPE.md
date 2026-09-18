@@ -249,6 +249,14 @@ status code, because the reason is the only part an operator can act on.
 The prefix is load-bearing: root monitors Prometheus directly as well, so an unprefixed
 `prometheus_query` would not say which connection it meant.
 
+**And the same surface is served outward.** `src/mcp.rs` plus the `root-mcp` binary make
+root an MCP server over stdio, advertising these nine under `gigapipe-mcp`'s own names —
+the prefix stripped, since nothing else is served there to be ambiguous with. It reads
+`GIGAPIPE_HOST` / `USERNAME` / `PASSWORD` exactly as that server does, so a client
+configuration works with the binary swapped; with none set it serves root's own
+configured gigapipe connections and their keychain secrets instead. Only non-mutating
+tools are ever advertised, because a pipe has no confirmation dialog.
+
 `tests/gigapipe_read.rs` pins all nine to the wire under wiremock. The surface is
 entirely URLs, and `/label` against `/labels`, or a missing `/json`, fails by returning
 nothing rather than by erroring — which looks exactly like a store with nothing in it.

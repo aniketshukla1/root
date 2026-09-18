@@ -408,6 +408,52 @@ are read-only, so they stay available in **Read-only** mode.
 The `gigapipe_` prefix matters: root monitors Prometheus directly too, and an unprefixed
 `prometheus_query` would not say which connection it meant.
 
+---
+
+## root as an MCP server
+
+The nine store reads above are also served **outward**, over the Model Context
+Protocol, by a second binary. Anything that speaks MCP — another assistant, an editor,
+an agent — can read the warehouse through root.
+
+```bash
+cargo build --bin root-mcp        # target/debug/root-mcp
+```
+
+```json
+{ "mcpServers": { "root": { "command": "/path/to/root-mcp" } } }
+```
+
+**It is a drop-in for `gigapipe-mcp`.** The tool names are that server's own —
+`prometheus_query`, `loki_labels`, `tempo_tag_values` and the rest, without root's
+`gigapipe_` prefix, which exists only because root also monitors Prometheus directly and
+would otherwise be ambiguous about which connection a call meant. `GIGAPIPE_HOST`,
+`GIGAPIPE_USERNAME` and `GIGAPIPE_PASSWORD` are read the same way, including the same
+rule that a host with no scheme gets `http://`.
+
+With no `GIGAPIPE_HOST` set it reads root's own configuration instead and serves the
+gigapipe connections already set up in the app, with their secrets from the OS keychain
+— so there is no second place to configure a host, and no password in a client's config
+file. A `connection` argument picks between them when more than one exists.
+
+Three things are deliberate:
+
+- **stdio, not a port.** MCP clients spawn their servers, so this needs no listening
+  socket, no token, and no running copy of root. [Deploy ingest](#deploy-ingest) explains
+  what opening a port in an app holding infrastructure credentials costs; this has none
+  of that surface.
+- **Read-only, structurally.** Only tools root marks non-mutating are served. The
+  mutating ones stop at a confirmation dialog for a human, and a pipe has no dialog —
+  so rather than invent a weaker approval, they are not offered. A test asserts none of
+  them can ever appear.
+- **The tool list is derived, not rewritten.** It comes from root's own catalog with the
+  prefix stripped, so the two surfaces cannot drift apart.
+
+`tests/mcp_server.rs` spawns the real binary and drives it over a pipe, because the
+failure that matters most cannot be unit tested: one stray line on stdout — a
+`println!`, a log that went to the wrong stream, a response missing its newline — turns
+every request into a parse error whose message names JSON rather than the cause.
+
 ### One reading of one component
 
 Hovering a failing cell in the component matrix asks a different question from the
@@ -518,13 +564,13 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-466 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+480 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
 detection, component history admission and eviction, log filtering and stream separation,
 section renderability, conversation trimming, the per-provider message translation, and
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
 grouping, config rules, and the journal.
 
-Nine integration suites sit in `src-tauri/tests/`, each against something real:
+Ten integration suites sit in `src-tauri/tests/`, each against something real:
 
 | Suite | Against | Why it is not a unit test |
 | --- | --- | --- |
@@ -535,6 +581,7 @@ Nine integration suites sit in `src-tauri/tests/`, each against something real:
 | `kafka.rs` | a real broker | consumer lag needs a per-group offset fetch that only exists over the wire, and a group that never committed looks identical to one fully caught up |
 | `kubernetes.rs` | a real cluster | whether the API shapes we ask for exist on a live server; a renamed field is a silently-empty section, never a compile error |
 | `promquery.rs` | wiremock always, a real Prometheus when asked | wiremock proves the parser handles documented shapes; a server proves those shapes are what it sends |
+| `mcp_server.rs` | the real `root-mcp` binary, spawned over a pipe | a server can pass every handler test and still be unusable: one stray line on stdout makes every request a parse error on the client side |
 | `gigapipe_read.rs` | wiremock, always | the nine store reads are entirely URLs, and `/label` against `/labels` or a missing `/json` fails by returning nothing — which looks exactly like a store holding nothing |
 | `demo_estate.rs` | `demo/compose.yml`, wrong on purpose | the only layer that proves the pieces *meet* — see [The demo estate](#the-demo-estate) |
 
@@ -637,6 +684,7 @@ src-tauri/src/
                   (docker serves Podman, database serves PostgreSQL and MySQL),
                   plus promtext, the shared Prometheus text-format parser
   llm/            LlmProvider trait + anthropic, openai, ollama
+  bin/root-mcp.rs The MCP server binary — stdio, spawned by its client
   agent/          Tool catalog, dispatch, confirmation gate, the agent loop
   scenarios/      library.json — the known-situation cases themselves
 
@@ -645,6 +693,7 @@ src-tauri/src/
   state.rs        Shared state, log ring buffer, alert store + alert engine
   supervisor.rs   Per-connection polling tasks
   commands.rs     The Tauri command surface
+  mcp.rs          root as an MCP server: JSON-RPC over stdio, read-only
   config.rs       Persisted connection profiles and assistant settings
   secrets.rs      OS keychain wrapper
   error.rs        AppError, serialized to a string across the Tauri boundary

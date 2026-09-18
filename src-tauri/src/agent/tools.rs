@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 
-use crate::collectors::{CollectorAction, DetailQuery};
+use crate::collectors::{CollectorAction, DetailQuery, GigapipeRead};
 use crate::config::AgentMode;
 use crate::error::{AppError, Result};
 use crate::llm::ToolSpec;
@@ -635,6 +635,70 @@ fn gigapipe_tools() -> Vec<ToolDef> {
     ]
 }
 
+/// The prefix every gigapipe store read carries. Also what the MCP server
+/// strips to recover the tool names `gigapipe-mcp` itself uses.
+pub const GIGAPIPE_PREFIX: &str = "gigapipe_";
+
+/// Turn one `gigapipe_*` call's arguments into the read it names.
+///
+/// Shared rather than inlined into the dispatch because root serves this same
+/// surface twice — to its own assistant, and over MCP to other clients (see
+/// [`crate::mcp`]). Two parsers would be two chances to disagree about what
+/// `limit` means.
+///
+/// Empty and whitespace-only values count as absent. A model filling in a
+/// field it was told is optional should produce the same request as one that
+/// left it alone.
+pub fn gigapipe_read_from_args(name: &str, args: &serde_json::Value) -> Result<GigapipeRead> {
+    let text = |key: &str| {
+        args.get(key)
+            .and_then(|v| v.as_str())
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    let required =
+        |key: &str| text(key).ok_or_else(|| AppError::Collector(format!("`{key}` is required")));
+    let (start, end) = (text("start"), text("end"));
+
+    let bare = name.strip_prefix(GIGAPIPE_PREFIX).unwrap_or(name);
+    Ok(match bare {
+        "prometheus_query" => GigapipeRead::PrometheusQuery {
+            query: required("query")?,
+            start,
+            end,
+            step: text("step"),
+        },
+        "prometheus_labels" => GigapipeRead::PrometheusLabels { start, end },
+        "prometheus_label_values" => GigapipeRead::PrometheusLabelValues {
+            label: required("label")?,
+            start,
+            end,
+        },
+        "loki_query" => GigapipeRead::LokiQuery {
+            query: required("query")?,
+            start,
+            end,
+            // Passed through as written: the store takes a bare integer, and
+            // re-typing it here would only add a second parser to disagree.
+            limit: text("limit"),
+        },
+        "loki_labels" => GigapipeRead::LokiLabels { start, end },
+        "loki_label_values" => GigapipeRead::LokiLabelValues {
+            label: required("label")?,
+            start,
+            end,
+        },
+        "tempo_query" => GigapipeRead::TempoTrace {
+            trace_id: required("trace_id")?,
+        },
+        "tempo_tags" => GigapipeRead::TempoTags,
+        "tempo_tag_values" => GigapipeRead::TempoTagValues {
+            tag: required("tag")?,
+        },
+        other => return Err(AppError::Collector(format!("unknown tool `{other}`"))),
+    })
+}
+
 pub fn find(mode: AgentMode, name: &str) -> Option<ToolDef> {
     catalog(mode).into_iter().find(|t| t.spec.name == name)
 }
@@ -1143,60 +1207,9 @@ pub async fn run_read_only(
                 .await?
         }
 
-        name if name.starts_with("gigapipe_") => {
-            use crate::collectors::GigapipeRead as R;
-
+        name if name.starts_with(GIGAPIPE_PREFIX) => {
             let id = resolve_connection(state, args).await?;
-            let text = |key: &str| {
-                args.get(key)
-                    .and_then(|v| v.as_str())
-                    .map(|v| v.trim().to_string())
-                    .filter(|v| !v.is_empty())
-            };
-            let required = |key: &str| {
-                text(key).ok_or_else(|| AppError::Collector(format!("`{key}` is required")))
-            };
-            let (start, end) = (text("start"), text("end"));
-
-            let read = match name {
-                "gigapipe_prometheus_query" => R::PrometheusQuery {
-                    query: required("query")?,
-                    start,
-                    end,
-                    step: text("step"),
-                },
-                "gigapipe_prometheus_labels" => R::PrometheusLabels { start, end },
-                "gigapipe_prometheus_label_values" => R::PrometheusLabelValues {
-                    label: required("label")?,
-                    start,
-                    end,
-                },
-                "gigapipe_loki_query" => R::LokiQuery {
-                    query: required("query")?,
-                    start,
-                    end,
-                    // Sent as written: the store takes a bare integer, and
-                    // re-typing it here would only add a second parser.
-                    limit: text("limit"),
-                },
-                "gigapipe_loki_labels" => R::LokiLabels { start, end },
-                "gigapipe_loki_label_values" => R::LokiLabelValues {
-                    label: required("label")?,
-                    start,
-                    end,
-                },
-                "gigapipe_tempo_query" => R::TempoTrace {
-                    trace_id: required("trace_id")?,
-                },
-                "gigapipe_tempo_tags" => R::TempoTags,
-                "gigapipe_tempo_tag_values" => R::TempoTagValues {
-                    tag: required("tag")?,
-                },
-                other => {
-                    return Err(AppError::Collector(format!("unknown tool `{other}`")));
-                }
-            };
-
+            let read = gigapipe_read_from_args(name, args)?;
             state
                 .collector(&id)
                 .await?

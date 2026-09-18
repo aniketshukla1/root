@@ -345,13 +345,50 @@ collection cycle and reports what came back.
 | Type | Endpoint | Credential |
 | --- | --- | --- |
 | Docker | empty for the local socket, or `tcp://host:2375` | none |
-| Jenkins | `https://jenkins.internal` | username + API token |
-| Elasticsearch | `https://es.internal:9200` | username + password, or leave the username blank to send the secret as an API key |
+| Podman | empty for the local socket — rootless, then rootful, then a `podman machine` on macOS | none |
+| Kubernetes | empty for the current context, or a context name such as `docker-desktop` | none; kubeconfig already carries it |
+| Linux host | `web-1.internal` — a node_exporter listener | optional username + password |
+| NFS exports | `build-1.internal` — node_exporter on a client that mounts the exports | optional username + password |
+| HTTP endpoint | `https://api.internal/health` | optional password or bearer token |
+| Nginx | `http://nginx.internal/nginx_status` — `stub_status` is off by default | optional username + password |
+| Apache httpd | `http://apache.internal/server-status?auto` | optional username + password |
+| Apache Tomcat | `http://tomcat.internal:8080` — root appends `/manager/jmxproxy` itself | username + password holding the `manager-jmx` role |
+| HAProxy | `http://haproxy.internal:8404/stats` | optional username + password |
+| Traefik | `http://traefik.internal:8080` | optional username + password |
 | PostgreSQL | `postgres://host:5432/dbname` | username + password |
 | MySQL | `mysql://host:3306/dbname` | username + password |
+| MongoDB | `mongodb://mongo.internal:27017` | optional username + password |
+| ClickHouse | `http://clickhouse.internal:8123` — the HTTP port, not the native 9000 | username + password |
+| Redis | `redis://cache.internal:6379` | password; username only for Redis 6+ ACL users |
+| Memcached | `cache.internal:11211` — port 11211 assumed if omitted | none |
+| Elasticsearch | `https://es.internal:9200` | username + password, or leave the username blank to send the secret as an API key |
+| Kafka | `broker1:9092,broker2:9092` — comma-separated, no scheme | none for PLAINTEXT; SASL username + password once the security protocol is a SASL one |
+| RabbitMQ | `http://rabbit.internal:15672` — the management plugin's port, not AMQP | username + password |
+| NATS | `http://nats.internal:8222` — the monitoring port | optional username + password |
+| ZooKeeper | `zk-1.internal:2181` | none |
+| Consul | `http://consul.internal:8500` — any agent answers for the whole cluster | optional ACL token |
+| etcd | `http://etcd-1.internal:2379` — a client port, read via `/metrics` | optional username + password |
+| Jenkins | `https://jenkins.internal` | username + API token |
+| Prometheus | `http://prometheus.internal:9090` | optional password or bearer token |
+| AWS | empty for real AWS, or a URL for an S3/SQS-compatible service | access key id + secret, or leave both empty to use the default credential chain |
 
-For Elasticsearch, set a **log index pattern** (e.g. `logs-*`) to tail documents; leave it
-empty to monitor cluster health only.
+Every type also takes **max log lines per poll**, and every TLS one takes **skip TLS
+verification**, both under Advanced. Beyond those, a few options change what a connection
+actually watches:
+
+- **Elasticsearch** — set a **log index pattern** (e.g. `logs-*`) to tail documents; leave
+  it empty to monitor cluster health only.
+- **Kubernetes** — **namespace** defaults to all of them, and **kubeconfig path** is only
+  needed when the file is not in the default location.
+- **AWS** — **region** defaults to `us-east-1`, and one connection covers one region.
+- **Jenkins** — **job filter** narrows to jobs containing a string; empty watches every job
+  the credential can see.
+- **NFS exports** and **RabbitMQ** — **path prefix** and **virtual host** narrow a busy
+  host to the exports or vhost you care about.
+
+Warning thresholds (disk fill, queue depth, eviction rate, consumer lag, and the rest)
+are per-connection options on the collectors that have them, so one noisy host does not
+have to set the bar for the estate.
 
 ---
 
@@ -359,7 +396,9 @@ empty to monitor cluster health only.
 
 ```
 src-tauri/src/
-  collectors/     Collector trait + docker, jenkins, elasticsearch, database
+  collectors/     Collector trait + 25 modules covering all 27 service kinds
+                  (docker serves Podman, database serves PostgreSQL and MySQL),
+                  plus promtext, the shared Prometheus text-format parser
   llm/            LlmProvider trait + anthropic, openai, ollama
   agent/          Tool catalog, dispatch, confirmation gate, the agent loop
   state.rs        Shared state, log ring buffer, alert store + alert engine

@@ -813,15 +813,11 @@ pub enum ChangeKind {
 /// leaves a marker, so the two must not read identically.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ChangeSource {
+    #[default]
     Observed,
     Reported,
-}
-
-impl Default for ChangeSource {
-    fn default() -> Self {
-        ChangeSource::Observed
-    }
 }
 
 /// A moment when something about the infrastructure changed, derived by diffing

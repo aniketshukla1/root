@@ -321,7 +321,7 @@ pub async fn correlate(
             .filter(|e| e.profile_id == profile_id && e.timestamp >= from && e.timestamp <= to)
             .cloned()
             .collect();
-        lane_events.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        lane_events.sort_by_key(|e| std::cmp::Reverse(e.timestamp));
 
         let error_count = lane_events
             .iter()
@@ -882,7 +882,7 @@ pub async fn get_findings(
         }
     }
 
-    out.sort_by(|a, b| b.severity.cmp(&a.severity));
+    out.sort_by_key(|f| std::cmp::Reverse(f.severity));
     Ok(out)
 }
 

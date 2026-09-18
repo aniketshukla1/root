@@ -727,7 +727,7 @@ mod tests {
     /// makes a finished-and-unhappy queue read as behind.
     #[test]
     fn dead_letter_queues_are_not_counted_as_backlog() {
-        let queues = vec![
+        let queues = [
             queue("orders", 10.0, 5.0, true),
             queue("orders-dlq", 7.0, 0.0, false),
         ];

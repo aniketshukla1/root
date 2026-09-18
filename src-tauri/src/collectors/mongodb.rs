@@ -486,7 +486,7 @@ impl MongoCollector {
                 let description = op
                     .get_document("command")
                     .ok()
-                    .map(|c| summarize_command(c))
+                    .map(summarize_command)
                     .unwrap_or_else(|| op_type.clone());
 
                 Some(LongOp {

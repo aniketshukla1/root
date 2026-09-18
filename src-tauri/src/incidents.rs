@@ -162,7 +162,7 @@ pub fn correlate(
 
     // Several conditions on one connection are one incident about that
     // connection. This needs no rule beyond keying by profile.
-    for (profile_id, _) in onset.iter() {
+    for profile_id in onset.keys() {
         if active.iter().filter(|a| a.profile_id == *profile_id).count() > 1 {
             reasons.push(GroupingReason::SameConnection {
                 profile_id: (*profile_id).to_string(),

@@ -330,7 +330,7 @@ impl Collector for DockerCollector {
                     ports
                         .iter()
                         .filter(|p| p.public_port.is_some())
-                        .filter_map(|p| u16::try_from(p.private_port).ok())
+                        .map(|p| p.private_port)
                         .collect()
                 })
                 .unwrap_or_default();
@@ -341,11 +341,7 @@ impl Collector for DockerCollector {
                 .ports
                 .as_ref()
                 .map(|ports| {
-                    let mut seen: Vec<u16> = ports
-                        .iter()
-                        .filter_map(|p| p.public_port)
-                        .filter_map(|p| u16::try_from(p).ok())
-                        .collect();
+                    let mut seen: Vec<u16> = ports.iter().filter_map(|p| p.public_port).collect();
                     // Docker reports one entry per address family, so the same
                     // port arrives twice.
                     seen.sort_unstable();

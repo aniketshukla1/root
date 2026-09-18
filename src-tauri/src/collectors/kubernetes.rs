@@ -793,6 +793,38 @@ fn event_time(event: &Event) -> Option<DateTime<Utc>> {
         })
 }
 
+/// Requests and limits per container, which is the whole of what sizing means
+/// here. A container with neither is scheduled as best-effort and is the first
+/// thing evicted when a node runs short — worth seeing as an explicit `null`
+/// rather than an absent key.
+fn container_resources(containers: &[k8s_openapi::api::core::v1::Container]) -> serde_json::Value {
+    serde_json::Value::Object(
+        containers
+            .iter()
+            .map(|c| {
+                let resources = c.resources.as_ref();
+                let quantity = |side: Option<&std::collections::BTreeMap<String, k8s_openapi::apimachinery::pkg::api::resource::Quantity>>, key: &str| {
+                    side.and_then(|m| m.get(key)).map(|q| q.0.clone())
+                };
+                (
+                    c.name.clone(),
+                    serde_json::json!({
+                        "image": c.image,
+                        "requests": {
+                            "cpu": quantity(resources.and_then(|r| r.requests.as_ref()), "cpu"),
+                            "memory": quantity(resources.and_then(|r| r.requests.as_ref()), "memory"),
+                        },
+                        "limits": {
+                            "cpu": quantity(resources.and_then(|r| r.limits.as_ref()), "cpu"),
+                            "memory": quantity(resources.and_then(|r| r.limits.as_ref()), "memory"),
+                        },
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -966,36 +998,4 @@ mod tests {
     fn fully_ready_workload_is_healthy() {
         assert_eq!(workload_state(3, 3, 3).health, Health::Healthy);
     }
-}
-
-/// Requests and limits per container, which is the whole of what sizing means
-/// here. A container with neither is scheduled as best-effort and is the first
-/// thing evicted when a node runs short — worth seeing as an explicit `null`
-/// rather than an absent key.
-fn container_resources(containers: &[k8s_openapi::api::core::v1::Container]) -> serde_json::Value {
-    serde_json::Value::Object(
-        containers
-            .iter()
-            .map(|c| {
-                let resources = c.resources.as_ref();
-                let quantity = |side: Option<&std::collections::BTreeMap<String, k8s_openapi::apimachinery::pkg::api::resource::Quantity>>, key: &str| {
-                    side.and_then(|m| m.get(key)).map(|q| q.0.clone())
-                };
-                (
-                    c.name.clone(),
-                    serde_json::json!({
-                        "image": c.image,
-                        "requests": {
-                            "cpu": quantity(resources.and_then(|r| r.requests.as_ref()), "cpu"),
-                            "memory": quantity(resources.and_then(|r| r.requests.as_ref()), "memory"),
-                        },
-                        "limits": {
-                            "cpu": quantity(resources.and_then(|r| r.limits.as_ref()), "cpu"),
-                            "memory": quantity(resources.and_then(|r| r.limits.as_ref()), "memory"),
-                        },
-                    }),
-                )
-            })
-            .collect::<serde_json::Map<_, _>>(),
-    )
 }

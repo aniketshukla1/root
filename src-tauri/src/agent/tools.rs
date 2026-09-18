@@ -739,7 +739,7 @@ pub async fn run_read_only(
                 let series = state.history.read().await.series(&profile.id, None);
                 found.extend(crate::advisor::findings(&snapshot, &documents, &series));
             }
-            found.sort_by(|a, b| b.severity.cmp(&a.severity));
+            found.sort_by_key(|f| std::cmp::Reverse(f.severity));
 
             if found.is_empty() {
                 json!({

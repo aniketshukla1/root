@@ -89,13 +89,7 @@ pub(crate) fn number(value: &serde_json::Value) -> f64 {
     match value {
         serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0),
         serde_json::Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
-        serde_json::Value::Bool(b) => {
-            if *b {
-                1.0
-            } else {
-                0.0
-            }
-        }
+        serde_json::Value::Bool(true) => 1.0,
         _ => 0.0,
     }
 }

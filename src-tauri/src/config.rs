@@ -207,19 +207,15 @@ impl LlmProviderKind {
 /// How much authority the assistant has over the infrastructure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AgentMode {
     /// Diagnose only. Remediation is surfaced as a command for the operator to
     /// run; the agent has no mutating tools at all.
+    #[default]
     ReadOnly,
     /// Diagnose, plus mutating tools that each require explicit approval in the
     /// UI before they execute.
     ConfirmActions,
-}
-
-impl Default for AgentMode {
-    fn default() -> Self {
-        AgentMode::ReadOnly
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -364,7 +364,7 @@ pub fn findings(
         _ => {}
     }
 
-    out.sort_by(|a, b| b.severity.cmp(&a.severity));
+    out.sort_by_key(|f| std::cmp::Reverse(f.severity));
     out
 }
 

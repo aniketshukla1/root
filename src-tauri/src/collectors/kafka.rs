@@ -373,7 +373,7 @@ impl Collector for KafkaCollector {
                     )
             })
             .collect();
-        group_rows.sort_by(|a, b| b.health.cmp(&a.health));
+        group_rows.sort_by_key(|r| std::cmp::Reverse(r.health));
 
         // -------------------------------------------------------- topics
         let mut topic_rows: Vec<Row> = facts
@@ -399,7 +399,7 @@ impl Collector for KafkaCollector {
                     .cell("messages", CellValue::number(topic.messages as f64))
             })
             .collect();
-        topic_rows.sort_by(|a, b| b.health.cmp(&a.health));
+        topic_rows.sort_by_key(|r| std::cmp::Reverse(r.health));
         topic_rows.truncate(MAX_TOPIC_ROWS);
 
         // ------------------------------------------------------- brokers

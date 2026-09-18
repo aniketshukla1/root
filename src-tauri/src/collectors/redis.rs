@@ -103,7 +103,7 @@ fn parse_keyspace(info: &HashMap<String, String>) -> Vec<(String, f64, f64)> {
     let mut rows: Vec<(String, f64, f64)> = info
         .iter()
         .filter(|(k, _)| k.starts_with("db") && k[2..].chars().all(|c| c.is_ascii_digit()))
-        .filter_map(|(db, spec)| {
+        .map(|(db, spec)| {
             let mut keys = 0.0;
             let mut expires = 0.0;
             for part in spec.split(',') {
@@ -113,7 +113,7 @@ fn parse_keyspace(info: &HashMap<String, String>) -> Vec<(String, f64, f64)> {
                     _ => {}
                 }
             }
-            Some((db.clone(), keys, expires))
+            (db.clone(), keys, expires)
         })
         .collect();
     rows.sort_by(|a, b| a.0.cmp(&b.0));

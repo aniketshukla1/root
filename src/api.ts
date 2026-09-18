@@ -60,6 +60,12 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
     fixtures.correlation((at as string) ?? new Date().toISOString(), (windowSecs as number) ?? 120),
   pending_confirmations: () => [],
   get_ingest_settings: () => ({ enabled: false, port: 7717, hasToken: false }),
+  get_prediction_settings: () => ({ enabled: false, intervalMinutes: 30, assistantReady: true }),
+  preview_prediction_evidence: () => [
+    "CONNECTIONS",
+    "- orders-db (PostgreSQL) health=Degraded — 23 of 25 connections in use",
+  ],
+  run_prediction: () => ({ findings: [], because: [], grounds: [], model: "" }),
   get_mcp_settings: () => ({
     enabled: false,
     port: 7718,
@@ -147,6 +153,8 @@ import type {
   Incident,
   IngestStatus,
   McpStatus,
+  PredictionReport,
+  PredictionStatus,
   LlmSettings,
   LogEvent,
   LogFilter,
@@ -319,6 +327,17 @@ export const api = {
 
   /** Returns the new token once. It cannot be read back afterwards. */
   rotateMcpToken: () => invoke<string>("rotate_mcp_token"),
+
+  getPredictionSettings: () => invoke<PredictionStatus>("get_prediction_settings"),
+
+  savePredictionSettings: (enabled: boolean, intervalMinutes: number) =>
+    invoke<PredictionStatus>("save_prediction_settings", { enabled, intervalMinutes }),
+
+  /** Runs a sweep now and raises whatever it finds. */
+  runPrediction: () => invoke<PredictionReport>("run_prediction"),
+
+  /** What would be sent, without sending it. */
+  previewPredictionEvidence: () => invoke<string[]>("preview_prediction_evidence"),
 
   /** The service registry — what kinds exist and how to render their forms. */
   getServiceCatalog: () => invoke<ServiceDescriptor[]>("get_service_catalog"),

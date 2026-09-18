@@ -611,6 +611,7 @@ export const CONFIG: AppConfig = {
   retention: { logCapacity: 5000 },
   ingest: { enabled: false, port: 7717 },
   mcp: { enabled: false, port: 7718 },
+  prediction: { enabled: false, intervalMinutes: 30 },
   // Local by default, as the packaged app is until someone points it at a
   // server. `?team=` overrides it; see TEAM_MODE.
   team: {},

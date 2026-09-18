@@ -19,6 +19,7 @@ import type {
   LlmProviderKind,
   LlmSettings,
   OperationalMetadata,
+  PredictionStatus,
   ServiceDescriptor,
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
@@ -1079,7 +1080,171 @@ function AssistantSettings({
           diagnostics; anything outside that is routed through a proposed command for a human.
         </p>
       </Panel>
+
+      <PredictionPanel />
     </div>
+  );
+}
+
+/**
+ * Forward-looking risk, read by the model.
+ *
+ * Lives under Assistant rather than with the listeners because it spends the
+ * assistant's model and its key. The panel leads with what leaves the machine,
+ * and offers to show it, because enabling this sends a description of the
+ * estate to a third party and that is a decision to make with the facts.
+ */
+function PredictionPanel() {
+  const [status, setStatus] = useState<PredictionStatus | null>(null);
+  const [minutes, setMinutes] = useState(30);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [evidence, setEvidence] = useState<string[] | null>(null);
+  const [lastRun, setLastRun] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getPredictionSettings()
+      .then((s) => {
+        setStatus(s);
+        setMinutes(s.intervalMinutes);
+      })
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+
+  if (!status) return null;
+
+  const save = async (enabled: boolean, interval: number) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await api.savePredictionSettings(enabled, interval);
+      setStatus(next);
+      setMinutes(next.intervalMinutes);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runNow = async () => {
+    setBusy(true);
+    setError(null);
+    setLastRun(null);
+    try {
+      const report = await api.runPrediction();
+      setLastRun(
+        report.findings.length === 0
+          ? "Nothing predicted — that is the common answer."
+          : `${report.findings.length} raised. They are on Alerts and in each connection's Config tab.`,
+      );
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showEvidence = async () => {
+    setError(null);
+    try {
+      setEvidence(await api.previewPredictionEvidence());
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
+  return (
+    <Panel title="Prediction">
+      <p className="mb-3 text-xs leading-relaxed text-ink-3">
+        Root&rsquo;s rules already project a disk filling and read a config that will refuse
+        writes this afternoon. This asks the model the question no single rule spans: given
+        the trends, the log templates, the deploys and what depends on what — all at once —
+        what is about to fail? Anything it finds is raised as an alert and scored beside the
+        rules, so it can be wrong out loud.
+      </p>
+
+      {!status.assistantReady && (
+        <p className="mb-3 text-xs text-warn">
+          No assistant is configured, so this cannot run. Set a provider and key above first.
+        </p>
+      )}
+
+      <label
+        className={cx(
+          "flex cursor-pointer gap-2.5 rounded-md border p-2.5 transition-colors",
+          status.enabled ? "border-accent/50 bg-accent/8" : "border-line bg-page",
+        )}
+      >
+        <input
+          type="checkbox"
+          checked={status.enabled}
+          disabled={busy || !status.assistantReady}
+          onChange={(e) => save(e.target.checked, minutes)}
+          className="mt-0.5 accent-accent"
+        />
+        <span className="min-w-0">
+          <span className="block text-xs font-medium text-ink">
+            Predict coming failures on a timer
+          </span>
+          <span className="block text-2xs leading-snug text-ink-4">
+            Off by default. Each sweep sends a description of the estate — names, health,
+            metric trends, log templates — to your configured provider.
+          </span>
+        </span>
+      </label>
+
+      <div className="mt-3">
+        <Field label="Every" help="Minutes between sweeps. One model call each, so this is the cost dial.">
+          <div className="flex gap-1.5">
+            <Input
+              type="number"
+              min={5}
+              max={1440}
+              className="w-24"
+              value={minutes}
+              onChange={(e) => setMinutes(Number(e.target.value) || 30)}
+            />
+            <Button onClick={() => save(status.enabled, minutes)} disabled={busy || minutes === status.intervalMinutes}>
+              Apply
+            </Button>
+          </div>
+        </Field>
+      </div>
+
+      <div className="mt-3 flex items-center gap-1.5">
+        <Button onClick={runNow} disabled={busy || !status.assistantReady}>
+          Run one now
+        </Button>
+        <Button variant="ghost" onClick={showEvidence}>
+          Show what would be sent
+        </Button>
+      </div>
+
+      {lastRun && <p className="mt-2 text-2xs text-ink-3">{lastRun}</p>}
+      {error && (
+        <p className="mt-2 text-xs text-crit" role="alert">
+          {error}
+        </p>
+      )}
+
+      {evidence && (
+        <div className="mt-3">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="label">
+              Evidence <span className="num text-ink-4">({evidence.length} lines)</span>
+            </span>
+            <Button variant="ghost" className="ml-auto" onClick={() => setEvidence(null)}>
+              Hide
+            </Button>
+          </div>
+          <pre className="max-h-64 overflow-auto rounded-md border border-line bg-page p-2.5 text-2xs leading-relaxed text-ink-2">
+            {evidence.length ? evidence.join("\n") : "Nothing is moving — a sweep would make no call."}
+          </pre>
+        </div>
+      )}
+    </Panel>
   );
 }
 

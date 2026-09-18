@@ -563,6 +563,8 @@
         // The in-app MCP server. `tools` is the read-only catalog it would
         // serve — the panel lists them, because the honest answer to "what
         // does enabling this give away" is a list rather than a sentence.
+        const prediction = { enabled: false, intervalMinutes: 30, assistantReady: true };
+
         const mcp = {
           enabled: false, port: 7718, hasToken: false,
           url: "http://127.0.0.1:7718/mcp", keychainAvailable: true,
@@ -632,6 +634,48 @@
             ingest.hasToken = true;
             return "7f3c9a1be44d4c0fa2d8e6b501c7d913";
           },
+          get_prediction_settings: () => prediction,
+          save_prediction_settings: (args) => {
+            prediction.enabled = args.enabled;
+            prediction.intervalMinutes = args.intervalMinutes;
+            return prediction;
+          },
+          preview_prediction_evidence: () => [
+            "CONNECTIONS",
+            "- orders-db (PostgreSQL) health=Degraded — 23 of 25 connections in use",
+            "- checkout-api (HTTP endpoint) health=Healthy — 200 in 180ms",
+            "",
+            "MEASURES APPROACHING A LIMIT",
+            "- orders-db: Connections at 92% of limit (23.00 of 25.00) trend: reaches limit in 1.4h (fit 0.94, 220 samples)",
+            "",
+            "LOG TEMPLATES, LAST 180 MINUTES",
+            "- [Error] x48 (48 error) on orders-db | buckets [0, 0, 1, 2, 4, 9, 14, 18] | FATAL: remaining connection slots are reserved for <*>",
+          ],
+          run_prediction: () => ({
+            findings: [
+              {
+                id: "predict:p4:orders-db-refuses-new-connections",
+                provenance: { model: { model: "claude-opus-5" } },
+                rule: "prediction",
+                profileId: "p4",
+                profileName: "orders-db",
+                severity: "now",
+                title: "orders-db refuses new connections within the hour",
+                detail:
+                  "Connections have climbed from 14 to 23 of 25 over three hours with a 0.94 fit, and the reserved-slot error has gone from 1 to 18 per bucket across the same window. At this slope the pool is exhausted in about 80 minutes, and checkout-api depends on it.",
+                evidence: [],
+              },
+            ],
+            because: [
+              [
+                "- orders-db: Connections at 92% of limit (23.00 of 25.00) trend: reaches limit in 1.4h (fit 0.94, 220 samples)",
+                "- [Error] x48 (48 error) on orders-db | buckets [0, 0, 1, 2, 4, 9, 14, 18]",
+              ],
+            ],
+            grounds: [],
+            model: "claude-opus-5",
+            at: iso(60),
+          }),
           get_mcp_settings: () => mcp,
           save_mcp_settings: (args) => {
             mcp.enabled = args.enabled;

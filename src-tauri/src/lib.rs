@@ -32,6 +32,7 @@ pub mod local_listener;
 pub mod mcp;
 pub mod model;
 pub mod patterns;
+pub mod predict;
 pub mod promquery;
 pub mod registry;
 pub mod runtime;
@@ -117,6 +118,37 @@ pub fn run() {
                 if let Err(e) = mcp::http::restart(&state).await {
                     tracing::warn!("the MCP server did not start: {e}");
                 }
+
+                // Forward-looking risk, on its own timer. Off unless switched
+                // on, and a failed sweep is logged rather than fatal: a
+                // provider that is briefly unreachable must not take the app
+                // with it, and the rules keep working regardless.
+                {
+                    let state = Arc::clone(&state);
+                    tauri::async_runtime::spawn(async move {
+                        loop {
+                            let settings = state.config.read().await.prediction.clone();
+                            let wait = std::time::Duration::from_secs(
+                                settings.interval_minutes.clamp(5, 1440) * 60,
+                            );
+                            // Sleep first: a sweep at boot would run against an
+                            // estate that has not been polled yet and read as
+                            // "everything unknown".
+                            tokio::time::sleep(wait).await;
+
+                            if !state.config.read().await.prediction.enabled {
+                                continue;
+                            }
+                            match predict::sweep(&state).await {
+                                Ok(found) if !found.is_empty() => {
+                                    tracing::info!("prediction sweep raised {}", found.len());
+                                }
+                                Ok(_) => {}
+                                Err(e) => tracing::warn!("prediction sweep failed: {e}"),
+                            }
+                        }
+                    });
+                }
                 supervisor::reload_all(handle, state).await;
             });
 
@@ -165,6 +197,10 @@ pub fn run() {
             commands::get_mcp_settings,
             commands::save_mcp_settings,
             commands::rotate_mcp_token,
+            commands::run_prediction,
+            commands::preview_prediction_evidence,
+            commands::get_prediction_settings,
+            commands::save_prediction_settings,
             commands::get_all_metric_history,
             commands::get_service_catalog,
             commands::get_config,

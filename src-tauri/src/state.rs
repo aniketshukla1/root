@@ -178,6 +178,24 @@ impl AlertStore {
     /// Replace the set of conditions currently firing for one connection.
     /// Anything previously active and now absent is marked resolved.
     pub fn reconcile(&mut self, profile_id: &str, incoming: Vec<Alert>) -> Vec<Alert> {
+        self.reconcile_within(profile_id, incoming, false)
+    }
+
+    /// The same, for the prediction engine's own alerts.
+    ///
+    /// Kept apart from [`reconcile`](Self::reconcile) because the two engines
+    /// answer different questions — what is true now, and what is expected —
+    /// and neither should be able to silence the other.
+    pub fn reconcile_predictions(&mut self, profile_id: &str, incoming: Vec<Alert>) -> Vec<Alert> {
+        self.reconcile_within(profile_id, incoming, true)
+    }
+
+    fn reconcile_within(
+        &mut self,
+        profile_id: &str,
+        incoming: Vec<Alert>,
+        predictions: bool,
+    ) -> Vec<Alert> {
         let now = Utc::now();
         let mut seen = HashSet::new();
         let mut newly_raised = Vec::new();
@@ -210,8 +228,19 @@ impl AlertStore {
             }
         }
 
+        // Resolve what this engine raised and no longer sees — but only what
+        // *this* engine raised. Two sources now write alerts for the same
+        // connection: the snapshot engine, from what is true right now, and
+        // `predict.rs`, from what is expected. Each poll would otherwise
+        // resolve every prediction, and each prediction run would resolve every
+        // live alert, so both would flicker on and off forever.
         for alert in self.alerts.values_mut() {
-            if alert.profile_id == profile_id && alert.active && !seen.contains(&alert.fingerprint) {
+            let mine = alert.fingerprint.starts_with(crate::predict::ALERT_PREFIX) == predictions;
+            if mine
+                && alert.profile_id == profile_id
+                && alert.active
+                && !seen.contains(&alert.fingerprint)
+            {
                 alert.active = false;
                 alert.last_seen = now;
             }

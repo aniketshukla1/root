@@ -382,6 +382,41 @@ no tool can return an unredacted body. And findings come back through a tool rat
 in a sentence, which is what makes them attributable and rateable beside the rules on the
 Scorecard; see [Is it any good?](#is-it-any-good).
 
+### Predicting what breaks next
+
+Settings → Assistant → **Prediction**. **Off by default.**
+
+Root's rules already project a disk filling and read a config that will refuse writes this
+afternoon. What no rule spans is the shape most outages actually have: a connection pool
+creeping up *while* a new error template appears in the logs *while* a deploy went out an
+hour ago *while* the service downstream has been slow since. A model reads all four at
+once, which is the one thing it is better at than a rule.
+
+`advisor.rs` argues against exactly this — *"It would, often. 'Often' is the problem."*
+That argument is right about rules and it assumes two options where there are three. The
+third is a prediction you can check:
+
+- **It only sees what root already collected.** Evidence is assembled in-process from
+  snapshots, the metric ring, Drain log templates with their per-bucket rates, the rules'
+  own findings, declared dependencies and recent deploys. No tools, one call, no second
+  round trip — a prediction cannot wander off and go looking.
+- **You can read what would be sent before enabling it.** "Show what would be sent"
+  renders the exact evidence and sends nothing. Enabling this ships a description of your
+  estate to whichever provider the assistant uses, and that is a decision to make with the
+  facts in front of you.
+- **It is scored apart.** Predictions are stamped `Provenance::Model`, so the journal
+  rates them separately from the rules and the Scorecard answers whether they are any
+  good rather than averaging two engines into a number describing neither.
+- **It refuses.** A prediction naming a connection that does not exist is dropped — a
+  confident wrong name sends somebody to check the wrong system mid-incident. An estate
+  with nothing moving produces no call at all, because asking what might break when
+  nothing is happening is how a plausible answer gets manufactured.
+
+What it finds is **raised as an alert**, which is the actual point. Root could already
+project a disk filling three days out and would wait silently for someone to open the
+right screen. Prediction alerts carry a `predict:` fingerprint and reconcile on their own
+track, so the snapshot engine and this one never resolve each other's work.
+
 ### Reading the warehouse
 
 root's own history is a ring buffer of a few hours and its log buffer is in memory, so

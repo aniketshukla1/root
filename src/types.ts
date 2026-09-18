@@ -975,6 +975,7 @@ export interface AppConfig {
   retention: { logCapacity: number };
   ingest: { enabled: boolean; port: number };
   mcp: { enabled: boolean; port: number };
+  prediction: { enabled: boolean; intervalMinutes: number };
   team: { serverUrl?: string; account?: Account };
 }
 
@@ -1002,6 +1003,24 @@ export interface McpStatus {
   url: string;
   keychainAvailable: boolean;
   tools: string[];
+}
+
+/** Forward-looking risk, read by the model. See src-tauri/src/predict.rs. */
+export interface PredictionStatus {
+  enabled: boolean;
+  intervalMinutes: number;
+  /** Without a configured assistant this cannot run at all. */
+  assistantReady: boolean;
+}
+
+export interface PredictionReport {
+  findings: Finding[];
+  /** Per prediction, in the model's own words, why it said so. */
+  because: string[][];
+  /** Everything the model was shown this run. */
+  grounds: string[];
+  model: string;
+  at?: string;
 }
 
 export interface LogFilter {

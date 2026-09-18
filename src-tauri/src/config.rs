@@ -299,6 +299,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub mcp: McpSettings,
     #[serde(default)]
+    pub prediction: PredictionSettings,
+    #[serde(default)]
     pub team: TeamSettings,
 }
 
@@ -407,6 +409,36 @@ pub struct McpSettings {
 
 fn default_mcp_port() -> u16 {
     7718
+}
+
+/// Forward-looking risk, read by the model.
+///
+/// Off by default and deliberately so. It sends a description of the estate —
+/// connection names, health, metric trends, log templates — to whichever
+/// provider the assistant is configured with, and that is a decision an
+/// operator makes rather than inherits. With no assistant configured it cannot
+/// run at all.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PredictionSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Minutes between sweeps. One model call each, so this is the cost dial.
+    #[serde(default = "default_prediction_interval")]
+    pub interval_minutes: u64,
+}
+
+fn default_prediction_interval() -> u64 {
+    30
+}
+
+impl Default for PredictionSettings {
+    fn default() -> Self {
+        PredictionSettings {
+            enabled: false,
+            interval_minutes: default_prediction_interval(),
+        }
+    }
 }
 
 impl Default for McpSettings {

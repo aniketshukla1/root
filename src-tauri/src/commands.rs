@@ -344,8 +344,8 @@ async fn attach_traces(
 
     let mut found: Vec<(usize, LaneTrace)> = Vec::new();
 
-    for index in 0..lanes.len() {
-        let profile_id = lanes[index].profile_id.clone();
+    let lane_ids: Vec<String> = lanes.iter().map(|l| l.profile_id.clone()).collect();
+    for (index, profile_id) in lane_ids.into_iter().enumerate() {
         let Ok(collector) = state.collector(&profile_id).await else {
             continue;
         };
@@ -714,6 +714,101 @@ pub async fn rotate_ingest_token(app: tauri::AppHandle, state: Shared<'_>) -> Re
     crate::secrets::set_secret(crate::ingest::TOKEN_KEY, &token).await?;
     crate::ingest::restart(&state, &app).await?;
     Ok(token)
+}
+
+// ----------------------------------------------------------------- prediction
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PredictionReport {
+    pub findings: Vec<crate::advisor::Finding>,
+    /// Per prediction, in the model's own words, why it said so.
+    pub because: Vec<Vec<String>>,
+    /// Everything the model was shown this run. One list, not one per
+    /// prediction — they all came from the same read, and a reader checking
+    /// one wants to see what else was on the table.
+    pub grounds: Vec<String>,
+    pub model: String,
+    pub at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Run a prediction sweep now and return what it found.
+///
+/// Also raises the alerts, so asking for a sweep and waiting for the timer
+/// produce the same result rather than two behaviours to reason about.
+#[tauri::command]
+pub async fn run_prediction(state: Shared<'_>) -> Result<PredictionReport> {
+    let predictions = crate::predict::sweep(&state).await?;
+    Ok(PredictionReport {
+        model: predictions
+            .first()
+            .map(|p| p.model.clone())
+            .unwrap_or_default(),
+        at: predictions.first().map(|p| p.at),
+        grounds: predictions
+            .first()
+            .map(|p| p.grounds.clone())
+            .unwrap_or_default(),
+        because: predictions.iter().map(|p| p.because.clone()).collect(),
+        findings: predictions.into_iter().map(|p| p.finding).collect(),
+    })
+}
+
+/// What root would show the model, without asking it anything.
+///
+/// Exists so an operator can see exactly what leaves the machine before
+/// enabling a feature that sends it. "Trust us" is not a security posture, and
+/// this is the same courtesy `redact.rs` extends to config.
+#[tauri::command]
+pub async fn preview_prediction_evidence(state: Shared<'_>) -> Result<Vec<String>> {
+    Ok(crate::predict::gather_evidence(&state).await)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PredictionStatus {
+    pub enabled: bool,
+    pub interval_minutes: u64,
+    /// Whether an assistant is configured at all. Without one this cannot run,
+    /// and saying so is better than a toggle that silently does nothing.
+    pub assistant_ready: bool,
+}
+
+#[tauri::command]
+pub async fn get_prediction_settings(state: Shared<'_>) -> Result<PredictionStatus> {
+    let config = state.config.read().await;
+    let settings = config.prediction.clone();
+    let provider = config.llm.provider;
+    drop(config);
+
+    let assistant_ready = !provider.requires_api_key()
+        || crate::secrets::get_secret(provider.secret_key())
+            .await
+            .unwrap_or(None)
+            .is_some_and(|key| !key.is_empty());
+
+    Ok(PredictionStatus {
+        enabled: settings.enabled,
+        interval_minutes: settings.interval_minutes,
+        assistant_ready,
+    })
+}
+
+#[tauri::command]
+pub async fn save_prediction_settings(
+    state: Shared<'_>,
+    enabled: bool,
+    interval_minutes: u64,
+) -> Result<PredictionStatus> {
+    {
+        let mut config = state.config.write().await;
+        config.prediction.enabled = enabled;
+        // A floor, because each sweep is a model call and a one-minute timer
+        // against a metered API is a bill nobody agreed to.
+        config.prediction.interval_minutes = interval_minutes.clamp(5, 1440);
+    }
+    state.save_config().await?;
+    get_prediction_settings(state).await
 }
 
 // ---------------------------------------------------------------- MCP server

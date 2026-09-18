@@ -24,7 +24,6 @@
 //! the poster has to be on the machine (a deploy script, a git hook, a
 //! self-hosted runner) or arrive through a tunnel the operator has set up.
 
-use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use axum::extract::State;
@@ -33,10 +32,10 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use subtle::ConstantTimeEq;
 use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, Result};
+use crate::local_listener::{authorized, origin_allowed};
 use crate::model::{ChangeEvent, ChangeKind, ChangeSource};
 use crate::state::AppState;
 use crate::supervisor::EVENT_CHANGES;
@@ -181,25 +180,6 @@ struct Ctx {
     token: String,
 }
 
-/// Constant-time bearer check. A plain `==` on a secret leaks its prefix to
-/// anyone who can time the response.
-fn authorized(headers: &HeaderMap, token: &str) -> bool {
-    let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else {
-        return false;
-    };
-    let Ok(value) = value.to_str() else {
-        return false;
-    };
-    let Some(presented) = value.strip_prefix("Bearer ") else {
-        return false;
-    };
-    presented
-        .trim()
-        .as_bytes()
-        .ct_eq(token.as_bytes())
-        .into()
-}
-
 async fn health() -> (StatusCode, Json<serde_json::Value>) {
     (
         StatusCode::OK,
@@ -212,6 +192,17 @@ async fn post_deploy(
     headers: HeaderMap,
     body: std::result::Result<Json<DeployPayload>, axum::extract::rejection::JsonRejection>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    // Shared with the MCP listener, so this hardening landed in both at once
+    // rather than in whichever file somebody remembered.
+    if !origin_allowed(&headers) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!(ErrorBody {
+                error: "cross-origin requests are refused".into()
+            })),
+        );
+    }
+
     if !authorized(&headers, &ctx.token) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -297,19 +288,7 @@ pub async fn serve(
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(ctx);
 
-    // Loopback, explicitly. Never `0.0.0.0` — see the module header.
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-        AppError::Rejected(format!("could not bind the ingest listener on {addr}: {e}"))
-    })?;
-
-    tracing::info!("deploy ingest listening on http://{addr}");
-
-    Ok(tokio::spawn(async move {
-        if let Err(e) = axum::serve(listener, router).await {
-            tracing::warn!("ingest listener stopped: {e}");
-        }
-    }))
+    crate::local_listener::bind(router, port, "deploy ingest").await
 }
 
 #[cfg(test)]
@@ -322,26 +301,5 @@ mod tests {
         assert_eq!(clamp(&"x".repeat(500), 8), "x".repeat(8));
     }
 
-    #[test]
-    fn bearer_requires_the_exact_token() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::AUTHORIZATION,
-            "Bearer secret".parse().unwrap(),
-        );
-        assert!(authorized(&headers, "secret"));
-        assert!(!authorized(&headers, "secre"));
-        assert!(!authorized(&headers, "secrets"));
-        assert!(!authorized(&HeaderMap::new(), "secret"));
-    }
 
-    #[test]
-    fn bearer_rejects_other_schemes() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::AUTHORIZATION,
-            "Basic secret".parse().unwrap(),
-        );
-        assert!(!authorized(&headers, "secret"));
-    }
 }

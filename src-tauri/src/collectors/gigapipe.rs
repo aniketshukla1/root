@@ -70,6 +70,13 @@ const SIGNAL_PROBES: &[(&str, &str)] = &[
 /// Ingest pipelines listed before the table is truncated.
 const MAX_INGEST_ROWS: usize = 40;
 
+/// The most a single read API answer may be before it is refused.
+///
+/// Generous for any real query and far below what an unbounded selector can
+/// produce. Without it the body, the parsed value and the rendered string are
+/// all live at once, so the process peaks at several times the response size.
+const MAX_READ_BYTES: usize = 8 * 1024 * 1024;
+
 pub struct GigapipeCollector {
     client: reqwest::Client,
     base: String,
@@ -486,9 +493,27 @@ impl GigapipeCollector {
             .map_err(|e| AppError::Collector(format!("{} did not answer {path}: {e}", self.base)))?;
 
         let status = response.status();
-        let body = response.text().await.map_err(|e| {
+
+        // Read with a ceiling rather than `.text()`, which has none. A broad
+        // PromQL or LogQL selector can answer with tens of megabytes, and the
+        // body, the parsed value and the rendered string would all be live at
+        // once. `limit` and `step` are the caller's hints; this is the bound
+        // that holds when they are omitted.
+        let mut body = Vec::new();
+        let mut stream = response;
+        while let Some(chunk) = stream.chunk().await.map_err(|e| {
             AppError::Collector(format!("{} response unreadable: {e}", self.base))
-        })?;
+        })? {
+            if body.len() + chunk.len() > MAX_READ_BYTES {
+                return Err(AppError::Collector(format!(
+                    "{path} answered with more than {} MiB; narrow the query, or set \
+                     `limit` or a coarser `step`",
+                    MAX_READ_BYTES / (1024 * 1024)
+                )));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let body = String::from_utf8_lossy(&body).into_owned();
 
         if !status.is_success() {
             return Err(AppError::Collector(format!(

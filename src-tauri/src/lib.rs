@@ -10,15 +10,6 @@
 //! alert set, and runs the assistant's tool-calling loop. The UI is a view over
 //! that state, driven by Tauri events.
 
-// Collectors decide health as a chain of `else if`s that names one condition
-// each, and several of those arms legitimately return the same `Health`. The
-// chain is written to mirror the `summary` chain directly beneath it, so the
-// two read in the same order and a reader can see which condition produced
-// which sentence. Collapsing the arms with `||` — which is what this lint
-// asks for — satisfies the compiler and breaks that correspondence, so the
-// arms stay separate on purpose.
-#![allow(clippy::if_same_then_else)]
-
 pub mod agent;
 pub mod changes;
 pub mod claims;
@@ -37,6 +28,7 @@ pub mod incidents;
 pub mod journal;
 pub mod ingest;
 pub mod llm;
+pub mod local_listener;
 pub mod mcp;
 pub mod model;
 pub mod patterns;

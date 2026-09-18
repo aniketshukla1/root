@@ -272,3 +272,107 @@ async fn an_unparseable_line_is_answered_and_the_server_keeps_going() {
 
     client.shutdown().await;
 }
+
+/// The notification path that actually had a hole: `tools/call` with no
+/// `name`. It fails validation, and the failure used to be returned before the
+/// notification check, so the client received a reply it never asked for.
+///
+/// `notifications/cancelled` above takes an earlier branch and so never
+/// exercised this — a passing test over an untested path.
+#[tokio::test]
+async fn a_failing_notification_is_still_not_answered() {
+    let store = MockServer::start().await;
+    let dir = empty_config_dir();
+    let mut client = Client::spawn(&store.uri(), &dir);
+    client.handshake().await;
+
+    // No `id`, and no `name` in params: invalid, and a notification.
+    client
+        .send(json!({ "jsonrpc": "2.0", "method": "tools/call", "params": {} }))
+        .await;
+
+    // If that had been answered, this would read the stale reply instead.
+    let response = client.request(21, "ping", json!({})).await;
+    assert_eq!(response["id"], 21, "the stream desynchronised");
+    assert!(response["result"].is_object());
+
+    client.shutdown().await;
+}
+
+/// Well-formed JSON that is not a request is INVALID_REQUEST; only malformed
+/// text is a PARSE_ERROR. The stdio and HTTP transports now agree on this.
+#[tokio::test]
+async fn valid_json_that_is_not_a_request_is_an_invalid_request() {
+    let store = MockServer::start().await;
+    let dir = empty_config_dir();
+    let mut client = Client::spawn(&store.uri(), &dir);
+    client.handshake().await;
+
+    client.send(json!({ "jsonrpc": "2.0", "id": 5 })).await;
+    let response = client.recv().await;
+    assert_eq!(response["error"]["code"], -32600, "{response}");
+
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_batch_is_answered_with_an_array() {
+    let store = MockServer::start().await;
+    let dir = empty_config_dir();
+    let mut client = Client::spawn(&store.uri(), &dir);
+    client.handshake().await;
+
+    client
+        .send(json!([
+            { "jsonrpc": "2.0", "id": 30, "method": "ping" },
+            { "jsonrpc": "2.0", "method": "notifications/initialized" },
+            { "jsonrpc": "2.0", "id": 31, "method": "tools/list" }
+        ]))
+        .await;
+
+    let answers = client.recv().await;
+    let answers = answers.as_array().expect("a batch answers with an array");
+    assert_eq!(answers.len(), 2, "the notification should contribute nothing");
+    assert_eq!(answers[0]["id"], 30);
+    assert_eq!(answers[1]["id"], 31);
+
+    client.shutdown().await;
+}
+
+/// A store answer far past the cap is trimmed rather than written whole. The
+/// in-app path has always done this; the stdio path did not.
+#[tokio::test]
+async fn an_oversized_store_answer_is_truncated() {
+    let store = MockServer::start().await;
+    let big: Vec<String> = (0..20_000).map(|i| format!("series-number-{i}")).collect();
+    Mock::given(method("GET"))
+        .and(path("/api/v1/labels"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status": "success", "data": big
+        })))
+        .mount(&store)
+        .await;
+
+    let dir = empty_config_dir();
+    let mut client = Client::spawn(&store.uri(), &dir);
+    client.handshake().await;
+
+    let response = client
+        .request(
+            40,
+            "tools/call",
+            json!({ "name": "prometheus_labels", "arguments": {} }),
+        )
+        .await;
+
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    assert!(
+        text.chars().count() < 20_000,
+        "an unbounded answer reached the client: {} chars",
+        text.chars().count()
+    );
+
+    client.shutdown().await;
+}

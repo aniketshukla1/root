@@ -182,6 +182,12 @@ fn queue_health(queue: &Queue, depth_warn: f64) -> Health {
     Health::Healthy
 }
 
+// Health is decided as a chain of `else if`s naming one condition each,
+// and several arms legitimately return the same `Health`. The chain mirrors
+// the `summary` chain below it so the two read in the same order and a
+// reader can see which condition produced which sentence; collapsing the
+// arms with `||` would satisfy the lint and break that correspondence.
+#[allow(clippy::if_same_then_else)]
 fn node_health(node: &Node) -> Health {
     if !node.running {
         Health::Down
@@ -198,6 +204,12 @@ impl Collector for RabbitCollector {
         ServiceKind::Rabbitmq
     }
 
+    // Health is decided as a chain of `else if`s naming one condition each,
+    // and several arms legitimately return the same `Health`. The chain mirrors
+    // the `summary` chain below it so the two read in the same order and a
+    // reader can see which condition produced which sentence; collapsing the
+    // arms with `||` would satisfy the lint and break that correspondence.
+    #[allow(clippy::if_same_then_else)]
     async fn collect(&self) -> Result<HealthSnapshot> {
         let start = Instant::now();
 

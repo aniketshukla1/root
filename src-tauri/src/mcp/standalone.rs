@@ -152,7 +152,12 @@ impl ToolBackend for Server {
             .await?
             .detail(&collectors::DetailQuery::GigapipeRead(read))
             .await?;
-        Ok(serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()))
+        // The same cap the in-app path applies. A broad PromQL selector can
+        // answer with tens of megabytes, and writing that to stdout as one
+        // JSON-RPC line blows the client's context rather than informing it.
+        Ok(crate::agent::tools::truncate_result(
+            &serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()),
+        ))
     }
 
     fn instructions(&self) -> &'static str {

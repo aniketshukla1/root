@@ -56,6 +56,7 @@ pub const PARSE_ERROR: i64 = -32700;
 pub const INVALID_REQUEST: i64 = -32600;
 pub const METHOD_NOT_FOUND: i64 = -32601;
 pub const INVALID_PARAMS: i64 = -32602;
+pub const INTERNAL_ERROR: i64 = -32603;
 
 /// What a server can actually run.
 ///
@@ -141,9 +142,12 @@ pub fn advertise(
         .into_iter()
         .filter(|t| !t.mutating)
         .map(|t| {
+            // `strip_prefix`, not `trim_start_matches`: the latter removes
+            // every repetition, so a future `gigapipe_gigapipe_x` would be
+            // advertised as `x` — a name the dispatch could not route back.
             let name = match strip.is_empty() {
                 true => t.spec.name.clone(),
-                false => t.spec.name.trim_start_matches(strip).to_string(),
+                false => t.spec.name.strip_prefix(strip).unwrap_or(&t.spec.name).to_string(),
             };
             json!({
                 "name": name,
@@ -194,29 +198,36 @@ pub async fn handle(backend: &dyn ToolBackend, request: Request) -> Option<Respo
 
         "tools/call" => {
             let params = request.params.unwrap_or(Value::Null);
-            let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
-                return Some(Response::err(id, INVALID_PARAMS, "`name` is required"));
-            };
-            let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+            // Falls through to the notification check below rather than
+            // returning early: a `tools/call` notification with no `name` must
+            // still go unanswered, or the client reads this as the reply to its
+            // next request and every response afterwards is off by one.
+            match params.get("name").and_then(|v| v.as_str()) {
+                None => Response::err(id, INVALID_PARAMS, "`name` is required"),
+                Some(name) => {
+                    let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
 
-            // A tool that fails is a *result* carrying isError, not a protocol
-            // error: the model is meant to read the reason and try something
-            // else, which it cannot do with a transport-level failure.
-            match backend.call(name, &args).await {
-                Ok(text) => Response::ok(
-                    id,
-                    json!({
-                        "content": [{ "type": "text", "text": text }],
-                        "isError": false,
-                    }),
-                ),
-                Err(error) => Response::ok(
-                    id,
-                    json!({
-                        "content": [{ "type": "text", "text": error.to_string() }],
-                        "isError": true,
-                    }),
-                ),
+                    // A tool that fails is a *result* carrying isError, not a
+                    // protocol error: the model is meant to read the reason and
+                    // try something else, which it cannot do with a
+                    // transport-level failure.
+                    match backend.call(name, &args).await {
+                        Ok(text) => Response::ok(
+                            id,
+                            json!({
+                                "content": [{ "type": "text", "text": text }],
+                                "isError": false,
+                            }),
+                        ),
+                        Err(error) => Response::ok(
+                            id,
+                            json!({
+                                "content": [{ "type": "text", "text": error.to_string() }],
+                                "isError": true,
+                            }),
+                        ),
+                    }
+                }
             }
         }
 
@@ -234,21 +245,74 @@ pub async fn handle(backend: &dyn ToolBackend, request: Request) -> Option<Respo
     Some(response)
 }
 
-/// Parse one line and handle it, or explain why it could not be parsed.
-pub async fn handle_line(backend: &dyn ToolBackend, line: &str) -> Option<Response> {
-    match serde_json::from_str::<Request>(line) {
-        Ok(request) => handle(backend, request).await,
-        Err(error) => Some(Response::err(
+/// Handle one already-parsed message — a single request, or a batch.
+///
+/// Both transports come through here so they cannot disagree about an error
+/// code for the same input. Each one still owns its own *syntax* failure,
+/// because the two report it differently: stdio answers with a JSON-RPC error
+/// object, HTTP with a 400.
+///
+/// The split between the two error codes is structural rather than guessed at.
+/// Text that was never JSON never reaches this function. JSON that is well
+/// formed but is not a Request is [`INVALID_REQUEST`], which is what the
+/// specification calls it.
+///
+/// A batch answers with an array of only the members that were requests; a
+/// batch of nothing but notifications answers with nothing at all.
+pub async fn handle_json(backend: &dyn ToolBackend, parsed: Value) -> Option<Value> {
+    fn encode(response: Response) -> Value {
+        serde_json::to_value(&response).unwrap_or_else(|_| {
+            json!({
+                "jsonrpc": "2.0",
+                "id": Value::Null,
+                "error": { "code": INTERNAL_ERROR, "message": "could not encode the response" },
+            })
+        })
+    }
+
+    async fn one(backend: &dyn ToolBackend, value: Value) -> Option<Response> {
+        match serde_json::from_value::<Request>(value) {
+            Ok(request) => handle(backend, request).await,
+            Err(error) => Some(Response::err(
+                Value::Null,
+                INVALID_REQUEST,
+                error.to_string(),
+            )),
+        }
+    }
+
+    match parsed {
+        // An empty batch is itself an invalid request, per JSON-RPC 2.0.
+        Value::Array(items) if items.is_empty() => Some(encode(Response::err(
             Value::Null,
-            // A well-formed object we could not map is a different fault from
-            // text that was never JSON, and the codes say so.
-            if line.trim_start().starts_with('{') {
-                INVALID_REQUEST
-            } else {
-                PARSE_ERROR
-            },
-            error.to_string(),
-        )),
+            INVALID_REQUEST,
+            "a batch must carry at least one request",
+        ))),
+        Value::Array(items) => {
+            let mut answers = Vec::new();
+            for item in items {
+                if let Some(response) = one(backend, item).await {
+                    answers.push(encode(response));
+                }
+            }
+            (!answers.is_empty()).then_some(Value::Array(answers))
+        }
+        single => one(backend, single).await.map(encode),
+    }
+}
+
+/// Parse one line and handle it, or explain why it could not be parsed.
+pub async fn handle_line(backend: &dyn ToolBackend, line: &str) -> Option<Value> {
+    match serde_json::from_str::<Value>(line) {
+        Ok(parsed) => handle_json(backend, parsed).await,
+        Err(error) => Some(
+            serde_json::to_value(Response::err(
+                Value::Null,
+                PARSE_ERROR,
+                error.to_string(),
+            ))
+            .unwrap_or(Value::Null),
+        ),
     }
 }
 

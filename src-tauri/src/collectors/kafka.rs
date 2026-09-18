@@ -324,6 +324,12 @@ impl Collector for KafkaCollector {
         ServiceKind::Kafka
     }
 
+    // Health is decided as a chain of `else if`s naming one condition each,
+    // and several arms legitimately return the same `Health`. The chain mirrors
+    // the `summary` chain below it so the two read in the same order and a
+    // reader can see which condition produced which sentence; collapsing the
+    // arms with `||` would satisfy the lint and break that correspondence.
+    #[allow(clippy::if_same_then_else)]
     async fn collect(&self) -> Result<HealthSnapshot> {
         let start = Instant::now();
         let config = self.config.clone();

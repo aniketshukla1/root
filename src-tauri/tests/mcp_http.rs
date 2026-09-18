@@ -303,3 +303,120 @@ async fn a_body_that_is_not_json_rpc_is_a_parse_error() {
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["error"]["code"], -32700);
 }
+
+/// `report_finding` and `refresh_connection` pass root's `mutating` check —
+/// they do not touch infrastructure — but one writes the findings record and
+/// the other polls production on demand. Neither is the operator's to hand to
+/// a program, so neither is advertised.
+#[tokio::test]
+async fn tools_with_effects_are_not_advertised_even_though_they_are_read_only() {
+    let server = Server::start().await;
+    server.handshake().await;
+    let names = server.tool_names().await;
+
+    for withheld in ["report_finding", "refresh_connection"] {
+        assert!(!names.iter().any(|n| n == withheld), "{withheld} served");
+    }
+    // The rest of the read-only surface is still there, so the filter is not
+    // passing by serving nothing.
+    assert!(names.iter().any(|n| n == "list_connections"));
+}
+
+#[tokio::test]
+async fn naming_a_tool_with_effects_directly_is_refused() {
+    let server = Server::start().await;
+    server.handshake().await;
+
+    for withheld in ["report_finding", "refresh_connection"] {
+        let (status, body) = server
+            .rpc(json!({
+                "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                "params": { "name": withheld, "arguments": { "connection": "anything" } }
+            }))
+            .await;
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true, "{withheld}: {body}");
+        assert!(body["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("no read-only tool"));
+    }
+}
+
+/// A browser is the only caller that sets Origin, and a browser reaching a
+/// loopback port is the DNS-rebinding case this refuses.
+#[tokio::test]
+async fn a_cross_origin_request_is_refused_before_the_token_is_considered() {
+    let server = Server::start().await;
+    let response = reqwest::Client::new()
+        .post(server.endpoint())
+        .bearer_auth(&server.token)
+        .header("origin", "https://evil.example")
+        .json(&json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }))
+        .send()
+        .await
+        .expect("the listener should answer");
+    assert_eq!(response.status(), 403);
+}
+
+#[tokio::test]
+async fn a_loopback_origin_is_allowed_through() {
+    let server = Server::start().await;
+    let response = reqwest::Client::new()
+        .post(server.endpoint())
+        .bearer_auth(&server.token)
+        .header("origin", "http://localhost:5173")
+        .json(&json!({ "jsonrpc": "2.0", "id": 1, "method": "ping" }))
+        .send()
+        .await
+        .expect("the listener should answer");
+    assert_eq!(response.status(), 200);
+}
+
+/// A well-formed JSON value that is not a Request earns INVALID_REQUEST, not
+/// the PARSE_ERROR that malformed text earns. Both transports agree now.
+#[tokio::test]
+async fn valid_json_that_is_not_a_request_is_an_invalid_request() {
+    let server = Server::start().await;
+    let (status, body) = server
+        .rpc(json!({ "jsonrpc": "2.0", "id": 1 }))
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["error"]["code"], -32600, "{body}");
+}
+
+#[tokio::test]
+async fn a_batch_is_answered_with_an_array() {
+    let server = Server::start().await;
+    server.handshake().await;
+
+    let (status, body) = server
+        .rpc(json!([
+            { "jsonrpc": "2.0", "id": 10, "method": "ping" },
+            { "jsonrpc": "2.0", "method": "notifications/initialized" },
+            { "jsonrpc": "2.0", "id": 11, "method": "tools/list" }
+        ]))
+        .await;
+
+    assert_eq!(status, 200);
+    let answers = body.as_array().expect("a batch answers with an array");
+    // The notification in the middle contributes nothing.
+    assert_eq!(answers.len(), 2, "{body}");
+    assert_eq!(answers[0]["id"], 10);
+    assert_eq!(answers[1]["id"], 11);
+    assert!(answers[1]["result"]["tools"].is_array());
+}
+
+/// A batch of nothing but notifications is accepted and not answered.
+#[tokio::test]
+async fn a_batch_of_only_notifications_gets_no_body() {
+    let server = Server::start().await;
+    let response = reqwest::Client::new()
+        .post(server.endpoint())
+        .bearer_auth(&server.token)
+        .json(&json!([{ "jsonrpc": "2.0", "method": "notifications/initialized" }]))
+        .send()
+        .await
+        .expect("the listener should answer");
+    assert_eq!(response.status(), 202);
+}

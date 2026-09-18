@@ -19,16 +19,20 @@
 //! - **Bearer token required**, generated on first enable, stored in the OS
 //!   keychain, and compared in constant time.
 //! - **Body capped** well below anything a JSON-RPC call needs.
-//! - **Read-only.** [`super::ToolBackend::tools`] filters on root's `mutating`
-//!   flag, so the tools that stop at a confirmation dialog are never
-//!   advertised and never dispatched. There is no dialog on an HTTP request,
-//!   and a weaker approval is worse than none.
+//! - **Read-only, and narrower than that.** The advertised set is the
+//!   read-only catalog minus [`NOT_FOR_CLIENTS`]. `mutating` alone was not
+//!   enough: it means "changes infrastructure", which correctly gates the
+//!   operator's own assistant, and leaves through two tools that still have
+//!   effects — one writes the findings record, the other polls production on
+//!   demand. Both are withheld here.
+//! - **Origin is checked**, not only the token, because the token is the part
+//!   most likely to leak.
 //!
 //! One rule is this module's own, and it is the one worth stating plainly:
 //! **an MCP client is not the operator.** It is a program the operator pointed
-//! at root, and it gets exactly the read-only surface — no ability to restart a
-//! container, trigger a build, or terminate a query, whatever the app's own
-//! agent mode is set to.
+//! at root, so it gets strictly less than the operator does — it cannot restart
+//! a container, trigger a build or terminate a query whatever the app's agent
+//! mode says, and it cannot write a finding or force a poll either.
 //!
 //! # Transport
 //!
@@ -39,7 +43,6 @@
 //! stream — there is nothing to push, since the tool list never changes while
 //! the process runs.
 
-use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -49,9 +52,9 @@ use axum::response::{IntoResponse, Response as AxumResponse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
-use subtle::ConstantTimeEq;
 
-use super::{advertise, handle, Request, ToolBackend};
+use super::{advertise, ToolBackend};
+use crate::local_listener::{authorized, origin_allowed};
 use crate::config::AgentMode;
 use crate::error::{AppError, Result};
 use crate::state::AppState;
@@ -80,9 +83,71 @@ impl AppBackend {
     }
 }
 
+/// Read-only tools that are nonetheless not safe to hand to a program.
+///
+/// `ToolDef::mutating` means "changes infrastructure", which is the right
+/// question for the operator's own assistant — it decides what stops at a
+/// confirmation dialog. It is the wrong question here, and reusing it was a
+/// mistake: two tools clear that bar and still have effects nobody asked a
+/// network caller to be able to cause.
+///
+/// `report_finding` writes to the claims store, and those claims render in the
+/// Config tab as findings and can be rated into `journal.rs`, which is the one
+/// thing here that persists to disk. A client that can write findings can
+/// forge the record root is judged by.
+///
+/// `refresh_connection` polls a connection immediately. That is an outbound
+/// request to production infrastructure using root's credentials, at whatever
+/// rate the caller chooses, ignoring the configured interval.
+///
+/// Neither is advertised and neither will dispatch. The operator's assistant
+/// still has both; it is reached through a UI the operator is sitting in front
+/// of, which is the whole difference.
+const NOT_FOR_CLIENTS: &[&str] = &["report_finding", "refresh_connection"];
+
+/// The advertised tool list, built once.
+///
+/// `catalog()` allocates a `ToolDef` and a nested `json!` schema for every tool
+/// each time it is called, and this is answered on every `tools/list`. The set
+/// cannot change while the process runs, so it is built on first use and shared
+/// after.
+static ADVERTISED: std::sync::OnceLock<Vec<Value>> = std::sync::OnceLock::new();
+
+/// The names `call` will accept, for the same reason.
+static CALLABLE: std::sync::OnceLock<std::collections::HashSet<String>> =
+    std::sync::OnceLock::new();
+
+fn advertised() -> &'static Vec<Value> {
+    ADVERTISED.get_or_init(|| {
+        let allowed = crate::agent::tools::catalog(AgentMode::ReadOnly)
+            .into_iter()
+            .filter(|t| !NOT_FOR_CLIENTS.contains(&t.spec.name.as_str()));
+        advertise(allowed, "")
+    })
+}
+
+/// The names this server actually serves, for Settings to show.
+///
+/// Derived from the same list `tools()` advertises, so the panel cannot
+/// promise a tool the server withholds.
+pub fn served_tool_names() -> Vec<String> {
+    let mut names: Vec<String> = callable().iter().cloned().collect();
+    names.sort();
+    names
+}
+
+fn callable() -> &'static std::collections::HashSet<String> {
+    CALLABLE.get_or_init(|| {
+        advertised()
+            .iter()
+            .filter_map(|t| t["name"].as_str().map(str::to_string))
+            .collect()
+    })
+}
+
 #[async_trait]
 impl ToolBackend for AppBackend {
-    /// Every read-only tool, under root's own names.
+    /// Every read-only tool that is safe to expose, under root's own names.
     ///
     /// No prefix is stripped here, unlike the standalone server: this serves
     /// `get_health` and `search_logs` beside the gigapipe reads, and
@@ -94,14 +159,15 @@ impl ToolBackend for AppBackend {
     /// agent mode is set, so turning on "Allow actions" for the operator's
     /// assistant never widens what a connected program can do.
     fn tools(&self) -> Vec<Value> {
-        advertise(crate::agent::tools::catalog(AgentMode::ReadOnly), "")
+        advertised().clone()
     }
 
     async fn call(&self, name: &str, args: &Value) -> Result<String> {
-        // Asking the read-only catalog is the gate: a mutating tool is not in
-        // it, so a client naming one is told it does not exist rather than
-        // having it run.
-        if crate::agent::tools::find(AgentMode::ReadOnly, name).is_none() {
+        // The gate is the advertised set, not the catalog: a tool that is
+        // mutating, or that is read-only but carries an effect (see
+        // `NOT_FOR_CLIENTS`), is absent from it, so naming one directly is
+        // refused rather than run.
+        if !callable().contains(name) {
             return Err(AppError::Collector(format!(
                 "no read-only tool called `{name}`"
             )));
@@ -121,21 +187,6 @@ impl ToolBackend for AppBackend {
 struct Ctx {
     backend: Arc<AppBackend>,
     token: String,
-}
-
-/// Constant-time bearer check. A plain `==` on a secret leaks its prefix to
-/// anyone who can time the response.
-fn authorized(headers: &HeaderMap, token: &str) -> bool {
-    let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else {
-        return false;
-    };
-    let Ok(value) = value.to_str() else {
-        return false;
-    };
-    let Some(presented) = value.strip_prefix("Bearer ") else {
-        return false;
-    };
-    presented.trim().as_bytes().ct_eq(token.as_bytes()).into()
 }
 
 /// Unauthenticated liveness, so a client can check reachability before it has
@@ -160,11 +211,15 @@ async fn no_stream() -> AxumResponse {
         .into_response()
 }
 
-async fn post_rpc(
-    State(ctx): State<Ctx>,
-    headers: HeaderMap,
-    body: String,
-) -> AxumResponse {
+async fn post_rpc(State(ctx): State<Ctx>, headers: HeaderMap, body: String) -> AxumResponse {
+    if !origin_allowed(&headers) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "cross-origin requests are refused" })),
+        )
+            .into_response();
+    }
+
     if !authorized(&headers, &ctx.token) {
         // A bare 401 with the scheme named, and nothing about why — a client
         // that guessed wrong learns only that it guessed wrong.
@@ -176,8 +231,12 @@ async fn post_rpc(
             .into_response();
     }
 
-    let request = match serde_json::from_str::<Request>(&body) {
-        Ok(request) => request,
+    // Syntax is this transport's own to report, because it answers with a 400
+    // where stdio answers with a JSON-RPC object. Everything past the parse —
+    // which error code a well-formed non-request earns, how a batch is
+    // answered — is shared, so the two transports cannot drift apart.
+    let parsed = match serde_json::from_str::<Value>(&body) {
+        Ok(parsed) => parsed,
         Err(error) => {
             return (
                 StatusCode::BAD_REQUEST,
@@ -191,7 +250,7 @@ async fn post_rpc(
         }
     };
 
-    match handle(ctx.backend.as_ref(), request).await {
+    match super::handle_json(ctx.backend.as_ref(), parsed).await {
         Some(response) => (StatusCode::OK, Json(response)).into_response(),
         // A notification is accepted and not answered. 202 with an empty body
         // is what the specification asks for, and a client that sent one is
@@ -243,19 +302,7 @@ pub async fn serve(
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(ctx);
 
-    // Loopback, explicitly. Never `0.0.0.0` — see the module header.
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-        AppError::Rejected(format!("could not bind the MCP listener on {addr}: {e}"))
-    })?;
-
-    tracing::info!("MCP server listening on http://{addr}{ENDPOINT}");
-
-    Ok(tokio::spawn(async move {
-        if let Err(e) = axum::serve(listener, router).await {
-            tracing::warn!("MCP listener stopped: {e}");
-        }
-    }))
+    crate::local_listener::bind(router, port, "the MCP server").await
 }
 
 #[cfg(test)]

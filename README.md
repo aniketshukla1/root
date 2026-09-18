@@ -486,15 +486,26 @@ standalone server can answer, because none of them exist until root is polling.
 
 It follows [Deploy ingest](#deploy-ingest)'s posture exactly, for the same reasons: off
 by default, binds `127.0.0.1` and never `0.0.0.0`, bearer token generated on first enable
-and held in the OS keychain, compared in constant time, body capped.
+and held in the OS keychain, compared in constant time, body capped. Both listeners share
+one `local_listener` module, so a hardening change lands in both rather than in whichever
+file somebody remembered. `Origin` is checked as well as the token, because a loopback
+port is reachable from a browser by DNS rebinding and the token is the part most likely to
+leak — it gets pasted into client configuration files.
 
 One rule is this listener's own, and it is the one worth stating plainly: **an MCP client
-is not the operator.** It is a program the operator pointed at root, so it gets the
-read-only surface and nothing else — it can never restart a container, trigger a build or
-terminate a query, *even while the assistant here is set to allow actions*. Those stop at
-a confirmation dialog naming the target, and an HTTP request has no dialog. Advertising is
-not the gate either: a client that knows a mutating tool's name anyway is told no such
-read-only tool exists.
+is not the operator.** It is a program the operator pointed at root, so it gets strictly
+less. It can never restart a container, trigger a build or terminate a query, *even while
+the assistant here is set to allow actions* — those stop at a confirmation dialog naming
+the target, and an HTTP request has no dialog.
+
+It also gets less than "read-only" would suggest, and the reason is worth stating because
+the first version of this got it wrong. Root's `mutating` flag means *changes
+infrastructure*, which is the right question for the operator's own assistant and the
+wrong one for a network boundary: `report_finding` and `refresh_connection` both clear
+that bar and still have effects — one writes the findings record that feeds the Scorecard,
+the other polls production on demand using root's credentials. Neither is served. The
+gate is an explicit list, not an inherited flag, and advertising is not the gate either: a
+client that knows a withheld tool's name anyway is told no such read-only tool exists.
 
 The transport is Streamable HTTP in its simplest valid form — `POST /mcp` carrying one
 JSON-RPC message, answered with one JSON response. A notification gets `202` and no body.
@@ -614,7 +625,7 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-491 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+488 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
 detection, component history admission and eviction, log filtering and stream separation,
 section renderability, conversation trimming, the per-provider message translation, and
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
@@ -746,6 +757,8 @@ src-tauri/src/
   commands.rs     The Tauri command surface
   mcp/            root as an MCP server — protocol, plus the stdio and
                   loopback-HTTP transports that share it
+  local_listener.rs The posture both loopback listeners share: bearer check,
+                  Origin check, loopback bind
   config.rs       Persisted connection profiles and assistant settings
   secrets.rs      OS keychain wrapper
   error.rs        AppError, serialized to a string across the Tauri boundary

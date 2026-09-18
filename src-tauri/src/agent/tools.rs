@@ -24,7 +24,7 @@ use crate::supervisor;
 
 /// Tool results are fed straight back into the context window, so oversized
 /// payloads are trimmed rather than allowed to crowd out the conversation.
-const MAX_TOOL_RESULT_CHARS: usize = 8_000;
+pub(crate) const MAX_TOOL_RESULT_CHARS: usize = 8_000;
 
 pub struct ToolDef {
     pub spec: ToolSpec,
@@ -1253,7 +1253,7 @@ fn parse_level(raw: &str) -> Option<crate::model::LogLevel> {
 
 /// Trim on a character boundary and say so, rather than silently handing the
 /// model a truncated JSON document it might misread as complete.
-fn truncate_result(text: &str) -> String {
+pub(crate) fn truncate_result(text: &str) -> String {
     if text.chars().count() <= MAX_TOOL_RESULT_CHARS {
         return text.to_string();
     }

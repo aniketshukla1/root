@@ -493,6 +493,15 @@ pub async fn save_ingest_settings(
             "choose a port above 1023; privileged ports need elevation".into(),
         ));
     }
+    // The reciprocal of the check in `save_mcp_settings`. Without it the two
+    // listeners can be pointed at one port from this side, and the config is
+    // persisted before the bind is attempted — so it fails on every boot
+    // afterwards, not just once.
+    if enabled && port == state.config.read().await.mcp.port {
+        return Err(AppError::Rejected(
+            "that is the MCP server's port; give deploy ingest one of its own".into(),
+        ));
+    }
 
     {
         let mut config = state.config.write().await;
@@ -558,11 +567,9 @@ pub async fn get_mcp_settings(state: Shared<'_>) -> Result<McpStatus> {
             crate::mcp::http::ENDPOINT
         ),
         keychain_available: crate::secrets::store_available(),
-        tools: crate::agent::tools::catalog(crate::config::AgentMode::ReadOnly)
-            .into_iter()
-            .filter(|t| !t.mutating)
-            .map(|t| t.spec.name)
-            .collect(),
+        // The server's own list, not a second derivation of it — the panel
+        // must not promise a tool the listener withholds.
+        tools: crate::mcp::http::served_tool_names(),
     })
 }
 

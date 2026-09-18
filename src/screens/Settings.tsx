@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
@@ -15,8 +16,6 @@ import type {
   Environment,
   FieldSpec,
   HealthSnapshot,
-  IngestStatus,
-  McpStatus,
   LlmProviderKind,
   LlmSettings,
   OperationalMetadata,
@@ -1094,24 +1093,78 @@ function AssistantSettings({
  * loopback only, token required. A user should be able to read this panel and
  * know exactly what they just exposed.
  */
-function IngestSettings() {
-  const [status, setStatus] = useState<IngestStatus | null>(null);
-  const [port, setPort] = useState(7717);
+// -------------------------------------------------------- local listeners
+
+/** What both local listeners report. The MCP one adds `tools`. */
+interface ListenerStatus {
+  enabled: boolean;
+  port: number;
+  hasToken: boolean;
+  url: string;
+  keychainAvailable: boolean;
+}
+
+/**
+ * The Settings panel for a loopback listener.
+ *
+ * Deploy ingest and the MCP server are the same control twice: a toggle, a
+ * port, an endpoint to copy, a keychain-backed token shown once on rotation,
+ * and a list of what enabling it exposes. They were written out twice, which
+ * meant a fix to one — the unmount-safe copy timer below, for instance — had
+ * to be remembered in the other. The wording is what actually differs, so the
+ * wording is what this takes.
+ */
+function ListenerSettings<T extends ListenerStatus>({
+  load,
+  save,
+  rotate,
+  defaultPort,
+  toggleLabel,
+  toggleHelp,
+  portHelp,
+  exposes,
+  tokenWarning,
+  children,
+}: {
+  load: () => Promise<T>;
+  save: (enabled: boolean, port: number) => Promise<T>;
+  rotate: () => Promise<string>;
+  defaultPort: number;
+  toggleLabel: string;
+  toggleHelp: string;
+  portHelp: string;
+  /** The "what this does and does not expose" bullets. */
+  exposes: ReactNode;
+  tokenWarning: string;
+  /** Anything the specific listener adds below the token — an example, a
+   *  client configuration, the tool list. */
+  children?: (status: T, copy: (text: string, what: string) => void, copied: string | null) => ReactNode;
+}) {
+  const [status, setStatus] = useState<T | null>(null);
+  const [port, setPort] = useState(defaultPort);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Held only until the panel unmounts — the backend cannot return it again. */
   const [freshToken, setFreshToken] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  /** So the copy timer cannot call setState after the panel has gone. */
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    api
-      .getIngestSettings()
+    load()
       .then((s) => {
         setStatus(s);
         setPort(s.port);
       })
       .catch((e) => setError(errorMessage(e)));
-  }, []);
+  }, [load]);
+
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
 
   if (!status) {
     return <Empty title={error ?? "Loading…"} />;
@@ -1121,7 +1174,7 @@ function IngestSettings() {
     setBusy(true);
     setError(null);
     try {
-      const next = await api.saveIngestSettings(enabled, nextPort);
+      const next = await save(enabled, nextPort);
       setStatus(next);
       setPort(next.port);
     } catch (e) {
@@ -1131,12 +1184,12 @@ function IngestSettings() {
     }
   };
 
-  const rotate = async () => {
+  const rotateToken = async () => {
     setBusy(true);
     setError(null);
     try {
-      setFreshToken(await api.rotateIngestToken());
-      setStatus(await api.getIngestSettings());
+      setFreshToken(await rotate());
+      setStatus(await load());
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -1144,22 +1197,16 @@ function IngestSettings() {
     }
   };
 
-  const copy = async (text: string, what: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(what);
-      setTimeout(() => setCopied(null), 1500);
-    } catch {
-      setError("Could not reach the clipboard.");
-    }
+  const copy = (text: string, what: string) => {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(what);
+        if (copyTimer.current) clearTimeout(copyTimer.current);
+        copyTimer.current = setTimeout(() => setCopied(null), 1500);
+      })
+      .catch(() => setError("Could not reach the clipboard."));
   };
-
-  const example = [
-    `curl -X POST ${status.url} \\`,
-    `  -H "Authorization: Bearer $ROOT_INGEST_TOKEN" \\`,
-    `  -H "Content-Type: application/json" \\`,
-    `  -d '{"service":"checkout-api","version":"1.9.0","connection":"prod-docker"}'`,
-  ].join("\n");
 
   return (
     <div className="grid max-w-4xl gap-3 lg:grid-cols-2">
@@ -1179,20 +1226,12 @@ function IngestSettings() {
               className="mt-0.5 accent-accent"
             />
             <span className="min-w-0">
-              <span className="block text-xs font-medium text-ink">
-                Accept deploy events on this machine
-              </span>
-              <span className="block text-2xs leading-snug text-ink-4">
-                Off by default. While on, root listens on loopback for POSTs describing a
-                deploy, and each one becomes a marker on that connection's timeline.
-              </span>
+              <span className="block text-xs font-medium text-ink">{toggleLabel}</span>
+              <span className="block text-2xs leading-snug text-ink-4">{toggleHelp}</span>
             </span>
           </label>
 
-          <Field
-            label="Port"
-            help="Above 1023. Changing it moves the listener immediately."
-          >
+          <Field label="Port" help={portHelp}>
             <div className="flex gap-1.5">
               <Input
                 type="number"
@@ -1200,7 +1239,7 @@ function IngestSettings() {
                 max={65535}
                 className="w-28"
                 value={port}
-                onChange={(e) => setPort(Number(e.target.value) || 7717)}
+                onChange={(e) => setPort(Number(e.target.value) || defaultPort)}
               />
               <Button
                 onClick={() => apply(status.enabled, port)}
@@ -1230,23 +1269,7 @@ function IngestSettings() {
 
           <div className="rounded-md border border-line bg-page p-2.5">
             <h4 className="label mb-1.5">What this does and does not expose</h4>
-            <ul className="flex flex-col gap-1 text-2xs leading-snug text-ink-3">
-              <li>
-                Binds <span className="num text-ink-2">127.0.0.1</span> only — never
-                <span className="num text-ink-2"> 0.0.0.0</span>. Nothing off this machine can
-                reach it, whatever your firewall says.
-              </li>
-              <li>Every request needs the bearer token; it is compared in constant time.</li>
-              <li>
-                Accepts one shape of record and rejects unknown connections, so a marker always
-                belongs to something real.
-              </li>
-              <li>
-                A cloud CI runner cannot reach a laptop. The poster has to be on this machine —
-                a deploy script, a git hook, a self-hosted runner — or arrive through a tunnel
-                you set up.
-              </li>
-            </ul>
+            <ul className="flex flex-col gap-1 text-2xs leading-snug text-ink-3">{exposes}</ul>
           </div>
         </div>
       </Panel>
@@ -1272,7 +1295,7 @@ function IngestSettings() {
             ) : (
               <Tag color="var(--color-warn)">No token</Tag>
             )}
-            <Button className="ml-auto" onClick={rotate} disabled={busy}>
+            <Button className="ml-auto" onClick={rotateToken} disabled={busy}>
               {status.hasToken ? "Rotate" : "Generate"}
             </Button>
           </div>
@@ -1285,10 +1308,7 @@ function IngestSettings() {
                 background: "color-mix(in oklab, var(--color-warn) 8%, transparent)",
               }}
             >
-              <p className="mb-1.5 text-2xs text-warn">
-                Copy this now — it will not be shown again. Any pipeline using the previous
-                token has already stopped working.
-              </p>
+              <p className="mb-1.5 text-2xs text-warn">{tokenWarning}</p>
               <div className="flex items-center gap-1.5">
                 <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-page px-2 py-1 text-2xs text-ink">
                   {freshToken}
@@ -1300,262 +1320,139 @@ function IngestSettings() {
             </div>
           )}
 
-          <div>
-            <div className="mb-1 flex items-center gap-2">
-              <span className="label">Example</span>
-              <Button
-                variant="ghost"
-                className="ml-auto"
-                onClick={() => copy(example, "curl")}
-              >
-                {copied === "curl" ? "Copied" : "Copy"}
-              </Button>
-            </div>
-            <pre className="overflow-x-auto rounded-md border border-line bg-page p-2.5 text-2xs leading-relaxed text-ink-2">
-              {example}
-            </pre>
-            <p className="mt-1.5 text-2xs leading-snug text-ink-4">
-              <span className="num text-ink-3">connection</span> matches a connection by id or
-              name. <span className="num text-ink-3">previousVersion</span>,{" "}
-              <span className="num text-ink-3">at</span> and{" "}
-              <span className="num text-ink-3">note</span> are optional.
-            </p>
-          </div>
+          {children?.(status, copy, copied)}
         </div>
       </Panel>
     </div>
   );
 }
 
+function IngestSettings() {
+  const example = (url: string) =>
+    [
+      `curl -X POST ${url} \\`,
+      `  -H "Authorization: Bearer $ROOT_INGEST_TOKEN" \\`,
+      `  -H "Content-Type: application/json" \\`,
+      `  -d '{"service":"checkout-api","version":"1.9.0","connection":"prod-docker"}'`,
+    ].join("\n");
+
+  return (
+    <ListenerSettings
+      load={api.getIngestSettings}
+      save={api.saveIngestSettings}
+      rotate={api.rotateIngestToken}
+      defaultPort={7717}
+      toggleLabel="Accept deploy events on this machine"
+      toggleHelp="Off by default. While on, root listens on loopback for POSTs describing a deploy, and each one becomes a marker on that connection's timeline."
+      portHelp="Above 1023, and not the MCP server's port. Changing it moves the listener immediately."
+      tokenWarning="Copy this now — it will not be shown again. Any pipeline using the previous token has already stopped working."
+      exposes={
+        <>
+          <li>
+            Binds <span className="num text-ink-2">127.0.0.1</span> only — never
+            <span className="num text-ink-2"> 0.0.0.0</span>. Nothing off this machine can
+            reach it, whatever your firewall says.
+          </li>
+          <li>Every request needs the bearer token; it is compared in constant time.</li>
+          <li>
+            Accepts one shape of record and rejects unknown connections, so a marker always
+            belongs to something real.
+          </li>
+          <li>
+            A cloud CI runner cannot reach a laptop. The poster has to be on this machine —
+            a deploy script, a git hook, a self-hosted runner — or arrive through a tunnel
+            you set up.
+          </li>
+        </>
+      }
+    >
+      {(status, copy, copied) => (
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            <span className="label">Example</span>
+            <Button
+              variant="ghost"
+              className="ml-auto"
+              onClick={() => copy(example(status.url), "curl")}
+            >
+              {copied === "curl" ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <pre className="overflow-x-auto rounded-md border border-line bg-page p-2.5 text-2xs leading-relaxed text-ink-2">
+            {example(status.url)}
+          </pre>
+          <p className="mt-1.5 text-2xs leading-snug text-ink-4">
+            <span className="num text-ink-3">connection</span> matches a connection by id or
+            name. <span className="num text-ink-3">previousVersion</span>,{" "}
+            <span className="num text-ink-3">at</span> and{" "}
+            <span className="num text-ink-3">note</span> are optional.
+          </p>
+        </div>
+      )}
+    </ListenerSettings>
+  );
+}
 
 // ----------------------------------------------------------------- MCP server
 
 function McpSettings() {
-  const [status, setStatus] = useState<McpStatus | null>(null);
-  const [port, setPort] = useState(7718);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  /** Held only until the panel unmounts — the backend cannot return it again. */
-  const [freshToken, setFreshToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .getMcpSettings()
-      .then((s) => {
-        setStatus(s);
-        setPort(s.port);
-      })
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
-
-  if (!status) {
-    return <Empty title={error ?? "Loading…"} />;
-  }
-
-  const apply = async (enabled: boolean, nextPort: number) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await api.saveMcpSettings(enabled, nextPort);
-      setStatus(next);
-      setPort(next.port);
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const rotate = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      setFreshToken(await api.rotateMcpToken());
-      setStatus(await api.getMcpSettings());
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const copy = async (text: string, what: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(what);
-      setTimeout(() => setCopied(null), 1500);
-    } catch {
-      setError("Could not reach the clipboard.");
-    }
-  };
-
-  const example = JSON.stringify(
-    {
-      mcpServers: {
-        root: {
-          url: status.url,
-          headers: { Authorization: "Bearer $ROOT_MCP_TOKEN" },
+  const clientConfig = (url: string) =>
+    JSON.stringify(
+      {
+        mcpServers: {
+          root: { url, headers: { Authorization: "Bearer $ROOT_MCP_TOKEN" } },
         },
       },
-    },
-    null,
-    2,
-  );
+      null,
+      2,
+    );
 
   return (
-    <div className="grid max-w-4xl gap-3 lg:grid-cols-2">
-      <Panel title="Listener">
-        <div className="flex flex-col gap-3">
-          <label
-            className={cx(
-              "flex cursor-pointer gap-2.5 rounded-md border p-2.5 transition-colors",
-              status.enabled ? "border-accent/50 bg-accent/8" : "border-line bg-page",
-            )}
-          >
-            <input
-              type="checkbox"
-              checked={status.enabled}
-              disabled={busy}
-              onChange={(e) => apply(e.target.checked, port)}
-              className="mt-0.5 accent-accent"
-            />
-            <span className="min-w-0">
-              <span className="block text-xs font-medium text-ink">
-                Let other programs read this estate over MCP
-              </span>
-              <span className="block text-2xs leading-snug text-ink-4">
-                Off by default. While on, anything that speaks the Model Context Protocol —
-                another assistant, an editor, an agent — can ask root what it knows.
-              </span>
-            </span>
-          </label>
-
-          <Field
-            label="Port"
-            help="Above 1023, and not the deploy-ingest port. Changing it moves the listener immediately."
-          >
-            <div className="flex gap-1.5">
-              <Input
-                type="number"
-                min={1024}
-                max={65535}
-                className="w-28"
-                value={port}
-                onChange={(e) => setPort(Number(e.target.value) || 7718)}
-              />
-              <Button
-                onClick={() => apply(status.enabled, port)}
-                disabled={busy || port === status.port}
-              >
-                Apply
-              </Button>
-            </div>
-          </Field>
-
-          <Field label="Endpoint">
-            <div className="flex items-center gap-1.5">
-              <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-page px-2 py-1 text-2xs text-ink-2">
-                {status.url}
-              </code>
-              <Button onClick={() => copy(status.url, "url")}>
-                {copied === "url" ? "Copied" : "Copy"}
-              </Button>
-            </div>
-          </Field>
-
-          {error && (
-            <p className="text-xs text-crit" role="alert">
-              {error}
-            </p>
-          )}
-
-          <div className="rounded-md border border-line bg-page p-2.5">
-            <h4 className="label mb-1.5">What this does and does not expose</h4>
-            <ul className="flex flex-col gap-1 text-2xs leading-snug text-ink-3">
-              <li>
-                Binds <span className="num text-ink-2">127.0.0.1</span> only — never
-                <span className="num text-ink-2"> 0.0.0.0</span>. Nothing off this machine can
-                reach it, whatever your firewall says.
-              </li>
-              <li>Every request needs the bearer token; it is compared in constant time.</li>
-              <li>
-                <span className="text-ink-2">Read-only, always.</span> A connected program can
-                never restart a container, trigger a build, or terminate a query — not even
-                while the assistant here is set to allow actions. Those stop at a confirmation
-                dialog, and a request has no dialog.
-              </li>
-              <li>
-                A client that reads your estate can also repeat it. Point this at programs you
-                would already trust with the same screens.
-              </li>
-            </ul>
-          </div>
-        </div>
-      </Panel>
-
-      <Panel title="Token">
-        <div className="flex flex-col gap-3">
-          {status.keychainAvailable ? (
-            <p className="text-xs leading-relaxed text-ink-3">
-              Stored in the OS keychain, never in the config file. It is shown once when
-              created — root cannot read it back, so rotate if you lose it.
-            </p>
-          ) : (
-            <p className="text-xs text-warn">
-              The keychain is unavailable on this system, so no token can be stored and the
-              listener will refuse to start.
-            </p>
-          )}
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-ink-4">Status</span>
-            {status.hasToken ? (
-              <Tag color="var(--color-ok)">Token stored</Tag>
-            ) : (
-              <Tag color="var(--color-warn)">No token</Tag>
-            )}
-            <Button className="ml-auto" onClick={rotate} disabled={busy}>
-              {status.hasToken ? "Rotate" : "Generate"}
-            </Button>
-          </div>
-
-          {freshToken && (
-            <div
-              className="rounded-md border p-2.5"
-              style={{
-                borderColor: "color-mix(in oklab, var(--color-warn) 40%, transparent)",
-                background: "color-mix(in oklab, var(--color-warn) 8%, transparent)",
-              }}
-            >
-              <p className="mb-1.5 text-2xs text-warn">
-                Copy this now — it will not be shown again. Any client using the previous token
-                has already stopped working.
-              </p>
-              <div className="flex items-center gap-1.5">
-                <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-page px-2 py-1 text-2xs text-ink">
-                  {freshToken}
-                </code>
-                <Button onClick={() => copy(freshToken, "token")}>
-                  {copied === "token" ? "Copied" : "Copy"}
-                </Button>
-              </div>
-            </div>
-          )}
-
+    <ListenerSettings
+      load={api.getMcpSettings}
+      save={api.saveMcpSettings}
+      rotate={api.rotateMcpToken}
+      defaultPort={7718}
+      toggleLabel="Let other programs read this estate over MCP"
+      toggleHelp="Off by default. While on, anything that speaks the Model Context Protocol — another assistant, an editor, an agent — can ask root what it knows."
+      portHelp="Above 1023, and not the deploy-ingest port. Changing it moves the listener immediately."
+      tokenWarning="Copy this now — it will not be shown again. Any client using the previous token has already stopped working."
+      exposes={
+        <>
+          <li>
+            Binds <span className="num text-ink-2">127.0.0.1</span> only — never
+            <span className="num text-ink-2"> 0.0.0.0</span>. Nothing off this machine can
+            reach it, whatever your firewall says.
+          </li>
+          <li>Every request needs the bearer token; it is compared in constant time.</li>
+          <li>
+            <span className="text-ink-2">Reading only.</span> A connected program can never
+            restart a container, trigger a build, or terminate a query — not even while the
+            assistant here is set to allow actions. It also cannot record a finding or force
+            a connection to re-poll: those change something, so they stay with the operator.
+          </li>
+          <li>
+            A client that reads your estate can also repeat it. Point this at programs you
+            would already trust with the same screens.
+          </li>
+        </>
+      }
+    >
+      {(status, copy, copied) => (
+        <>
           <div>
             <div className="mb-1 flex items-center gap-2">
               <span className="label">Client configuration</span>
               <Button
                 variant="ghost"
                 className="ml-auto"
-                onClick={() => copy(example, "config")}
+                onClick={() => copy(clientConfig(status.url), "config")}
               >
                 {copied === "config" ? "Copied" : "Copy"}
               </Button>
             </div>
             <pre className="overflow-x-auto rounded-md border border-line bg-page p-2.5 text-2xs leading-relaxed text-ink-2">
-              {example}
+              {clientConfig(status.url)}
             </pre>
           </div>
 
@@ -1574,9 +1471,9 @@ function McpSettings() {
               ))}
             </div>
           </div>
-        </div>
-      </Panel>
-    </div>
+        </>
+      )}
+    </ListenerSettings>
   );
 }
 

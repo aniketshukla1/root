@@ -579,7 +579,7 @@ impl GigapipeCollector {
                 root_service: hit.root_service_name,
                 root_name: hit.root_trace_name,
                 started_at: hit.start_time_unix_nano.to_utc().unwrap_or(end),
-                duration_ms: hit.duration_ms as f64,
+                duration_ms: hit.duration_ms,
                 // The search result carries no error count. Reporting zero
                 // would read as "checked, none found" rather than "not known".
                 error_count: None,
@@ -844,11 +844,17 @@ impl Collector for GigapipeCollector {
 
         let new_parse_errors = previous
             .as_ref()
-            .and_then(|p| (current.parse_errors > p.parse_errors).then(|| current.parse_errors - p.parse_errors))
+            .and_then(|p| {
+                (current.parse_errors > p.parse_errors)
+                    .then_some(current.parse_errors - p.parse_errors)
+            })
             .unwrap_or(0.0);
         let new_resets = previous
             .as_ref()
-            .and_then(|p| (current.conn_resets > p.conn_resets).then(|| current.conn_resets - p.conn_resets))
+            .and_then(|p| {
+                (current.conn_resets > p.conn_resets)
+                    .then_some(current.conn_resets - p.conn_resets)
+            })
             .unwrap_or(0.0);
 
         *self.previous.lock().await = Some(current.clone());

@@ -250,9 +250,61 @@ export function Correlate({
                   </div>
                 )}
 
+                {(lane.traces?.length ?? 0) > 0 && (
+                  <div className="flex flex-col gap-1 border-b border-line px-3 py-2">
+                    <div className="label mb-0.5">
+                      Requests that spent time here
+                    </div>
+                    {lane.traces!.map((trace) => {
+                      // Self time against the request's total is the claim this
+                      // lane has on the incident: most of it means the time was
+                      // spent here, a sliver means this lane was waiting.
+                      const share = trace.durationMs > 0 ? trace.selfMs / trace.durationMs : 0;
+                      return (
+                        <button
+                          key={`${trace.traceId}-${trace.startedAt}`}
+                          type="button"
+                          onClick={() =>
+                            onNavigate({
+                              name: "trace",
+                              profileId: lane.profileId,
+                              traceId: trace.traceId,
+                            })
+                          }
+                          className="group flex items-baseline gap-2 text-left"
+                          title="Open the waterfall"
+                        >
+                          <span
+                            className={cx(
+                              "num text-xs tabular-nums",
+                              share >= 0.5 ? "text-warn" : "text-ink",
+                            )}
+                          >
+                            {Math.round(trace.selfMs)}ms
+                          </span>
+                          <span className="text-2xs text-ink-4">
+                            of {Math.round(trace.durationMs)}ms
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-2xs text-ink-3 group-hover:text-ink">
+                            {trace.rootService} · {trace.rootName}
+                          </span>
+                          {trace.errorCount > 0 && (
+                            <Tag color="var(--color-crit)">{trace.errorCount} err</Tag>
+                          )}
+                          <span className="num text-2xs text-ink-4">
+                            {trace.spanCount} span{trace.spanCount === 1 ? "" : "s"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {lane.events.length === 0 ? (
                   <p className="px-3 py-2 text-2xs text-ink-4">
-                    No log lines — the metric movement above is the only signal here.
+                    {(lane.traces?.length ?? 0) > 0
+                      ? "No log lines — the request time above is the signal here."
+                      : "No log lines — the metric movement above is the only signal here."}
                   </p>
                 ) : (
                   <table className="w-full border-collapse">

@@ -837,6 +837,27 @@ export interface CorrelationLane {
   errorCount: number;
   events: LogEvent[];
   movements: MetricMovement[];
+  /** Traces that spent time in this connection during the window. */
+  traces?: LaneTrace[];
+}
+
+/**
+ * One trace's presence on one lane.
+ *
+ * A trace is not one service's, which is why it explains anything: the spans of
+ * one request land on the lane of whichever connection each service maps to.
+ * `selfMs` is the lane's own time, excluding what it waited on downstream —
+ * the number that separates a cause from a bystander.
+ */
+export interface LaneTrace {
+  traceId: string;
+  rootService: string;
+  rootName: string;
+  startedAt: string;
+  durationMs: number;
+  selfMs: number;
+  spanCount: number;
+  errorCount: number;
 }
 
 export interface Correlation {

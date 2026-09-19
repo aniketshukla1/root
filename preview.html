@@ -802,6 +802,11 @@
                   movements: [
                     { key: "mem_total", label: "Total memory", unit: "bytes",
                       from: 6.1e9, to: 9.4e9, changePct: 54.1 },
+                  ],
+                  traces: [
+                    { traceId: "4bf92f3577b34da6a3ce929d0e0e4736", rootService: "checkout-api",
+                      rootName: "POST /v0/orders", startedAt: at(-6), durationMs: 2180,
+                      selfMs: 140, spanCount: 4, errorCount: 1 },
                   ] },
                 { profileId: "p2", profileName: "ci.acme.dev", kind: "jenkins",
                   total: 3, errorCount: 1,
@@ -816,6 +821,16 @@
                   movements: [
                     { key: "connection_pct", label: "Connection use", unit: "percent",
                       from: 22, to: 98, changePct: 345.5 },
+                  ],
+                  // The same request, on the lane that actually held it. Two
+                  // thousand of its two thousand one hundred and eighty
+                  // milliseconds were spent here, and this connection logged
+                  // nothing at all — which is exactly the lane the old
+                  // emptiness rule would have dropped.
+                  traces: [
+                    { traceId: "4bf92f3577b34da6a3ce929d0e0e4736", rootService: "checkout-api",
+                      rootName: "POST /v0/orders", startedAt: at(-6), durationMs: 2180,
+                      selfMs: 1990, spanCount: 2, errorCount: 0 },
                   ] },
               ],
               alerts: alerts.filter((a) => a.active).slice(0, 2),

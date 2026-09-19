@@ -26,6 +26,7 @@ import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { Horizon } from "../ui/capacity";
 import { FindingList, RecallStrip } from "../ui/config";
 import { AlertList } from "../ui/AlertList";
+import { PredictionList } from "../ui/PredictionList";
 import { LogHistogram, levelColor, type Bucket } from "../ui/charts";
 import {
   EvidencePanel,
@@ -232,6 +233,7 @@ export function Overview({
           <QuietState
             model={model}
             catalog={catalog}
+            onExplain={onExplain}
             changes={changes}
             healthRuns={healthRuns}
             capacity={capacity}
@@ -297,6 +299,13 @@ export function Overview({
                 <EvidencePanel incident={selected} context={context} actions={actions} />
               </div>
             )}
+
+            <PredictionsPanel
+              model={model}
+              catalog={catalog}
+              onNavigate={onNavigate}
+              onExplain={onExplain}
+            />
 
             <RestOfEstate
               model={model}
@@ -424,6 +433,7 @@ function QuietState({
   onJudge,
   minutes,
   onNavigate,
+  onExplain,
 }: {
   model: EstateModel;
   catalog: Catalog;
@@ -435,6 +445,7 @@ function QuietState({
   onJudge: (verdict: Verdict) => void;
   minutes: number;
   onNavigate: (view: View) => void;
+  onExplain: (alert: Alert) => void;
 }) {
   // Ranked by the backend, which is the only place that can see the component
   // series — the export, the container's volume, the one hot node. Those are
@@ -445,6 +456,7 @@ function QuietState({
     [model.services],
   );
   const flaps = useMemo(() => flapped(healthRuns, model), [healthRuns, model]);
+  const expected = model.predictions.length;
 
   const recent = useMemo(
     () => [...changes].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 6),
@@ -462,12 +474,20 @@ function QuietState({
   return (
     <>
       <section className="panel flex shrink-0 flex-col items-start gap-4 px-4 py-4 @2xl:flex-row">
-        <span className="mt-1" style={{ color: "var(--color-ok)" }}>
+        {/* "Nothing is wrong" is a claim about now, and it stays true while
+            something is expected to break later — but saying only that, on a
+            screen that also carries a forecast, reads as reassurance the
+            forecast contradicts. So the headline keeps its tense and names
+            the exception rather than swallowing it. */}
+        <span
+          className="mt-1"
+          style={{ color: expected > 0 ? "var(--color-warn)" : "var(--color-ok)" }}
+        >
           <CheckIcon size={20} />
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-3xl leading-tight font-medium tracking-[-.025em] text-ink">
-            Nothing is wrong.
+            {expected > 0 ? "Nothing is wrong yet." : "Nothing is wrong."}
           </h2>
           <p className="mt-2 max-w-[92ch] text-base leading-relaxed text-ink-2">
             All {model.counts.connections} connections reported on their last poll, and{" "}
@@ -475,9 +495,11 @@ function QuietState({
             {clearFor !== undefined
               ? ` The last thing to leave healthy recovered ${formatRelative(new Date(clearFor).toISOString())}.`
               : ` Nothing has left healthy in the last ${minutes} minutes.`}{" "}
-            {findings.length > 0
-              ? " What follows is what its own configuration says is coming, what is closest to a limit, and what changed while it was quiet."
-              : " What follows is what is closest to a limit, and what changed while it was quiet — the two things that decide whether this lasts."}
+            {expected > 0
+              ? ` ${expected} thing${expected === 1 ? " is" : "s are"} expected to break anyway — that is the first panel below, and it is the one worth reading now.`
+              : findings.length > 0
+                ? " What follows is what its own configuration says is coming, what is closest to a limit, and what changed while it was quiet."
+                : " What follows is what is closest to a limit, and what changed while it was quiet — the two things that decide whether this lasts."}
           </p>
         </div>
         <div className="flex w-full shrink-0 flex-col gap-1.5 @2xl:w-[168px]">
@@ -485,6 +507,17 @@ function QuietState({
           <Button onClick={() => onNavigate({ name: "logs" })}>Open logs</Button>
         </div>
       </section>
+
+      {/* Above both of the panels below, and for the same reason they are
+          ordered against each other: a headroom row says a number is moving
+          and a finding says which setting decides it, but this says what
+          actually breaks and roughly when. */}
+      <PredictionsPanel
+        model={model}
+        catalog={catalog}
+        onNavigate={onNavigate}
+        onExplain={onExplain}
+      />
 
       {/* Above capacity on purpose. A headroom row says something will become a
           problem; a finding says what setting decides it and what to change.
@@ -695,6 +728,50 @@ function RestOfEstate({
 }
 
 // ------------------------------------------------------------ lower panels
+
+/**
+ * What has not happened yet.
+ *
+ * Ranked above headroom and above what changed, for the reason the panel
+ * ordering already follows elsewhere on this page: the one with something to
+ * do about it goes first. A headroom row says a number is moving; this says
+ * what it reaches, roughly when, and on which connection.
+ */
+function PredictionsPanel({
+  model,
+  catalog,
+  onNavigate,
+  onExplain,
+}: {
+  model: EstateModel;
+  catalog: Catalog;
+  onNavigate: (view: View) => void;
+  onExplain: (alert: Alert) => void;
+}) {
+  if (model.predictions.length === 0) return null;
+  return (
+    <Panel
+      title="What breaks next"
+      subtitle="none of this is firing yet"
+      flush
+      bodyClassName="overflow-y-auto max-h-[300px]"
+      actions={
+        <Button variant="ghost" onClick={() => onNavigate({ name: "alerts" })}>
+          All
+          <ChevronRight size={12} />
+        </Button>
+      }
+    >
+      <PredictionList
+        predictions={model.predictions}
+        catalog={catalog}
+        limit={6}
+        onNavigate={onNavigate}
+        onExplain={onExplain}
+      />
+    </Panel>
+  );
+}
 
 function AlertsPanel({
   alerts,

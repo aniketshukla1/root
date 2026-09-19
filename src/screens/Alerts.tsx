@@ -9,6 +9,7 @@ import type { View } from "../nav";
 import type { Alert, AlertSeverity, Incident } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { compareAlerts, SEVERITY } from "../ui/AlertList";
+import { PredictionList } from "../ui/PredictionList";
 import {
   Button,
   cx,
@@ -262,6 +263,26 @@ export function Alerts({
       </ScreenHeader>
 
       <Screen className="flex flex-col gap-3">
+        {/* Above the table, and outside it. This screen is about what is
+            firing; a forecast is not, and putting one in the table — even in
+            its own row, even in its own colour — would make every filter,
+            count and "acknowledge all" on this page quietly wrong. */}
+        {model.predictions.length > 0 && (
+          <Panel
+            title="What breaks next"
+            subtitle="not firing — none of this is in the table below"
+            flush
+            bodyClassName="overflow-y-auto max-h-[260px]"
+          >
+            <PredictionList
+              predictions={model.predictions}
+              catalog={catalog}
+              onNavigate={onNavigate}
+              onExplain={onExplain}
+            />
+          </Panel>
+        )}
+
         {unacked.length > 1 && (
           <div className="flex items-center gap-2 rounded-md border border-line bg-panel px-3 py-2">
             <span className="text-xs text-ink-3">

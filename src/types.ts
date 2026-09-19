@@ -307,7 +307,15 @@ export interface ChangeEvent {
 
 export interface DashboardState {
   snapshots: HealthSnapshot[];
+  /** Conditions that are true now. */
   alerts: Alert[];
+  /**
+   * What the prediction engine expects to become true.
+   *
+   * A separate field rather than a flag on the alerts, so a surface that has
+   * not been taught about predictions cannot show one by accident.
+   */
+  predictions: Alert[];
   overallHealth: Health;
   servicesTotal: number;
   servicesHealthy: number;

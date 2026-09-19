@@ -6,6 +6,7 @@ import type { Catalog } from "./catalog";
 import { isProblem } from "./catalog";
 import type {
   Alert,
+  AlertSeverity,
   AppConfig,
   CellValue,
   ColumnSpec,
@@ -147,11 +148,29 @@ export interface ServiceView {
   health: Health;
 }
 
+/**
+ * Alert severities, most urgent first.
+ *
+ * The prediction engine speaks in horizons — `now`, `soon`, `advisory` — which
+ * map onto these, so sorting a prediction list by severity sorts it by how
+ * long there is to act.
+ */
+const SEVERITY_ORDER: AlertSeverity[] = ["critical", "warning", "info"];
+
 export interface EstateModel {
   services: ServiceView[];
   entities: Entity[];
   issues: Issue[];
+  /** Active, and real — what is true now. Never includes a forecast. */
   alerts: Alert[];
+  /**
+   * Active predictions, soonest first.
+   *
+   * Kept out of `alerts` and out of every count derived from it: a forecast
+   * must not make the estate read as on fire, and an alert count that a
+   * forecast can inflate is a count nobody can act on.
+   */
+  predictions: Alert[];
   counts: {
     connections: number;
     healthy: number;
@@ -245,6 +264,7 @@ export function buildModel(
     entities: [],
     issues: [],
     alerts: [],
+    predictions: [],
     counts: {
       connections: 0, healthy: 0, degraded: 0, down: 0, unknown: 0,
       entities: 0, alerts: 0, unacknowledged: 0, critical: 0, assigned: 0, production: 0,
@@ -254,6 +274,14 @@ export function buildModel(
   if (!dashboard) return empty;
 
   const active = dashboard.alerts.filter((a) => a.active);
+
+  // Soonest first. Severity is the horizon the prediction engine speaks in —
+  // `now`, `soon`, `advisory` — so ordering by it is ordering by how long
+  // there is to act, which is the only ordering this list has a use for.
+  const predictions = (dashboard.predictions ?? [])
+    .filter((a) => a.active)
+    .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
+
   const allEntities: Entity[] = [];
 
   const services = dashboard.snapshots.map<ServiceView>((snapshot) => {
@@ -324,6 +352,7 @@ export function buildModel(
     entities: allEntities,
     issues,
     alerts: active,
+    predictions,
     counts: {
       connections: services.length,
       healthy: services.filter((s) => s.health === "healthy").length,

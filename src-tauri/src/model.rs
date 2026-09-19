@@ -873,7 +873,17 @@ pub struct ChangeEvent {
 #[serde(rename_all = "camelCase")]
 pub struct DashboardState {
     pub snapshots: Vec<HealthSnapshot>,
+    /// Conditions that are true now.
     pub alerts: Vec<Alert>,
+    /// What the prediction engine expects to become true.
+    ///
+    /// A separate field rather than a flag on the alerts, so that a surface
+    /// which has not been taught about predictions cannot show one by
+    /// accident. Leaving them in with a marker would make every list that
+    /// forgot to filter quietly wrong — and the list that matters is the one
+    /// an operator reads at three in the morning.
+    #[serde(default)]
+    pub predictions: Vec<Alert>,
     pub overall_health: Health,
     pub services_total: usize,
     pub services_healthy: usize,

@@ -235,7 +235,7 @@ impl AlertStore {
         // resolve every prediction, and each prediction run would resolve every
         // live alert, so both would flicker on and off forever.
         for alert in self.alerts.values_mut() {
-            let mine = alert.fingerprint.starts_with(crate::predict::ALERT_PREFIX) == predictions;
+            let mine = crate::predict::is_prediction(&alert.fingerprint) == predictions;
             if mine
                 && alert.profile_id == profile_id
                 && alert.active
@@ -255,8 +255,30 @@ impl AlertStore {
         newly_raised
     }
 
+    /// Alerts for things that are true now.
+    ///
+    /// Predictions are deliberately *not* here. They live in the same store
+    /// because the lifecycle is the same one — raised, seen again, resolved
+    /// when it stops holding — but an alert is a statement about the present
+    /// and a prediction is a statement about the future, and a list that mixes
+    /// them makes the operator do the sorting. [`predictions`](Self::predictions)
+    /// returns the other half.
     pub fn all(&self) -> Vec<Alert> {
-        let mut alerts: Vec<Alert> = self.alerts.values().cloned().collect();
+        self.sorted(false)
+    }
+
+    /// What the prediction engine expects, kept apart from what is happening.
+    pub fn predictions(&self) -> Vec<Alert> {
+        self.sorted(true)
+    }
+
+    fn sorted(&self, predictions: bool) -> Vec<Alert> {
+        let mut alerts: Vec<Alert> = self
+            .alerts
+            .values()
+            .filter(|a| crate::predict::is_prediction(&a.fingerprint) == predictions)
+            .cloned()
+            .collect();
         alerts.sort_by(|a, b| {
             b.active
                 .cmp(&a.active)
@@ -554,9 +576,11 @@ impl AppState {
             .max()
             .unwrap_or(Health::Unknown);
 
+        let store = self.alerts.read().await;
         DashboardState {
             snapshots,
-            alerts: self.alerts.read().await.all(),
+            alerts: store.all(),
+            predictions: store.predictions(),
             overall_health,
             services_total,
             services_healthy,
@@ -720,6 +744,77 @@ mod tests {
         let all = store.all();
         assert_eq!(all.len(), 1);
         assert!(!all[0].active, "kept as recently-resolved");
+    }
+
+    /// A prediction shaped the way `predict::alerts_from` shapes one.
+    fn predicted(profile: &str, title: &str) -> Alert {
+        Alert {
+            id: uuid::Uuid::new_v4().to_string(),
+            fingerprint: format!("{}{profile}:{title}", crate::predict::ALERT_PREFIX),
+            profile_id: profile.to_string(),
+            profile_name: profile.to_string(),
+            kind: crate::model::ServiceKind::Postgres,
+            severity: AlertSeverity::Critical,
+            title: title.to_string(),
+            detail: "within the hour".to_string(),
+            component: None,
+            first_seen: Utc::now(),
+            last_seen: Utc::now(),
+            active: true,
+            acknowledged: false,
+        }
+    }
+
+    #[test]
+    fn a_prediction_never_arrives_in_the_alert_list() {
+        // The whole separation, in one assertion. An alert is a statement
+        // about the present; a prediction is a statement about the future.
+        // A list that mixes them makes the operator do the sorting, at the
+        // hour they are least able to.
+        let mut store = AlertStore::default();
+        let mut snap = snapshot(Health::Degraded);
+        snap.sections.push(
+            Section::new("components", "Components", vec![ColumnSpec::text("name", "Name").primary()])
+                .rows(vec![Row::new("c1", "api", Health::Down).summary("exited")]),
+        );
+        store.reconcile("p1", alerts_from_snapshot(&snap));
+        store.reconcile_predictions("p1", vec![predicted("p1", "refuses new connections")]);
+
+        let alerts = store.all();
+        let predictions = store.predictions();
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(predictions.len(), 1);
+        assert!(
+            alerts.iter().all(|a| !crate::predict::is_prediction(&a.fingerprint)),
+            "a forecast reached the alert list"
+        );
+        assert_eq!(predictions[0].title, "refuses new connections");
+    }
+
+    #[test]
+    fn neither_engine_can_resolve_the_other_s_findings() {
+        // They share a store, so a reconcile that swept everything for a
+        // profile would let each one silence the other on alternate polls —
+        // an alert that flickers is worse than one that never fired.
+        let mut store = AlertStore::default();
+        let mut snap = snapshot(Health::Degraded);
+        snap.sections.push(
+            Section::new("components", "Components", vec![ColumnSpec::text("name", "Name").primary()])
+                .rows(vec![Row::new("c1", "api", Health::Down).summary("exited")]),
+        );
+        store.reconcile("p1", alerts_from_snapshot(&snap));
+        store.reconcile_predictions("p1", vec![predicted("p1", "fills this afternoon")]);
+
+        // A prediction sweep that found nothing must not resolve the outage.
+        store.reconcile_predictions("p1", Vec::new());
+        assert!(store.all()[0].active, "the rules' alert was resolved by the model");
+        assert!(!store.predictions()[0].active, "its own prediction should have resolved");
+
+        // And the reverse: a clean poll must not resolve a live prediction.
+        store.reconcile_predictions("p1", vec![predicted("p1", "fills this afternoon")]);
+        store.reconcile("p1", alerts_from_snapshot(&snapshot(Health::Healthy)));
+        assert!(!store.all()[0].active, "the outage should have resolved");
+        assert!(store.predictions()[0].active, "the prediction was resolved by the rules");
     }
 
     #[test]

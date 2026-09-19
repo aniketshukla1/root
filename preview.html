@@ -414,6 +414,34 @@
             sections: [], checkedAt: iso(5000), latencyMs: 88 },
         ];
 
+        // Forecasts. They travel on their own field, never in `alerts`, and
+        // their fingerprints carry the `predict:` prefix the backend splits
+        // on — so a surface that filtered by fingerprint rather than by field
+        // would still get this right, and one that did neither shows up here
+        // immediately.
+        //
+        // One of each horizon: an hour away, a direction without a date, and
+        // the middle case. The engine maps its own `now`/`soon`/`advisory` on
+        // to these severities, which is why the panel renders them back as
+        // horizons rather than as urgencies.
+        const predictions = [
+          { id: "pr1", fingerprint: "predict:p4:orders-db-refuses-new-connections",
+            profileId: "p4", profileName: "orders-db", kind: "postgres",
+            severity: "critical", title: "orders-db refuses new connections within the hour",
+            detail: "Connections have climbed from 14 to 23 of 25 over three hours with a 0.94 fit, and the reserved-slot error has gone from 1 to 18 per bucket across the same window. At this slope the pool is exhausted in about 80 minutes, and checkout-api depends on it.",
+            firstSeen: iso(300000), lastSeen: iso(60000), active: true, acknowledged: false },
+          { id: "pr2", fingerprint: "predict:p1:prod-docker-checkout-api-oom",
+            profileId: "p1", profileName: "prod-docker", kind: "docker",
+            severity: "warning", title: "checkout-api is killed again on the next deploy",
+            detail: "Heap has not returned to its pre-deploy baseline across three restarts, and the container carries no memory limit — so the host decides which process dies, and last time it chose this one.",
+            firstSeen: iso(900000), lastSeen: iso(60000), active: true, acknowledged: false },
+          { id: "pr3", fingerprint: "predict:p3:logs-cluster-shard-pressure",
+            profileId: "p3", profileName: "logs-cluster", kind: "elasticsearch",
+            severity: "info", title: "logs-cluster runs out of shard headroom this quarter",
+            detail: "Index count has grown every week for six weeks with no rollover policy visible in the config root can read. There is no date in this — only a direction that has not changed.",
+            firstSeen: iso(1800000), lastSeen: iso(60000), active: true, acknowledged: false },
+        ];
+
         const alerts = [
           { id: "a1", fingerprint: "f1", profileId: "p2", profileName: "ci.acme.dev", kind: "jenkins",
             severity: "critical", title: "ci.acme.dev is unreachable",
@@ -605,7 +633,8 @@
 
         const handlers = {
           get_dashboard: () => ({
-            snapshots, alerts, overallHealth: "down", servicesTotal: snapshots.length,
+            snapshots, alerts, predictions, overallHealth: "down",
+            servicesTotal: snapshots.length,
             servicesHealthy: 3, servicesDown: 1, generatedAt: iso(1200),
           }),
           get_service_catalog: () => catalog,

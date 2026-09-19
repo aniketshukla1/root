@@ -251,10 +251,13 @@ pub async fn gather_evidence(state: &Arc<AppState>) -> Vec<String> {
     // -------------------------------------------------------------- alerts
     {
         let alerts = state.alerts.read().await;
+        // `all()` is real alerts only now, so this can no longer feed the
+        // model its own past predictions as though they were observations —
+        // which was the point of the filter that used to sit here.
         let active: Vec<String> = alerts
             .all()
             .into_iter()
-            .filter(|a| a.active && !a.fingerprint.starts_with(ALERT_PREFIX))
+            .filter(|a| a.active)
             .map(|a| format!("- [{:?}] {}: {}", a.severity, a.profile_name, a.title))
             .collect();
         if !active.is_empty() {
@@ -585,6 +588,17 @@ fn stable_slug(title: &str) -> String {
 /// filling and read a config that will refuse writes this afternoon, and both
 /// sat on a screen until somebody opened it. A prediction that does not push is
 /// a prediction nobody reads in time.
+/// Whether an alert came from the prediction engine rather than from a
+/// collector's own reading.
+///
+/// The single discriminator. A prediction is stored beside real alerts because
+/// the lifecycle is genuinely shared — one that stops being true has to resolve
+/// exactly as an alert does — but it is never *shown* beside one, and every
+/// boundary that hands alerts outward splits on this and nothing else.
+pub fn is_prediction(fingerprint: &str) -> bool {
+    fingerprint.starts_with(ALERT_PREFIX)
+}
+
 pub fn alerts_from(predictions: &[Prediction]) -> Vec<Alert> {
     predictions
         .iter()
@@ -603,10 +617,13 @@ pub fn alerts_from(predictions: &[Prediction]) -> Vec<Alert> {
                     Severity::Soon => AlertSeverity::Warning,
                     Severity::Advisory => AlertSeverity::Info,
                 },
-                // Marked as a forecast in the title, because an operator has to
-                // be able to tell "this is happening" from "this is expected"
-                // at a glance in a list that mixes both.
-                title: format!("Predicted: {}", finding.title),
+                // The title is the failure, unqualified. It used to carry a
+                // "Predicted: " prefix because this rode in the same list as
+                // real alerts and an operator had to tell them apart by
+                // reading. Nothing mixes them now — predictions leave the
+                // backend on their own field and land in their own panel — so
+                // the prefix would only repeat the heading above it.
+                title: finding.title.clone(),
                 detail: finding.detail.clone(),
                 component: None,
                 first_seen: prediction.at,
@@ -788,6 +805,10 @@ mod tests {
         };
         let alerts = alerts_from(&[prediction]);
         assert!(alerts[0].fingerprint.starts_with(ALERT_PREFIX));
-        assert!(alerts[0].title.starts_with("Predicted: "));
+        assert!(
+            !alerts[0].title.starts_with("Predicted: "),
+            "the panel says it is a forecast; the title should not say it twice"
+        );
+        assert!(is_prediction(&alerts[0].fingerprint));
     }
 }

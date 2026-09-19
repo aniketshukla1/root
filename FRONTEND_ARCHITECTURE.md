@@ -143,7 +143,8 @@ src/
                    Scorecard, Settings, ServiceDetail, ServiceDashboard,
                    ComponentDetail, TraceDetail, ProfileDetail, Correlate,
                    TeamSettings, Onboarding, SignIn
-  ui/              primitives, charts, icons, SectionTable, AlertList
+  ui/              primitives, charts, icons, SectionTable, AlertList,
+                   PredictionList
   icons/marks/     brand marks, auto-discovered per kind
 ```
 
@@ -194,6 +195,15 @@ frame that is wide only because it waited on its children stays cool. Frames
 arrive already positioned and parented from `profiles.rs` — the wire format
 delta-encodes every offset, and a renderer that read those as absolute
 positions would draw a graph that was subtly, plausibly wrong.
+
+A forecast is never an alert. Predictions arrive on their own field of the
+dashboard payload, land in `EstateModel.predictions`, and render through
+`ui/PredictionList.tsx` — never `AlertList`. They are absent from
+`EstateModel.alerts` and from every count derived from it, so a surface that
+has not been taught about them cannot show one by accident. The alternative —
+one list with a marker on it — makes every consumer that forgets to filter
+quietly wrong, and the list that matters is the one somebody reads at three in
+the morning.
 
 Operational context lives in each `ConnectionProfile`'s open `metadata`
 envelope, separate from collector `options`. The `operations` namespace holds

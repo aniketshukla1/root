@@ -505,6 +505,9 @@ export const ALERTS: Alert[] = (() => {
 export const DASHBOARD: DashboardState = {
   snapshots: SNAPSHOTS,
   alerts: ALERTS,
+  // Forecasts travel apart from alerts, so a surface that has not been
+  // taught about them cannot show one by accident.
+  predictions: [],
   overallHealth: "degraded",
   servicesTotal: SNAPSHOTS.length,
   servicesHealthy: SNAPSHOTS.filter((s) => s.health === "healthy").length,

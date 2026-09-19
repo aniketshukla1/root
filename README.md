@@ -412,10 +412,27 @@ third is a prediction you can check:
   with nothing moving produces no call at all, because asking what might break when
   nothing is happening is how a plausible answer gets manufactured.
 
-What it finds is **raised as an alert**, which is the actual point. Root could already
-project a disk filling three days out and would wait silently for someone to open the
-right screen. Prediction alerts carry a `predict:` fingerprint and reconcile on their own
-track, so the snapshot engine and this one never resolve each other's work.
+What it finds **pushes**, which is the actual point. Root could already project a disk
+filling three days out and would wait silently for someone to open the right screen. A
+prediction now lands on the first screen anyone opens, in a panel called **What breaks
+next**, above headroom and above what changed — a headroom row says a number is moving;
+this says what it reaches and roughly when.
+
+**It is never an alert.** An alert is a statement about the present and a prediction is a
+statement about the future, and a list that mixes them makes the operator do the sorting
+at the hour they are least able to. So predictions leave the backend on their own field,
+render in their own list, and are absent from the alert count, the sidebar badge, the
+Alerts table and every filter on it. They carry a horizon — *hours*, *soon*, *watch* —
+rather than a severity, because a forecast has a deadline and not an urgency.
+
+They do share the alert store, because the lifecycle is genuinely the same one: raised,
+seen again, resolved when it stops holding. A `predict:` fingerprint is the single
+discriminator, and the two engines reconcile on separate tracks so neither can resolve
+the other's work.
+
+The headline follows. An estate with nothing wrong and something expected reads **"Nothing
+is wrong yet."** — still true in the present tense, and no longer reassurance the panel
+below it contradicts.
 
 ### Reading the warehouse
 

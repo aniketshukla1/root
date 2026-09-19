@@ -384,7 +384,7 @@ Scorecard; see [Is it any good?](#is-it-any-good).
 
 ### Why it happened
 
-Every incident carries a **Why did this happen?** button. One call, no tools, on
+Every incident carries a **Root Cause Analysis** button. One call, no tools, on
 evidence root is already holding — and a structured answer rather than a paragraph.
 
 `incidents.rs` already answers part of this without a model: it groups the alerts, names

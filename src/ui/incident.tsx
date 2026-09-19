@@ -169,7 +169,7 @@ export function IncidentHero({
               they already have, asked once, on evidence root is holding. */}
           <Button onClick={() => actions.onFindCause(incident)}>
             <AssistantIcon size={13} style={{ color: "var(--color-accent)" }} />
-            Why did this happen?
+            Root Cause Analysis
           </Button>
           <Button onClick={() => actions.onAsk(incident)}>
             Ask a follow-up

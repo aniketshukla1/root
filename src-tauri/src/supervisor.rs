@@ -132,6 +132,18 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
                     state.history.write().await.record(&snapshot);
                     let _ = app.emit(EVENT_SNAPSHOT, &snapshot);
 
+                    // Beside the ring buffer, never instead of it. Awaited
+                    // rather than detached because a local Postgres insert is
+                    // sub-millisecond and the ordering matters more than the
+                    // microseconds: a reader who sees a snapshot event should
+                    // find the row behind it. Failure is logged and dropped —
+                    // a database that is down is not a service outage.
+                    if let Some(store) = state.store.read().await.as_ref() {
+                        if let Err(e) = store.write_snapshot(&snapshot).await {
+                            tracing::warn!(profile = %profile.name, "history write failed: {e}");
+                        }
+                    }
+
                     // Detached on purpose. A warehouse that is down must never
                     // hold up a poll cycle, and a write that failed must never
                     // become an opinion about the service being polled — root
@@ -161,12 +173,38 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
                     if !observed.is_empty() {
                         let fresh = state.changes.write().await.record(observed);
                         if !fresh.is_empty() {
+                            if let Some(store) = state.store.read().await.as_ref() {
+                                for change in &fresh {
+                                    if let Err(e) = store.write_change(change).await {
+                                        tracing::warn!("change write failed: {e}");
+                                    }
+                                }
+                            }
                             let _ = app.emit(EVENT_CHANGES, &fresh);
                         }
                     }
 
                     let derived = alerts_from_snapshot(&snapshot);
-                    let raised = state.alerts.write().await.reconcile(&profile.id, derived);
+                    let (raised, current) = {
+                        let mut store = state.alerts.write().await;
+                        let raised = store.reconcile(&profile.id, derived);
+                        // Every alert for this connection, not only the newly
+                        // raised ones: a resolution is a row that has to be
+                        // updated, and it never appears in `raised`.
+                        let current: Vec<crate::model::Alert> = store
+                            .all()
+                            .into_iter()
+                            .filter(|a| a.profile_id == profile.id)
+                            .collect();
+                        (raised, current)
+                    };
+                    if let Some(store) = state.store.read().await.as_ref() {
+                        for alert in &current {
+                            if let Err(e) = store.write_alert(alert, false).await {
+                                tracing::warn!("alert write failed: {e}");
+                            }
+                        }
+                    }
                     if !raised.is_empty() {
                         let _ = app.emit(EVENT_ALERTS, &raised);
                     }
@@ -197,6 +235,11 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
                             .insert(profile.id.clone(), newest.max(since));
                     }
                     state.logs.write().await.push_many(events.clone());
+                    if let Some(store) = state.store.read().await.as_ref() {
+                        if let Err(e) = store.write_logs(&events).await {
+                            tracing::warn!(profile = %profile.name, "log write failed: {e}");
+                        }
+                    }
                     let _ = app.emit(EVENT_LOGS, &events);
                 }
                 Ok(_) => {

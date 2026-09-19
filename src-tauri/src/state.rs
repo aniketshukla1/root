@@ -463,6 +463,14 @@ pub struct AppState {
     /// moment, and an old one restored after a restart would be answering a
     /// question nobody asked.
     pub analyses: RwLock<HashMap<String, CachedAnalysis>>,
+    /// The estate's history on disk, when a database is configured.
+    ///
+    /// `None` is the default and means root behaves exactly as it always has:
+    /// the ring buffers are the whole of its memory. Nothing else in the
+    /// process branches on this being present — every write through it is
+    /// best-effort and every read falls back to the buffer — so a database
+    /// that goes away degrades the product rather than stopping it.
+    pub store: RwLock<Option<crate::store::Store>>,
     /// Approval channels for in-flight mutating tool calls.
     pub pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
     pub pending_meta: RwLock<HashMap<String, PendingConfirmation>>,
@@ -500,6 +508,7 @@ impl AppState {
             conversations: RwLock::new(HashMap::new()),
             readings: RwLock::new(HashMap::new()),
             analyses: RwLock::new(HashMap::new()),
+            store: RwLock::new(None),
             pending: Mutex::new(HashMap::new()),
             pending_meta: RwLock::new(HashMap::new()),
             pollers: Mutex::new(HashMap::new()),

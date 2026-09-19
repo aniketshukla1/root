@@ -42,6 +42,7 @@ pub mod runtime;
 pub mod scenarios;
 pub mod secrets;
 pub mod state;
+pub mod store;
 pub mod team;
 pub mod topology;
 pub mod traces;
@@ -152,6 +153,26 @@ pub fn run() {
                         }
                     });
                 }
+                // Before the pollers start, so the first snapshot of the
+                // session already has somewhere to land. A database that
+                // cannot be reached is logged and skipped: root has always
+                // worked without one and still does.
+                let url = state.config.read().await.storage.resolved_url();
+                if let Some(url) = url {
+                    match crate::store::Store::open(&url).await {
+                        Ok(store) => {
+                            tracing::info!(
+                                timescale = store.has_timescale(),
+                                "history is being kept"
+                            );
+                            *state.store.write().await = Some(store);
+                        }
+                        Err(e) => tracing::warn!(
+                            "history will not be kept — the database is not reachable: {e}"
+                        ),
+                    }
+                }
+
                 supervisor::reload_all(handle, state).await;
             });
 

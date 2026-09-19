@@ -780,7 +780,7 @@ section renderability, conversation trimming, the per-provider message translati
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
 grouping, config rules, and the journal.
 
-Thirteen integration suites sit in `src-tauri/tests/`, each against something real:
+Fourteen integration suites sit in `src-tauri/tests/`, each against something real:
 
 | Suite | Against | Why it is not a unit test |
 | --- | --- | --- |
@@ -795,6 +795,7 @@ Thirteen integration suites sit in `src-tauri/tests/`, each against something re
 | `mcp_server.rs` | the real `root-mcp` binary, spawned over a pipe | a server can pass every handler test and still be unusable: one stray line on stdout makes every request a parse error on the client side |
 | `gigapipe_read.rs` | wiremock, always | the nine store reads are entirely URLs, and `/label` against `/labels` or a missing `/json` fails by returning nothing — which looks exactly like a store holding nothing |
 | `influx_write.rs` | wiremock, always | line protocol is a body rather than a query string, and a malformed one is accepted with a 204 by some receivers and dropped by others — the failure is a measurement that quietly never appears |
+| `store.rs` | real PostgreSQL, TimescaleDB when present | the whole value of that layer is what survives the process, and a fake answering from memory tests the one property that does not matter |
 | `profile_read.rs` | wiremock, always | `/pyroscope/render` takes its window in milliseconds and divides by a thousand — send seconds and it answers 200 with an empty profile for a window in 1970, which looks exactly like a service that was idle |
 | `demo_estate.rs` | `demo/compose.yml`, wrong on purpose | the only layer that proves the pieces *meet* — see [The demo estate](#the-demo-estate) |
 
@@ -928,6 +929,7 @@ src-tauri/src/
   forecast.rs     Where a metric is heading, and when to refuse to say
   promquery.rs    Long-range history read from a Prometheus you already run
   rca.rs          Why one incident happened — the model, on root's own evidence
+  store.rs        The estate's history on disk — Postgres, TimescaleDB when present
   influx.rs       Snapshot write-out — the one place root writes to another store
 
   configsource.rs Where a connection's config lives, and reading it safely

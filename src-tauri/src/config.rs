@@ -310,6 +310,49 @@ pub struct AppConfig {
     pub prediction: PredictionSettings,
     #[serde(default)]
     pub team: TeamSettings,
+    #[serde(default)]
+    pub storage: StorageSettings,
+}
+
+/// Where the estate's history is kept, when it is kept anywhere.
+///
+/// Absent by default, and absent means exactly what it has always meant: the
+/// ring buffers in `history.rs` and `state.rs` are the whole of root's memory
+/// and quitting forgets. Naming a database adds a layer underneath them and
+/// changes nothing about how the live screens read.
+///
+/// The URL is a Postgres connection string. TimescaleDB is used when the
+/// extension is present and not required when it is not — see
+/// [`crate::store`] for what is lost without it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageSettings {
+    /// `postgres://user:pass@host:5432/root`. Empty means history is not kept.
+    ///
+    /// Stored here rather than in the keychain because it is a location, and
+    /// because a connection string an operator cannot read back is one they
+    /// cannot fix. A deployment that minds the password in it should pass
+    /// `ROOT_DATABASE_URL` in the environment instead, which wins over this.
+    #[serde(default)]
+    pub database_url: String,
+}
+
+impl StorageSettings {
+    /// The URL to use, environment first.
+    ///
+    /// The environment wins so a container can be handed its database without
+    /// anyone editing a config file, which is how every deployment of this
+    /// will actually be configured.
+    pub fn resolved_url(&self) -> Option<String> {
+        if let Ok(url) = std::env::var("ROOT_DATABASE_URL") {
+            let url = url.trim().to_string();
+            if !url.is_empty() {
+                return Some(url);
+            }
+        }
+        let url = self.database_url.trim();
+        (!url.is_empty()).then(|| url.to_string())
+    }
 }
 
 /// Where a shared workspace lives, if there is one.

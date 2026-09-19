@@ -671,15 +671,27 @@ pub async fn sweep(state: &Arc<AppState>) -> Result<Vec<Prediction>> {
             .collect()
     };
 
-    let mut store = state.alerts.write().await;
+    let mut alerts_store = state.alerts.write().await;
     for profile_id in profile_ids {
         let alerts = by_profile
             .get(&profile_id)
             .map(|group| alerts_from(group))
             .unwrap_or_default();
-        store.reconcile_predictions(&profile_id, alerts);
+        alerts_store.reconcile_predictions(&profile_id, alerts);
     }
-    drop(store);
+    // Persisted with `predicted = true`, so the split holds on disk as well
+    // as in memory and no query over the alert history can count a forecast
+    // as something that happened.
+    let predictions_now = alerts_store.predictions();
+    drop(alerts_store);
+
+    if let Some(history) = state.store.read().await.as_ref() {
+        for alert in &predictions_now {
+            if let Err(e) = history.write_alert(alert, true).await {
+                tracing::warn!("prediction write failed: {e}");
+            }
+        }
+    }
 
     // The model's claims land where the rules' findings already are, so the
     // same screen rates both and a prediction can earn its way into being a

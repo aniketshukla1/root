@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
+import { api, errorMessage } from "../api";
 import { healthColor, healthLabel } from "../catalog";
 import type { Catalog } from "../catalog";
 import { formatMetricValue, formatRelative } from "../format";
@@ -12,6 +13,7 @@ import type {
   ChangeEvent,
   Finding,
   Recall,
+  RootCause,
   RecordedVerdict,
   Verdict,
   Correlation,
@@ -27,6 +29,7 @@ import { Horizon } from "../ui/capacity";
 import { FindingList, RecallStrip } from "../ui/config";
 import { AlertList } from "../ui/AlertList";
 import { PredictionList } from "../ui/PredictionList";
+import { RootCausePanel } from "../ui/RootCausePanel";
 import { LogHistogram, levelColor, type Bucket } from "../ui/charts";
 import {
   EvidencePanel,
@@ -145,6 +148,31 @@ export function Overview({
     minutes,
   };
 
+  // The analysis is about one incident, so it is cleared the moment the
+  // selected one changes. A root cause rendered under a different incident's
+  // hero is the worst kind of wrong this screen could be.
+  const [cause, setCause] = useState<RootCause>();
+  const [causeFor, setCauseFor] = useState<string>();
+  const [causeLoading, setCauseLoading] = useState(false);
+  const [causeError, setCauseError] = useState<string>();
+
+  const findCause = useCallback(
+    async (incident: Incident, refresh = false) => {
+      setCauseFor(incident.id);
+      setCause(undefined);
+      setCauseError(undefined);
+      setCauseLoading(true);
+      try {
+        setCause(await api.explainIncident(incident.id, refresh));
+      } catch (e) {
+        setCauseError(errorMessage(e));
+      } finally {
+        setCauseLoading(false);
+      }
+    },
+    [],
+  );
+
   const actions: IncidentActions = {
     onOpenService: (profileId) => onNavigate({ name: "service", profileId }),
     onOpenSettingsFor: (profileId) =>
@@ -154,6 +182,7 @@ export function Overview({
     onCorrelate: (at) => onNavigate({ name: "correlate", at }),
     onAcknowledgeAll: (alertIds) => alertIds.forEach(onAcknowledge),
     onAsk: onAskIncident,
+    onFindCause: (incident) => findCause(incident),
   };
 
   /**
@@ -286,6 +315,16 @@ export function Overview({
                 context={context}
                 actions={actions}
                 footer={recall(selected)}
+              />
+            )}
+
+            {/* Under the hero whose button opened it, and only that one. */}
+            {selected && causeFor === selected.id && (
+              <RootCausePanel
+                cause={cause}
+                loading={causeLoading}
+                error={causeError}
+                onRetry={() => findCause(selected, true)}
               />
             )}
 

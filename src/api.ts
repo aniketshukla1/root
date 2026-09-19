@@ -161,6 +161,7 @@ import type {
   MetricSeries,
   PendingConfirmation,
   Profile,
+  RootCause,
   ServiceDescriptor,
   TeamState,
   TopologyView,
@@ -396,6 +397,13 @@ export const api = {
       query: query ?? null,
       minutes: minutes ?? null,
     }),
+
+  /**
+   * Why one incident happened. Cached in the backend on the incident's own
+   * state, so re-opening it is free; `refresh` asks again anyway.
+   */
+  explainIncident: (incidentId: string, refresh?: boolean) =>
+    invoke<RootCause>("explain_incident", { incidentId, refresh: refresh ?? null }),
 
   testProfile: (profile: ConnectionProfile, secret?: string) =>
     invoke<HealthSnapshot>("test_profile", { profile, secret: secret ?? null }),

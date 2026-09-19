@@ -144,7 +144,7 @@ src/
                    ComponentDetail, TraceDetail, ProfileDetail, Correlate,
                    TeamSettings, Onboarding, SignIn
   ui/              primitives, charts, icons, SectionTable, AlertList,
-                   PredictionList
+                   PredictionList, RootCausePanel
   icons/marks/     brand marks, auto-discovered per kind
 ```
 

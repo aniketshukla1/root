@@ -453,6 +453,10 @@
           { id: "a3", fingerprint: "f3", profileId: "p1", profileName: "prod-docker", kind: "docker",
             severity: "warning", title: "prod-docker · worker-3", detail: "Up 4 minutes (unhealthy)",
             component: "worker-3", firstSeen: iso(240000), lastSeen: iso(4000), active: true, acknowledged: true },
+          { id: "a6", fingerprint: "f6", profileId: "p4", profileName: "orders-db", kind: "postgres",
+            severity: "critical", title: "orders-db · connection pool exhausted",
+            detail: "23 of 25 connections held, 18 requests rejected in the last minute",
+            firstSeen: iso(190000), lastSeen: iso(4000), active: true, acknowledged: false },
           { id: "a4", fingerprint: "f4", profileId: "p5", profileName: "status.acme.dev", kind: "http_endpoint",
             severity: "warning", title: "status.acme.dev · Response time above threshold",
             detail: "Response time is 1840ms (threshold 1000ms)", firstSeen: iso(60000), lastSeen: iso(1000),
@@ -766,7 +770,70 @@
           // happening before these were added.
           get_topology: () => ({ dependsOn: {}, dependents: {}, roots: [] }),
           get_team: () => ({ hasSession: false }),
-          get_incidents: () => [],
+          // One incident with a declared dependency in it, because that is
+          // the shape the root-cause panel exists for: two connections, an
+          // order between them, and an edge that says which way the
+          // explanation can run.
+          get_incidents: () => [
+            { id: "inc-orders-db", title: "orders-db, and checkout-api behind it",
+              severity: "critical", health: "down",
+              started: iso(190000), lastSeen: iso(4000),
+              profileIds: ["p4", "p1"], alertIds: ["a6", "a2"],
+              roots: ["p4"], leadProfileId: "p4", acknowledged: false,
+              confidence: "high",
+              grouping: [
+                { kind: "dependencyFailedFirst", root: "orders-db", dependent: "prod-docker" },
+              ] },
+          ],
+
+          // A root cause the way the backend hands one over. It disagrees
+          // with root's own grouping on purpose — that is the branch the
+          // panel is built around, and a fixture where the model always nods
+          // would never show it.
+          explain_incident: () => ({
+            incidentId: "inc-orders-db",
+            summary: "A deploy 90 seconds before onset cut orders-db's pool from 25 to 5, and checkout-api's retries finished it",
+            confidence: "medium",
+            chain: [
+              "orders-db was redeployed at -1m30s with max_connections lowered from 25 to 5",
+              "checkout-api kept its own pool at 20 and opened more than the database would accept",
+              "rejected connections became retries, which arrived faster than the pool drained",
+              "checkout-api was OOM-killed holding the retry queue, which is the symptom that paged",
+            ],
+            because: [
+              "- -1m30s orders-db: max_connections 25 \u2192 5",
+              "- +0s [Critical] orders-db · connection pool exhausted: 23 of 25 connections held",
+              "- +14s [Critical] prod-docker · checkout-api: Exited (137)",
+              "- x48 (48 error) FATAL: remaining connection slots are reserved | buckets [0, 0, 1, 2, 4, 9, 14, 18]",
+            ],
+            confirm: [
+              "Read max_connections on orders-db — the deploy is the claim, the setting is the fact",
+              "Compare checkout-api's own pool size against it; 20 against 5 is the whole story",
+              "Check whether the retry backoff is exponential or fixed",
+            ],
+            disconfirm: "max_connections on orders-db is still 25. If the deploy did not change it, the pool exhaustion has another cause and the ordering here is coincidence.",
+            agrees: false,
+            dissent: "root named orders-db as the root because it failed first, which is right about the order and wrong about the cause. The database did not fail on its own — it was reconfigured, and checkout-api's unchanged pool is what turned a smaller limit into an outage. The fix is on prod-docker, not on orders-db.",
+            model: "claude-opus-5",
+            grounds: [
+              "WHAT THIS TOOL ALREADY CONCLUDED",
+              "- incident: orders-db, and checkout-api behind it",
+              "- severity: Critical, confidence: High",
+              "- grouped because: prod-docker declares it needs orders-db, and orders-db failed first",
+              "- the root it named: orders-db",
+              "",
+              "CHANGES, RELATIVE TO ONSET",
+              "- -1m30s orders-db: max_connections 25 \u2192 5",
+              "",
+              "WHAT FAILED, IN ORDER, RELATIVE TO ONSET",
+              "- +0s [Critical] orders-db: connection pool exhausted — 23 of 25 connections held",
+              "- +14s [Critical] prod-docker · checkout-api: Exited (137) 2 minutes ago",
+              "",
+              "DECLARED DEPENDENCIES",
+              "- prod-docker needs orders-db",
+            ],
+            at: iso(20000),
+          }),
           get_health_runs: () => [],
           get_capacity_risks: () => [],
           get_findings: () => [],

@@ -63,6 +63,8 @@ export interface IncidentActions {
   onCorrelate: (at: string) => void;
   onAcknowledgeAll: (alertIds: string[]) => void;
   onAsk: (incident: Incident) => void;
+  /** Ask the model why this happened. See `ui/RootCausePanel.tsx`. */
+  onFindCause: (incident: Incident) => void;
 }
 
 /** How many of an incident's alerts somebody has already acknowledged. */
@@ -162,8 +164,14 @@ export function IncidentHero({
           <Button variant="primary" onClick={() => actions.onOpenService(root)}>
             Open {rootService?.snapshot.profileName ?? root}
           </Button>
-          <Button onClick={() => actions.onAsk(incident)}>
+          {/* Above "Ask a follow-up" on purpose. A follow-up is a
+              conversation somebody has to steer; this is the one question
+              they already have, asked once, on evidence root is holding. */}
+          <Button onClick={() => actions.onFindCause(incident)}>
             <AssistantIcon size={13} style={{ color: "var(--color-accent)" }} />
+            Why did this happen?
+          </Button>
+          <Button onClick={() => actions.onAsk(incident)}>
             Ask a follow-up
           </Button>
           {!incident.acknowledged && (

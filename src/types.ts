@@ -821,6 +821,37 @@ export interface ComponentReading {
   readAt: string;
 }
 
+/**
+ * What the model made of one incident.
+ *
+ * `grounds` is every fact it was given, in order, and `disconfirm` is what
+ * would show the account to be wrong. Both travel with the text because an
+ * unverifiable explanation in a monitoring tool is worse than none — and an
+ * account nothing could disprove is not an account.
+ */
+export interface RootCause {
+  incidentId: string;
+  /** One sentence naming the cause, not the symptom. */
+  summary: string;
+  /** The model's own confidence, which is not root's. */
+  confidence: Confidence;
+  /** The causal sequence, earliest first. */
+  chain: string[];
+  /** Evidence lines it said it relied on. */
+  because: string[];
+  /** What to check to confirm it, most decisive first. */
+  confirm: string[];
+  /** What would show this is wrong. Never empty — the backend refuses it. */
+  disconfirm: string;
+  /** Whether it agrees with root's own grouping about which member is the root. */
+  agrees: boolean;
+  /** Why not, when it does not. */
+  dissent?: string;
+  model: string;
+  grounds: string[];
+  at: string;
+}
+
 /** A period a connection spent in one state, as observed by its collector. */
 export interface HealthRun {
   health: Health;

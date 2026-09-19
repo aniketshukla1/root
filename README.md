@@ -382,6 +382,46 @@ no tool can return an unredacted body. And findings come back through a tool rat
 in a sentence, which is what makes them attributable and rateable beside the rules on the
 Scorecard; see [Is it any good?](#is-it-any-good).
 
+### Why it happened
+
+Every incident carries a **Why did this happen?** button. One call, no tools, on
+evidence root is already holding — and a structured answer rather than a paragraph.
+
+`incidents.rs` already answers part of this without a model: it groups the alerts, names
+which member nothing else explains, and says with what confidence and on what grounds.
+What it cannot do is say *why* — it knows the database failed before the API did, not
+that a deploy changed a pool size ninety seconds earlier.
+
+So the model is shown **root's own conclusion** and asked to confirm or overturn it, and
+to say which. A model handed the same alerts with no prior will reliably produce a fluent
+story; one asked to disagree with a stated position has to find a reason. When it does
+disagree, that dissent leads the panel — it is either the model seeing something the
+rules cannot encode, or the model being wrong somewhere a person can go and look, and
+both beat agreement.
+
+The evidence is arranged for causality rather than for reading. Alerts and deploys are
+timestamped as offsets from the incident's own onset — `-1m30s`, `+0s`, `+14s` — because
+that is a sequence, where three RFC3339 strings are arithmetic homework. Changes come
+*before* the alerts, since a deploy shortly before onset is the most common answer and
+the most commonly missed.
+
+**An explanation that cannot be wrong is not one.** The model must name what would
+disprove its account, and the backend refuses an analysis that leaves that field empty.
+"A deploy caused it" with nothing that could falsify it is a sentence, not a finding. A
+refusal — low confidence and a list of what to go and check — is a good answer and is
+expected often.
+
+Everything it was told travels with the answer, in order, behind a disclosure. Nobody
+reads it most of the time; it is there for the one time the account looks wrong.
+
+The result is filed in `claims.rs` like any other model output, under the rule name
+`rca`, so it reaches the [Scorecard](#is-it-any-good) and is rated beside the rules. An
+analysis that reads well and is wrong should cost the model its precision, exactly as a
+bad prediction does.
+
+Cached on the incident's own state, not on the clock: reopening one is free, and an
+incident that gained a member is a different question and is asked again.
+
 ### Predicting what breaks next
 
 Settings → Assistant → **Prediction**. **Off by default.**
@@ -734,7 +774,7 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-520 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+532 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
 detection, component history admission and eviction, log filtering and stream separation,
 section renderability, conversation trimming, the per-provider message translation, and
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
@@ -887,6 +927,7 @@ src-tauri/src/
   stats.rs        KS test + volume heuristic for ranking which metrics moved
   forecast.rs     Where a metric is heading, and when to refuse to say
   promquery.rs    Long-range history read from a Prometheus you already run
+  rca.rs          Why one incident happened — the model, on root's own evidence
   influx.rs       Snapshot write-out — the one place root writes to another store
 
   configsource.rs Where a connection's config lives, and reading it safely

@@ -2203,6 +2203,66 @@ pub async fn explain_component(
     Ok(reading)
 }
 
+/// Why one incident happened, by the model, on evidence root already has.
+///
+/// Deliberately not `send_message`, for the same reason `explain_component` is
+/// not: the agent loop would spend several round trips rediscovering facts this
+/// process is already holding. One call, no tools, a structured answer.
+///
+/// Cached on the incident's own state rather than on the clock. Re-opening the
+/// same incident is free; an incident that grew a member, recovered one, or was
+/// acknowledged is a different question and is asked again.
+#[tauri::command]
+pub async fn explain_incident(
+    state: Shared<'_>,
+    incident_id: String,
+    refresh: Option<bool>,
+) -> Result<crate::rca::RootCause> {
+    let incident = {
+        let profiles = state.config.read().await.profiles.clone();
+        let graph = crate::topology::Topology::build(&profiles);
+        let dashboard = state.dashboard().await;
+        incidents::correlate(&dashboard.alerts, &dashboard.snapshots, &graph)
+            .into_iter()
+            .find(|i| i.id == incident_id)
+            .ok_or_else(|| {
+                crate::error::AppError::Collector(
+                    "that incident has resolved or regrouped — there is nothing to analyse"
+                        .into(),
+                )
+            })?
+    };
+
+    // The state, not the clock. `last_seen` moves every poll the incident is
+    // still true, so it is deliberately absent: including it would re-bill
+    // every ten seconds for an answer that has not changed.
+    let fingerprint = format!(
+        "{}|{}|{}|{}",
+        incident.id,
+        incident.alert_ids.len(),
+        incident.acknowledged,
+        incident.started.to_rfc3339(),
+    );
+
+    if !refresh.unwrap_or(false) {
+        if let Some(cached) = state.analyses.read().await.get(&incident_id) {
+            if cached.fingerprint == fingerprint {
+                return Ok(cached.cause.clone());
+            }
+        }
+    }
+
+    let cause = crate::rca::analyse(&state, &incident).await?;
+    state.analyses.write().await.insert(
+        incident_id,
+        crate::state::CachedAnalysis {
+            fingerprint,
+            cause: cause.clone(),
+        },
+    );
+    Ok(cause)
+}
+
 /// The instruction is mostly a list of refusals, because the failure mode of a
 /// two-sentence summary is confident invention.
 const COMPONENT_READING_SYSTEM: &str = "\

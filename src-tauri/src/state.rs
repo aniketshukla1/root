@@ -145,6 +145,13 @@ impl LogBuffer {
 
 /// A model reading and the state it was read from.
 #[derive(Clone)]
+pub struct CachedAnalysis {
+    /// The incident state this was an answer to.
+    pub fingerprint: String,
+    pub cause: crate::rca::RootCause,
+}
+
+#[derive(Debug, Clone)]
 pub struct CachedReading {
     /// Health, summary and alert, hashed. A change here invalidates the text.
     pub fingerprint: String,
@@ -448,6 +455,14 @@ pub struct AppState {
     /// and every later hover of an unchanged cell is free. It lives in memory
     /// with everything else here, so quitting forgets it.
     pub readings: RwLock<HashMap<String, CachedReading>>,
+    /// Root-cause analyses, keyed by incident id.
+    ///
+    /// Cached on the incident's *state* rather than on the clock, so reopening
+    /// one is free and one that grew a member is asked again. In memory with
+    /// everything else here, so quitting forgets it — an analysis is about a
+    /// moment, and an old one restored after a restart would be answering a
+    /// question nobody asked.
+    pub analyses: RwLock<HashMap<String, CachedAnalysis>>,
     /// Approval channels for in-flight mutating tool calls.
     pub pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
     pub pending_meta: RwLock<HashMap<String, PendingConfirmation>>,
@@ -484,6 +499,7 @@ impl AppState {
             history: RwLock::new(HistoryStore::default()),
             conversations: RwLock::new(HashMap::new()),
             readings: RwLock::new(HashMap::new()),
+            analyses: RwLock::new(HashMap::new()),
             pending: Mutex::new(HashMap::new()),
             pending_meta: RwLock::new(HashMap::new()),
             pollers: Mutex::new(HashMap::new()),

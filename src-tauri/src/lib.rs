@@ -36,6 +36,7 @@ pub mod patterns;
 pub mod predict;
 pub mod profiles;
 pub mod promquery;
+pub mod rca;
 pub mod registry;
 pub mod runtime;
 pub mod scenarios;
@@ -216,6 +217,7 @@ pub fn run() {
             commands::list_models,
             commands::send_message,
             commands::explain_component,
+            commands::explain_incident,
             commands::resolve_confirmation,
             commands::pending_confirmations,
             commands::get_conversation,

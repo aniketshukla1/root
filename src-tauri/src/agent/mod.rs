@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use crate::events::Events;
 use tokio::sync::oneshot;
 
 use crate::config::AgentMode;
@@ -103,7 +103,7 @@ pub struct AgentTurn {
 /// Returns `false` on decline, on timeout, or if the UI channel drops — every
 /// ambiguous outcome is a refusal, never an approval.
 async fn confirm(
-    app: &AppHandle,
+    events: &Events,
     state: &Arc<AppState>,
     request: PendingConfirmation,
 ) -> bool {
@@ -117,7 +117,7 @@ async fn confirm(
         .await
         .insert(call_id.clone(), request.clone());
 
-    let _ = app.emit(EVENT_CONFIRM_REQUEST, &request);
+    events.emit(EVENT_CONFIRM_REQUEST, &request);
 
     let approved = match tokio::time::timeout(CONFIRMATION_TIMEOUT, rx).await {
         Ok(Ok(decision)) => decision,
@@ -127,9 +127,9 @@ async fn confirm(
 
     state.pending.lock().await.remove(&call_id);
     state.pending_meta.write().await.remove(&call_id);
-    let _ = app.emit(
+    events.emit(
         EVENT_CONFIRM_RESOLVED,
-        serde_json::json!({ "callId": call_id, "approved": approved }),
+        &serde_json::json!({ "callId": call_id, "approved": approved }),
     );
 
     approved
@@ -274,7 +274,7 @@ is wrong and what to do about it. Skip preamble.
 
 /// Run one user turn to completion.
 pub async fn run_turn(
-    app: AppHandle,
+    events: Events,
     state: Arc<AppState>,
     conversation_id: String,
     user_message: String,
@@ -320,9 +320,9 @@ pub async fn run_turn(
         usage.output_tokens += response.usage.output_tokens;
 
         if !response.text.trim().is_empty() {
-            let _ = app.emit(
+            events.emit(
                 EVENT_STEP,
-                AgentEvent::Thinking {
+                &AgentEvent::Thinking {
                     conversation_id: conversation_id.clone(),
                     text: response.text.clone(),
                 },
@@ -343,7 +343,7 @@ pub async fn run_turn(
 
         for call in &response.tool_calls {
             let (result, step) =
-                execute_call(&app, &state, &conversation_id, mode, &catalog, call).await;
+                execute_call(&events, &state, &conversation_id, mode, &catalog, call).await;
             steps.push(step);
             messages.push(result);
         }
@@ -369,9 +369,9 @@ pub async fn run_turn(
         .await
         .insert(conversation_id.clone(), messages);
 
-    let _ = app.emit(
+    events.emit(
         EVENT_STEP,
-        AgentEvent::Done {
+        &AgentEvent::Done {
             conversation_id: conversation_id.clone(),
         },
     );
@@ -387,7 +387,7 @@ pub async fn run_turn(
 
 /// Execute one tool call, gating it behind approval when it mutates state.
 async fn execute_call(
-    app: &AppHandle,
+    events: &Events,
     state: &Arc<AppState>,
     conversation_id: &str,
     mode: AgentMode,
@@ -398,9 +398,9 @@ async fn execute_call(
     let definition = catalog.iter().find(|t| t.spec.name == call.name);
     let mutating = definition.map(|d| d.mutating).unwrap_or(false);
 
-    let _ = app.emit(
+    events.emit(
         EVENT_STEP,
-        AgentEvent::ToolStart {
+        &AgentEvent::ToolStart {
             conversation_id: conversation_id.to_string(),
             call_id: call.id.clone(),
             tool: call.name.clone(),
@@ -441,7 +441,7 @@ async fn execute_call(
         };
 
         let approved = confirm(
-            app,
+            events,
             state,
             PendingConfirmation {
                 call_id: call.id.clone(),
@@ -481,9 +481,9 @@ async fn execute_call(
         None
     };
 
-    let _ = app.emit(
+    events.emit(
         EVENT_STEP,
-        AgentEvent::ToolEnd {
+        &AgentEvent::ToolEnd {
             conversation_id: conversation_id.to_string(),
             call_id: call.id.clone(),
             tool: call.name.clone(),

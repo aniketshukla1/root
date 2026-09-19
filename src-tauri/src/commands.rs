@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::State;
 
 use crate::agent::{self, AgentTurn};
 use crate::config::{ConnectionProfile, LlmSettings};
@@ -698,7 +698,6 @@ pub async fn get_ingest_settings(state: Shared<'_>) -> Result<IngestStatus> {
 /// listener that cannot authenticate anybody.
 #[tauri::command]
 pub async fn save_ingest_settings(
-    app: tauri::AppHandle,
     state: Shared<'_>,
     enabled: bool,
     port: u16,
@@ -730,17 +729,17 @@ pub async fn save_ingest_settings(
         crate::secrets::set_secret(crate::ingest::TOKEN_KEY, &token).await?;
     }
 
-    crate::ingest::restart(&state, &app).await?;
+    crate::ingest::restart(&state).await?;
     get_ingest_settings(state).await
 }
 
 /// Mint a new token and return it once. Any pipeline using the old one stops
 /// working immediately, which is the point.
 #[tauri::command]
-pub async fn rotate_ingest_token(app: tauri::AppHandle, state: Shared<'_>) -> Result<String> {
+pub async fn rotate_ingest_token(state: Shared<'_>) -> Result<String> {
     let token = uuid::Uuid::new_v4().simple().to_string();
     crate::secrets::set_secret(crate::ingest::TOKEN_KEY, &token).await?;
-    crate::ingest::restart(&state, &app).await?;
+    crate::ingest::restart(&state).await?;
     Ok(token)
 }
 
@@ -1882,7 +1881,6 @@ pub async fn secret_store_available() -> Result<bool> {
 /// credential in place, so editing a profile does not silently clear it.
 #[tauri::command]
 pub async fn save_profile(
-    app: AppHandle,
     state: Shared<'_>,
     mut profile: ConnectionProfile,
     secret: Option<String>,
@@ -1923,7 +1921,7 @@ pub async fn save_profile(
 
     // Restart just this connection so the change takes effect immediately.
     if profile.enabled {
-        supervisor::start_profile(app, Arc::clone(&state), profile).await;
+        supervisor::start_profile(Arc::clone(&state), profile).await;
     } else {
         supervisor::stop_profile(&state, &profile.id).await;
     }
@@ -2073,7 +2071,6 @@ pub async fn list_models(state: Shared<'_>) -> Result<Vec<String>> {
 
 #[tauri::command]
 pub async fn send_message(
-    app: AppHandle,
     state: Shared<'_>,
     conversation_id: String,
     message: String,
@@ -2081,7 +2078,7 @@ pub async fn send_message(
     if message.trim().is_empty() {
         return Err(AppError::Llm("the message is empty".to_string()));
     }
-    agent::run_turn(app, Arc::clone(&state), conversation_id, message).await
+    agent::run_turn(state.events().await, Arc::clone(&state), conversation_id, message).await
 }
 
 /// A short model reading of one failing component, for the matrix tooltip.

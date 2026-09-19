@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use chrono::{Duration as ChronoDuration, Utc};
-use tauri::{AppHandle, Emitter};
 
 use crate::collectors::build_collector;
 use crate::config::ConnectionProfile;
@@ -29,14 +28,14 @@ const INITIAL_LOG_LOOKBACK_MINUTES: i64 = 15;
 
 /// Stop every poller, then start one for each enabled profile. Called at
 /// startup and whenever the connection list changes.
-pub async fn reload_all(app: AppHandle, state: Arc<AppState>) {
+pub async fn reload_all(state: Arc<AppState>) {
     let profiles = state.config.read().await.profiles.clone();
 
     stop_all(&state).await;
     state.collectors.write().await.clear();
 
     for profile in profiles.into_iter().filter(|p| p.enabled) {
-        start_profile(app.clone(), state.clone(), profile).await;
+        start_profile(state.clone(), profile).await;
     }
 }
 
@@ -61,8 +60,9 @@ pub async fn stop_profile(state: &Arc<AppState>, profile_id: &str) {
 /// Build the collector for a profile and spawn its polling task. A profile
 /// that cannot even be constructed (bad URL, missing credential) reports the
 /// failure to the UI rather than silently vanishing.
-pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: ConnectionProfile) {
+pub async fn start_profile(state: Arc<AppState>, profile: ConnectionProfile) {
     stop_profile(&state, &profile.id).await;
+    let emitter = state.events().await;
 
     let secret = match secrets::get_secret(&profile.secret_key()).await {
         Ok(secret) => secret,
@@ -75,9 +75,9 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
     let collector = match build_collector(&profile, secret).await {
         Ok(collector) => collector,
         Err(e) => {
-            let _ = app.emit(
+            emitter.emit(
                 EVENT_STATUS,
-                serde_json::json!({
+                &serde_json::json!({
                     "profileId": profile.id,
                     "profileName": profile.name,
                     "state": "error",
@@ -105,6 +105,9 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
 
     let handle = tokio::spawn(async move {
         let state = task_state;
+        // Read once per task rather than per emit: the transport is chosen at
+        // startup and does not change under a running poller.
+        let emitter = state.events().await;
         let interval = profile.poll_interval();
         let log_limit = profile.options.log_limit();
 
@@ -130,7 +133,7 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
                         .await
                         .insert(profile.id.clone(), snapshot.clone());
                     state.history.write().await.record(&snapshot);
-                    let _ = app.emit(EVENT_SNAPSHOT, &snapshot);
+                    emitter.emit(EVENT_SNAPSHOT, &snapshot);
 
                     // Beside the ring buffer, never instead of it. Awaited
                     // rather than detached because a local Postgres insert is
@@ -180,7 +183,7 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
                                     }
                                 }
                             }
-                            let _ = app.emit(EVENT_CHANGES, &fresh);
+                            emitter.emit(EVENT_CHANGES, &fresh);
                         }
                     }
 
@@ -206,7 +209,7 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
                         }
                     }
                     if !raised.is_empty() {
-                        let _ = app.emit(EVENT_ALERTS, &raised);
+                        emitter.emit(EVENT_ALERTS, &raised);
                     }
                 }
                 Err(e) => {
@@ -240,7 +243,7 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
                             tracing::warn!(profile = %profile.name, "log write failed: {e}");
                         }
                     }
-                    let _ = app.emit(EVENT_LOGS, &events);
+                    emitter.emit(EVENT_LOGS, &events);
                 }
                 Ok(_) => {
                     // Nothing new. Advance the watermark anyway so a quiet

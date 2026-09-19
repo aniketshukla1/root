@@ -32,7 +32,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use crate::events::Events;
 
 use crate::error::{AppError, Result};
 use crate::local_listener::{authorized, origin_allowed};
@@ -176,7 +176,7 @@ pub async fn event_from_payload(
 #[derive(Clone)]
 struct Ctx {
     state: Arc<AppState>,
-    app: AppHandle,
+    events: Events,
     token: String,
 }
 
@@ -231,7 +231,7 @@ async fn post_deploy(
             let id = event.id.clone();
             let fresh = ctx.state.changes.write().await.record(vec![event]);
             if !fresh.is_empty() {
-                let _ = ctx.app.emit(EVENT_CHANGES, &fresh);
+                ctx.events.emit(EVENT_CHANGES, &fresh);
             }
             (
                 StatusCode::ACCEPTED,
@@ -251,7 +251,7 @@ async fn post_deploy(
 ///
 /// Called on boot and whenever the settings or the token change, so the port is
 /// genuinely closed when the feature is switched off rather than merely hidden.
-pub async fn restart(state: &Arc<AppState>, app: &AppHandle) -> Result<()> {
+pub async fn restart(state: &Arc<AppState>) -> Result<()> {
     if let Some(handle) = state.ingest.lock().await.take() {
         handle.abort();
     }
@@ -268,7 +268,7 @@ pub async fn restart(state: &Arc<AppState>, app: &AppHandle) -> Result<()> {
         return Ok(());
     };
 
-    let handle = serve(Arc::clone(state), app.clone(), settings.port, token).await?;
+    let handle = serve(Arc::clone(state), state.events().await, settings.port, token).await?;
     *state.ingest.lock().await = Some(handle);
     Ok(())
 }
@@ -276,11 +276,11 @@ pub async fn restart(state: &Arc<AppState>, app: &AppHandle) -> Result<()> {
 /// Bring the listener up on loopback. Returns a handle that stops it on drop.
 pub async fn serve(
     state: Arc<AppState>,
-    app: AppHandle,
+    events: Events,
     port: u16,
     token: String,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    let ctx = Ctx { state, app, token };
+    let ctx = Ctx { state, events, token };
 
     let router = Router::new()
         .route("/v1/health", get(health))

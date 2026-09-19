@@ -471,6 +471,14 @@ pub struct AppState {
     /// best-effort and every read falls back to the buffer — so a database
     /// that goes away degrades the product rather than stopping it.
     pub store: RwLock<Option<crate::store::Store>>,
+    /// How this process delivers events.
+    ///
+    /// Set once the transport is known — a Tauri handle in the desktop app, a
+    /// broadcast channel in the server — and [`Events::Silent`] until then, so
+    /// an emit during startup is a no-op rather than an unwrap. Lives here
+    /// rather than being threaded through every signature because the engine
+    /// should not have to carry a delivery mechanism to reach one.
+    pub events: RwLock<crate::events::Events>,
     /// Approval channels for in-flight mutating tool calls.
     pub pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
     pub pending_meta: RwLock<HashMap<String, PendingConfirmation>>,
@@ -509,6 +517,7 @@ impl AppState {
             readings: RwLock::new(HashMap::new()),
             analyses: RwLock::new(HashMap::new()),
             store: RwLock::new(None),
+            events: RwLock::new(crate::events::Events::default()),
             pending: Mutex::new(HashMap::new()),
             pending_meta: RwLock::new(HashMap::new()),
             pollers: Mutex::new(HashMap::new()),
@@ -575,6 +584,15 @@ impl AppState {
                     "the connection `{profile_id}` is not running. Enable it in Settings."
                 ))
             })
+    }
+
+    /// A clone of the current emitter.
+    ///
+    /// Cloned out rather than borrowed so no caller holds the lock across the
+    /// work it is about to announce — an emit is cheap, and a read guard held
+    /// through a poll cycle would serialize every connection in the estate.
+    pub async fn events(&self) -> crate::events::Events {
+        self.events.read().await.clone()
     }
 
     pub async fn dashboard(&self) -> DashboardState {

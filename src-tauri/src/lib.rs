@@ -17,6 +17,7 @@ pub mod collectors;
 pub mod commands;
 pub mod config;
 pub mod error;
+pub mod events;
 pub mod forecast;
 pub mod advisor;
 pub mod backtest;
@@ -108,13 +109,18 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                // The transport, chosen here because this is the desktop app.
+                // Until this line every emit is a no-op; after it they reach
+                // the webview exactly as they did before `events.rs` existed.
+                *state.events.write().await = crate::events::Events::Tauri(handle.clone());
+
                 // Before the pollers, so a verdict recorded in the first
                 // seconds of a session has somewhere to land.
                 state.open_journal().await;
 
                 // The ingest listener is a no-op unless it was explicitly
                 // enabled and a token exists, so this is safe to always call.
-                if let Err(e) = ingest::restart(&state, &handle).await {
+                if let Err(e) = ingest::restart(&state).await {
                     tracing::warn!("deploy ingest did not start: {e}");
                 }
                 // Same contract: nothing listens unless it was switched on and
@@ -173,7 +179,7 @@ pub fn run() {
                     }
                 }
 
-                supervisor::reload_all(handle, state).await;
+                supervisor::reload_all(state).await;
             });
 
             Ok(())

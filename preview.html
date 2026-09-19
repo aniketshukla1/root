@@ -744,6 +744,164 @@
           get_verdicts: () => [],
           get_judged_incidents: () => [],
 
+          // The judgement record, as it looks once there is enough of it to
+          // argue about. Nothing here is uniformly good, because a scorecard
+          // that reads 100% across the board proves only that nobody has been
+          // rating honestly.
+          //
+          // `ENOUGH_TO_MEAN_SOMETHING` is twenty, and the families sit either
+          // side of it on purpose: the rules are past it and read as a rate,
+          // the assistant is not and says so instead. Both renderings matter,
+          // and a fixture that only showed one would hide the more careful
+          // half of the screen.
+          get_scorecard: () => ({
+            byFamily: [
+              {
+                // Past the gate, and good — which is the claim the whole
+                // screen exists to make checkable.
+                family: "rule",
+                judged: 34, real: 23, notAProblem: 5, alreadyKnew: 4, unsure: 2,
+                fixRight: 19, fixWrong: 3, fixPartly: 5,
+              },
+              {
+                // Deliberately thin. Twelve decided is below the gate, so the
+                // panel refuses to read it as a rate and says how far one more
+                // rating would move it.
+                family: "model",
+                judged: 14, real: 7, notAProblem: 4, alreadyKnew: 1, unsure: 2,
+                fixRight: 4, fixWrong: 2, fixPartly: 3,
+              },
+              {
+                // No fix ratings at all, so the `fixes` sub-row is absent —
+                // the conditional that keeps an unrated family from showing
+                // three zeroes as though they were a verdict.
+                family: "model+rule",
+                judged: 9, real: 6, notAProblem: 1, alreadyKnew: 2, unsure: 0,
+                fixRight: 0, fixWrong: 0, fixPartly: 0,
+              },
+            ],
+            // Worst ratio first, the way the real query orders it: the row
+            // this panel exists for is the rule that keeps being dismissed.
+            byRule: [
+              { rule: "docker.container-no-restart-policy", judged: 9, real: 2, notAProblem: 6 },
+              { rule: "caching.maxmemory-noeviction-near", judged: 7, real: 4, notAProblem: 3 },
+              { rule: "postgres.max-connections", judged: 8, real: 7, notAProblem: 1 },
+              { rule: "caching.config-drift", judged: 6, real: 5, notAProblem: 1 },
+              { rule: "docker.container-no-memory-limit", judged: 4, real: 4, notAProblem: 0 },
+            ],
+            // Under the gate on purpose, and with two misses: this is the half
+            // of the screen that says root cannot yet gate a release on its
+            // own recall, plus the line naming what broke unannounced.
+            recall: { incidents: 11, called: 6, partly: 3, missed: 2 },
+            rulesVersion: "1",
+          }),
+
+          // Only connections with something to say. Agreement is absent by
+          // design — listing every declaration root agrees with would bury the
+          // three that are wrong, which is the whole point of reconciling.
+          get_runtime_report: () => ({
+            declared: 4,
+            total: 9,
+            checks: [
+              {
+                // The interesting case: both sides are sure and they disagree.
+                // root inferred a different container than the operator wrote,
+                // and neither is automatically right.
+                profileId: "p4",
+                profileName: "orders-db",
+                declared: { kind: "container", hostProfileId: "p1", name: "orders-db" },
+                discrepancies: [
+                  { kind: "disagrees", host: "prod-docker", declared: "orders-db", inferred: "orders-db-primary" },
+                ],
+              },
+              {
+                profileId: "p6",
+                profileName: "events-kafka",
+                declared: { kind: "container", hostProfileId: "p8", name: "events-kafka" },
+                discrepancies: [{ kind: "notFound", host: "staging-docker", name: "events-kafka" }],
+              },
+              {
+                // A declaration pointing at a connection that no longer
+                // exists. Deleting a profile cannot invalidate another's
+                // config, so this survives as a discrepancy rather than as an
+                // error at save time.
+                profileId: "p3",
+                profileName: "logs-cluster",
+                declared: { kind: "pod", hostProfileId: "p-removed", name: "logs-cluster-0" },
+                discrepancies: [{ kind: "hostNotConfigured", hostProfileId: "p-removed" }],
+              },
+            ],
+            // Looks like a service, nothing watching it. The other half of
+            // reconciliation: not "is this declaration right" but "is there
+            // something here nobody declared at all".
+            uncovered: [
+              { hostProfileId: "p1", hostLabel: "prod-docker", name: "checkout-redis", kind: "redis" },
+              { hostProfileId: "p8", hostLabel: "staging-docker", name: "staging-rabbit", kind: "rabbitmq" },
+            ],
+          }),
+
+          // Known situations with known right answers, replayed against the
+          // current rules. Two failures rather than none, and one of each kind
+          // — a suite drifting blinder and one drifting noisier need opposite
+          // responses, so the screen counts them apart and this shows both.
+          run_scenarios: () => ({
+            total: 6,
+            passed: 4,
+            missed: 1,
+            spurious: 1,
+            wrongSeverity: 0,
+            outcomes: [
+              {
+                id: "redis-noeviction-near-limit",
+                title: "Redis at 94% of maxmemory with noeviction",
+                why: "The write that fails is the one after the last one that worked. A cache this close to a ceiling it will not evict past is an outage with a date on it, not a warning.",
+                kind: "redis", engine: "rules", passed: true,
+                fired: ["caching.maxmemory-noeviction-near"],
+              },
+              {
+                id: "postgres-connections-climbing",
+                title: "Connection pool at 92% and still climbing",
+                why: "Saturation is the failure every other Postgres symptom is downstream of, and it is the one root can see coming.",
+                kind: "postgres", engine: "rules", passed: true,
+                fired: ["postgres.max-connections"],
+              },
+              {
+                id: "memory-sawtooth-no-trend",
+                title: "Memory swinging between a third and two thirds all day",
+                why: "A straight line through a sawtooth has a slope and yields a confident date that is pure artefact. This is the case the forecaster's fit gate exists to refuse, and the scenario that proves it still does.",
+                kind: "docker", engine: "rules", passed: true,
+                fired: [],
+              },
+              {
+                id: "container-restarting-clean-config",
+                title: "A container restarting with nothing wrong in its config",
+                why: "Not every failure is a misconfiguration. A rule that reaches for one anyway is worse than one that says nothing.",
+                kind: "docker", engine: "rules", passed: true,
+                fired: [],
+              },
+              {
+                // Drifting blinder: the rule that should have fired did not.
+                id: "kafka-consumer-lag-runaway",
+                title: "Consumer lag growing faster than the topic",
+                why: "A group that will never catch up looks identical to one briefly behind, until you compare the two slopes.",
+                kind: "kafka_cluster", engine: "rules", passed: false,
+                failures: [{ kind: "missed", rule: "kafka.consumer-lag-unrecoverable" }],
+                fired: [],
+              },
+              {
+                // Drifting noisier: something fired that should not have.
+                id: "disk-fill-after-log-rotation",
+                title: "Disk climbing across a scheduled log rotation",
+                why: "The climb reverses on a schedule. A projection that ignores the reversal predicts a full volume that never arrives, and an operator who is paged for it twice stops reading the third.",
+                kind: "linux_host", engine: "rules", passed: false,
+                failures: [
+                  { kind: "spurious", rule: "host.disk-fill-projected", title: "/var fills in 6 hours" },
+                ],
+                fired: ["host.disk-fill-projected"],
+              },
+            ],
+          }),
+
           // A flame graph shaped the way the backend hands one over: offsets
           // already absolute, frames already parented, hot symbols already
           // ranked. `lock` is the case the ranking exists for — two thin

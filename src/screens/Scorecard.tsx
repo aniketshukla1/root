@@ -286,14 +286,14 @@ function RecallPanel({ recall }: { recall: RecallScore }) {
         segments={[
           { value: recall.called, color: "var(--color-ok)" },
           { value: recall.partly, color: "var(--color-accent)" },
-          { value: recall.missed, color: "var(--color-down)" },
+          { value: recall.missed, color: "var(--color-crit)" },
         ]}
       />
 
       <div className="num mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-2xs text-ink-4">
         <Count label="called" value={recall.called} color="var(--color-ok)" />
         <Count label="partly" value={recall.partly} color="var(--color-accent)" />
-        <Count label="missed" value={recall.missed} color="var(--color-down)" />
+        <Count label="missed" value={recall.missed} color="var(--color-crit)" />
       </div>
 
       {/* Misses are the point of this panel, so they are stated rather than
@@ -660,7 +660,7 @@ function Scenarios() {
             {/* Split, because drifting blinder and drifting noisier want
                 opposite responses and a pass rate hides which it is. */}
             <div className="num mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-2xs text-ink-4">
-              <Count label="missed" value={suite.missed} color="var(--color-down)" />
+              <Count label="missed" value={suite.missed} color="var(--color-crit)" />
               <Count label="spurious" value={suite.spurious} color="var(--color-warn)" />
               <Count label="wrong urgency" value={suite.wrongSeverity} color="var(--color-accent)" />
             </div>

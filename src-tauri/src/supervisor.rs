@@ -5,6 +5,7 @@
 //! tracked by profile id so reconfiguring a connection cancels the old task
 //! before starting a replacement.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use chrono::{Duration as ChronoDuration, Utc};
@@ -97,6 +98,11 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
     let profile_id = profile.id.clone();
     let task_state = Arc::clone(&state);
 
+    // At most one snapshot write is outstanding per connection. Without it a
+    // warehouse slower than the poll interval would accumulate one detached
+    // task per cycle for as long as it stayed slow.
+    let writing = Arc::new(AtomicBool::new(false));
+
     let handle = tokio::spawn(async move {
         let state = task_state;
         let interval = profile.poll_interval();
@@ -125,6 +131,31 @@ pub async fn start_profile(app: AppHandle, state: Arc<AppState>, profile: Connec
                         .insert(profile.id.clone(), snapshot.clone());
                     state.history.write().await.record(&snapshot);
                     let _ = app.emit(EVENT_SNAPSHOT, &snapshot);
+
+                    // Detached on purpose. A warehouse that is down must never
+                    // hold up a poll cycle, and a write that failed must never
+                    // become an opinion about the service being polled — root
+                    // filing its notes badly is not the service degrading.
+                    if writing
+                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok()
+                    {
+                        let sink_state = Arc::clone(&state);
+                        let sink_snapshot = snapshot.clone();
+                        let sink_name = profile.name.clone();
+                        let busy = Arc::clone(&writing);
+                        tokio::spawn(async move {
+                            if let Err(e) =
+                                crate::influx::write_snapshot(&sink_state, &sink_snapshot).await
+                            {
+                                tracing::warn!(
+                                    profile = %sink_name,
+                                    "snapshot write-out failed: {e}"
+                                );
+                            }
+                            busy.store(false, Ordering::Release);
+                        });
+                    }
 
                     let observed = changes_from_snapshots(previous.as_ref(), &snapshot);
                     if !observed.is_empty() {

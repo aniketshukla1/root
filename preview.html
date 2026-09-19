@@ -522,6 +522,15 @@
             endpoint: i === 0 ? "" : `https://${s.profileName}`,
             username: "monitor", hasSecret: i !== 0, enabled: true,
             pollIntervalSecs: 15, options: {}, metadata: { operations: ownership[s.profileId] },
+            // The connection form reads all three of these unconditionally, so
+            // a fixture that omits them cannot be opened for editing at all.
+            dependsOn: [], configSources: [], runtime: { kind: "undeclared" },
+            // One connection opted into snapshot write-out, so the panel can be
+            // seen in its on state. Every other connection is off, which is the
+            // real default.
+            snapshotSink: s.profileId === "p1"
+              ? { warehouseProfileId: "p9", measurement: "" }
+              : undefined,
           })),
           llm: { provider: "anthropic", model: "claude-sonnet-4-5", baseUrl: "", maxTokens: 4096,
                  temperature: 0.2, agentMode: "confirm_actions", hasApiKey: true },
@@ -589,6 +598,11 @@
           }),
           get_service_catalog: () => catalog,
           get_config: () => config,
+          test_snapshot_write: (args) =>
+            args.profileId === "p1"
+              ? "prod-docker,profile=p1,kind=docker root_health=3i,root_latency_ms=214i," +
+                "mem_total=9400000000,containers_running=7 1700000000000000000"
+              : Promise.reject("this connection is not writing snapshots anywhere. Pick a warehouse first."),
           query_logs: () => logs,
           log_histogram: () => buckets,
           get_all_metric_history: () => history,

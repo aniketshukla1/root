@@ -667,6 +667,19 @@ export interface HistorySource {
   queries: MetricQuery[];
 }
 
+/**
+ * Where a connection's snapshots are written, when anywhere.
+ *
+ * Absent for almost every connection. root reads; this is the one place it
+ * writes to somebody else's store, so it is turned on one connection at a
+ * time and never inferred.
+ */
+export interface SnapshotSink {
+  warehouseProfileId: string;
+  /** Measurement name. Empty means the connection's own name is used. */
+  measurement: string;
+}
+
 export type Evidence =
   | { kind: "setting"; key: string; value: string; source: string }
   | { kind: "metric"; key: string; label: string; value: number; unit: MetricUnit; limit?: number }
@@ -926,6 +939,7 @@ export interface ConnectionProfile {
    */
   configSources: ConfigSource[];
   historySource?: HistorySource;
+  snapshotSink?: SnapshotSink;
   runtime: Runtime;
 }
 

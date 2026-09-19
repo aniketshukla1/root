@@ -26,6 +26,7 @@ pub mod history;
 pub mod identify;
 pub mod incidents;
 pub mod journal;
+pub mod influx;
 pub mod ingest;
 pub mod llm;
 pub mod local_listener;
@@ -208,6 +209,7 @@ pub fn run() {
             commands::save_profile,
             commands::delete_profile,
             commands::test_profile,
+            commands::test_snapshot_write,
             commands::save_llm_settings,
             commands::list_models,
             commands::send_message,

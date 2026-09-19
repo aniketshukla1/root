@@ -96,11 +96,12 @@ gone quiet.
 
 ## The five gaps
 
-### 1. Persistence — root keeps nothing
+### 1. Persistence — closed, both halves
 
 `history.rs`: *"History is kept in memory only, like the log buffer. It is deliberately
-not persisted."* Quit root and every metric and every log line is gone. This is the
-biggest gap and it has two halves.
+not persisted."* That is still true of root's own buffer, and still deliberate — there
+is no retention policy to manage because there is nothing to retain. The gap was that
+nothing else held it either. It had two halves, and both are now closed.
 
 **Read half — done.** `promquery.rs` was already endpoint-shaped rather than
 Prometheus-shaped, and `commands.rs` resolves a history source by profile id without
@@ -111,27 +112,53 @@ holds weeks, so `forecast.rs` gets the window it has always wanted.
 
 Logs got the same treatment through LogQL in `fetch_logs`.
 
-**Write half — specified, not built.** root does not push its own snapshots anywhere, so
-root's *own* judgement of a service — the derived health, the alert lifecycle, the change
-markers — still dies with the process.
+**Write half — built, behind an opt-in.** root's *own* judgement of a service used to
+die with the process: the derived health, the latency of the check, every metric it
+computed. `influx.rs` now writes that reading out.
 
-The mechanism, when it is built: **Influx line protocol at `/influx/api/v2/write`.**
-Gigapipe also accepts OTLP at `/v1/metrics` and Datadog at `/api/v2/series`, but line
-protocol is plain text. Emitting it is `format!`; OTLP would mean protobuf and gRPC, and
-Prometheus remote-write would mean protobuf plus snappy. Zero new crates against two
-substantial dependencies, for a payload gigapipe stores identically either way.
+The mechanism is **Influx line protocol at `/influx/api/v2/write`.** Gigapipe also
+accepts OTLP at `/v1/metrics` and Datadog at `/api/v2/series`, but line protocol is plain
+text. Emitting it is `format!`; OTLP would have meant protobuf and gRPC, and Prometheus
+remote-write protobuf plus snappy. Zero new crates against two substantial dependencies,
+for a payload gigapipe stores identically either way.
 
-Shape: one measurement per connection, one field per metric key, tagged with profile id
-and service kind. Written after each successful poll, best-effort — a warehouse that is
-down must never hold up a poll cycle or mark a healthy service unhealthy.
+One line per successful poll:
 
-This needs a deliberate decision first, and it is not a technical one. root currently
-writes nothing anywhere except its own config and journal. Writing snapshots to a shared
-warehouse makes root a producer of observability data rather than only a reader of it,
-which is a different product. **Recommended: build it behind an explicit per-connection
-opt-in, off by default, named plainly in Settings.**
+```
+prod-docker,profile=p1,kind=docker root_health=2i,root_latency_ms=42,memory=9.4e9 …
+```
 
-Size: about two days, once that decision is made.
+Measurement per connection, defaulting to its name. Tagged with the profile id — the
+identifier that survives a rename — and the service kind, which is read from serde rather
+than matched a second time, so a new collector cannot ship without its tag. Fields are
+root's own verdict under a `root_` prefix, then the collector's metrics under the keys
+the rest of root already uses for them. A metric that is not a finite number is left out
+rather than written as zero: a gap reads as "not measured", a zero reads as "measured,
+and it was nothing".
+
+Health is a field, not a tag, and ordered by severity so `max()` over a window is the
+worst the connection was. A tag whose value changes would start a new series every time
+health did, which is the one shape a time-series store handles badly.
+
+**The decision that gated this was not technical**, and it was made as recommended: an
+explicit per-connection opt-in, off by default, named plainly in Settings under "Write
+snapshots out". An estate that never turns it on behaves exactly as it did before.
+
+Best-effort throughout. The write is detached from the poll cycle with one outstanding
+write per connection, and a failure is logged and swallowed — a service marked degraded
+because the place root files its opinions is unreachable would be root reporting on
+itself and calling it infrastructure. The cost of that is that the poll loop cannot tell
+anyone whether it is working, so Settings has a **Write one now** button that returns the
+exact line it sent, or the warehouse's own refusal. That is the only place a write
+failure is allowed to be loud.
+
+What is still local: the alert lifecycle and the change markers. Both are event streams
+rather than samples, and `/loki/api/v1/push` is the honest destination for them, not a
+measurement with a count in it.
+
+`tests/influx_write.rs` pins the body, the path, both auth schemes and every failure mode
+to the wire under wiremock; ten unit tests in `influx.rs` cover the encoding, including
+the escaping and the every-kind-has-a-tag property.
 
 ### 2. Traces — built. Profiling — not
 
@@ -267,11 +294,11 @@ nothing rather than by erroring — which looks exactly like a store with nothin
 
 1. ~~Connection type, LogQL tail, history source~~ — done.
 2. ~~Traces: model, section, waterfall~~ — done.
-3. Spans on `Correlate`'s lanes. About three days, and the thing that makes traces
-   explanatory rather than merely present.
+3. ~~Spans on `Correlate`'s lanes~~ — done. Each lane lists the requests that spent time
+   inside it, self time first, and a lane that only appears in a trace is no longer
+   dropped for having logged nothing.
 4. ~~Assistant access to LogQL, PromQL and TraceQL~~ — done, as nine `gigapipe_*` tools.
-5. Snapshot write-out over Influx line protocol, opt-in. Two days, after the product
-   decision in gap 1.
+5. ~~Snapshot write-out over Influx line protocol, opt-in~~ — done, off by default.
 
 Then profiling: one flame graph screen, about a week.
 

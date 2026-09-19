@@ -140,6 +140,14 @@ pub struct ConnectionProfile {
     /// disagreements are the output.
     #[serde(default)]
     pub runtime: crate::runtime::Runtime,
+    /// Where this connection's snapshots are written, when anywhere.
+    ///
+    /// Absent by default and absent for almost every connection. root reads;
+    /// this is the one place it writes to somebody else's store, so it is
+    /// turned on one connection at a time and never inferred. See
+    /// [`crate::influx`] for why that asymmetry is deliberate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_sink: Option<crate::influx::SnapshotSink>,
 }
 
 fn default_true() -> bool {

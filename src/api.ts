@@ -388,6 +388,14 @@ export const api = {
   testProfile: (profile: ConnectionProfile, secret?: string) =>
     invoke<HealthSnapshot>("test_profile", { profile, secret: secret ?? null }),
 
+  /**
+   * Write one snapshot to this connection's warehouse now. Resolves with the
+   * exact line that was sent, because the poll loop swallows its own failures
+   * by design and this is the only place an operator can see one.
+   */
+  testSnapshotWrite: (profileId: string) =>
+    invoke<string>("test_snapshot_write", { profileId }),
+
   saveLlmSettings: (settings: LlmSettings, apiKey?: string) =>
     invoke<AppConfig>("save_llm_settings", { settings, apiKey: apiKey ?? null }),
 

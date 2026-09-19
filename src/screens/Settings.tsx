@@ -21,6 +21,7 @@ import type {
   OperationalMetadata,
   PredictionStatus,
   ServiceDescriptor,
+  SnapshotSink,
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { TeamSettings } from "./TeamSettings";
@@ -654,6 +655,19 @@ export function ProfileForm({
                 ["prometheus", "gigapipe"].includes(s.kind),
               )}
               onChange={(historySource) => setDraft((d) => ({ ...d, historySource }))}
+            />
+          </Field>
+
+          <Field
+            label="Write snapshots out"
+            help="Off, for every connection, until you turn it on here. root reads — this is the one place it writes into somebody else's store. What goes out is root's own reading of this connection: the health it derived, how long the check took, and every metric it computed, one line per poll. Best-effort: a warehouse that is down is logged and ignored, never held against this service."
+          >
+            <SnapshotWriteOut
+              profileId={draft.id}
+              sink={draft.snapshotSink}
+              connectionName={draft.name}
+              candidates={siblings.filter((s) => s.kind === "gigapipe")}
+              onChange={(snapshotSink) => setDraft((d) => ({ ...d, snapshotSink }))}
             />
           </Field>
         </Fieldset>
@@ -1982,6 +1996,122 @@ function LongRangeHistory({
             Each expression must resolve to a single series — a query matching several is
             refused rather than having one picked for you, because a forecast for the wrong
             host looks exactly like a forecast for the right one.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Which warehouse receives this connection's snapshots, if any.
+ *
+ * The inverse of `LongRangeHistory` above, and deliberately harder to switch
+ * on. That one points root at a store to read; this one makes root a producer
+ * of rows somebody else's dashboard will eventually depend on, which is a
+ * different set of obligations. So: never on by default, never inferred from
+ * the presence of a warehouse, and one connection at a time.
+ *
+ * The test button exists because the poll loop cannot tell anyone whether
+ * this is working — a failed write is logged and swallowed on purpose, so
+ * that a warehouse outage never reads as a service outage. This is the only
+ * place a write failure is allowed to be loud.
+ */
+function SnapshotWriteOut({
+  profileId,
+  sink,
+  connectionName,
+  candidates,
+  onChange,
+}: {
+  profileId: string;
+  sink?: SnapshotSink;
+  /** Shown as the measurement placeholder, since an empty name means this. */
+  connectionName: string;
+  candidates: ConnectionProfile[];
+  onChange: (sink: SnapshotSink | undefined) => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  if (candidates.length === 0) {
+    return (
+      <p className="num text-2xs leading-relaxed text-ink-4">
+        No Gigapipe connection is configured. Snapshots are written as Influx line
+        protocol, which is the ingest path Gigapipe serves.
+      </p>
+    );
+  }
+
+  const current = sink ?? { warehouseProfileId: "", measurement: "" };
+  const update = (patch: Partial<SnapshotSink>) => {
+    const next = { ...current, ...patch };
+    setResult(null);
+    // Clearing the warehouse clears the whole thing rather than leaving a
+    // measurement name pointed at nothing.
+    onChange(next.warehouseProfileId ? next : undefined);
+  };
+
+  const test = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      const line = await api.testSnapshotWrite(profileId);
+      setResult({ ok: true, text: line });
+    } catch (e) {
+      setResult({ ok: false, text: errorMessage(e) });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Select
+        value={current.warehouseProfileId}
+        onChange={(e) => update({ warehouseProfileId: e.target.value })}
+      >
+        <option value="">Off — nothing is written anywhere</option>
+        {candidates.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name || c.id}
+          </option>
+        ))}
+      </Select>
+
+      {current.warehouseProfileId && (
+        <>
+          <Input
+            value={current.measurement}
+            placeholder={connectionName || "root"}
+            onChange={(e) => update({ measurement: e.target.value })}
+          />
+
+          <div>
+            <Button variant="ghost" onClick={test} disabled={testing}>
+              {testing ? "Writing…" : "Write one now"}
+            </Button>
+          </div>
+
+          {result && (
+            <pre
+              className={cx(
+                "num overflow-x-auto whitespace-pre-wrap break-all rounded-sm border px-2 py-1.5 text-2xs leading-relaxed",
+                result.ok
+                  ? "border-line bg-panel text-ink-3"
+                  : "border-crit/45 bg-crit/10 text-crit",
+              )}
+            >
+              {result.text}
+            </pre>
+          )}
+
+          <p className="num text-2xs leading-relaxed text-ink-4">
+            Writes the last snapshot root collected, so save the connection and let it
+            poll once first. The measurement defaults to this connection's name, so
+            renaming it starts a new one — the profile id rides along as a tag either
+            way, and that is the identifier which survives a rename. root's own numbers
+            are prefixed <code>root_</code>; the collector's metrics keep their own keys.
           </p>
         </>
       )}

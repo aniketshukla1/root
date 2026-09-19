@@ -1946,6 +1946,62 @@ pub async fn test_profile(
     collector.collect().await
 }
 
+/// Write one snapshot to a connection's declared warehouse, now, and hand
+/// back the exact line that was sent.
+///
+/// The value is the line, not the success. Snapshot write-out is best-effort
+/// by design — a failure is logged and swallowed so a warehouse outage never
+/// becomes an opinion about the service being polled — which means the poll
+/// loop cannot tell an operator whether it is working. This can, and showing
+/// the payload means they can go look for exactly that measurement rather
+/// than trusting that something arrived.
+///
+/// Takes the last snapshot root already has rather than polling: the point is
+/// to test the write, and a collect here would fold two failures into one
+/// message.
+#[tauri::command]
+pub async fn test_snapshot_write(state: Shared<'_>, profile_id: String) -> Result<String> {
+    let snapshot = state
+        .snapshots
+        .read()
+        .await
+        .get(&profile_id)
+        .cloned()
+        .ok_or_else(|| {
+            crate::error::AppError::Collector(
+                "this connection has not reported yet, so there is nothing to write. \
+                 Save it, wait for one poll, then try again."
+                    .into(),
+            )
+        })?;
+
+    let sink = {
+        let config = state.config.read().await;
+        config
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .and_then(|p| p.snapshot_sink.clone())
+            .filter(|s| s.is_configured())
+            .ok_or_else(|| {
+                crate::error::AppError::Collector(
+                    "this connection is not writing snapshots anywhere. \
+                     Pick a warehouse first."
+                        .into(),
+                )
+            })?
+    };
+
+    let line = crate::influx::encode(&snapshot, &sink).ok_or_else(|| {
+        crate::error::AppError::Collector(
+            "this snapshot has nothing to write — no metrics and no timestamp.".into(),
+        )
+    })?;
+
+    crate::influx::write_snapshot(&state, &snapshot).await?;
+    Ok(line)
+}
+
 // ---------------------------------------------------------------- assistant
 
 #[tauri::command]

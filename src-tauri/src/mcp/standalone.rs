@@ -204,6 +204,7 @@ fn profile_from_env() -> Option<ConnectionProfile> {
         config_sources: Vec::new(),
         history_source: None,
         runtime: Default::default(),
+        snapshot_sink: None,
         metadata: Default::default(),
     })
 }

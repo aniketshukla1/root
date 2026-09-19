@@ -443,6 +443,37 @@ are read-only, so they stay available in **Read-only** mode.
 The `gigapipe_` prefix matters: root monitors Prometheus directly too, and an unprefixed
 `prometheus_query` would not say which connection it meant.
 
+### Writing back to it
+
+Everything above is a read, and that is the default everywhere: root writes nothing
+outside its own config and journal. There is one exception, and you have to turn it on.
+
+What dies with the process is not the raw numbers — those live wherever they came from —
+but root's *reading* of them: the health it derived, how long the check took, and every
+metric it computed. Nothing else in the estate produces that. A connection can write it
+to a gigapipe, one line of Influx line protocol per poll:
+
+```
+prod-docker,profile=p1,kind=docker root_health=2i,root_latency_ms=42,memory=9.4e9 1700000000000000000
+```
+
+Measurement per connection, defaulting to its name, tagged with the profile id — which
+survives a rename — and the service kind. root's own verdict carries a `root_` prefix;
+the collector's metrics keep the keys they have everywhere else, so `memory` here is the
+same measure `memory` is in a forecast. Health is a number ordered by severity, so
+`max()` over a window is the worst the connection was.
+
+It is **off for every connection until you set it**, under *Write snapshots out* on the
+connection. Reading a store you already run is a convenience; writing into one makes root
+a producer of rows somebody else's dashboard will depend on, which is a different thing
+to agree to.
+
+The write is best-effort and detached from the poll: a warehouse that is down is logged
+and ignored, never held against the service being polled. root filing its notes badly is
+not a service outage. The cost is that the poll loop cannot tell you whether it is
+working, so the same panel has a **Write one now** button that hands back the exact line
+it sent — or the warehouse's own refusal.
+
 ---
 
 ## root as an MCP server
@@ -660,13 +691,13 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-488 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+505 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
 detection, component history admission and eviction, log filtering and stream separation,
 section renderability, conversation trimming, the per-provider message translation, and
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
 grouping, config rules, and the journal.
 
-Eleven integration suites sit in `src-tauri/tests/`, each against something real:
+Twelve integration suites sit in `src-tauri/tests/`, each against something real:
 
 | Suite | Against | Why it is not a unit test |
 | --- | --- | --- |
@@ -680,6 +711,7 @@ Eleven integration suites sit in `src-tauri/tests/`, each against something real
 | `mcp_http.rs` | a real loopback port, always | the assertions that matter are the ones that try to get more out of the listener than it should give: no token, a wrong token, and a mutating tool named directly |
 | `mcp_server.rs` | the real `root-mcp` binary, spawned over a pipe | a server can pass every handler test and still be unusable: one stray line on stdout makes every request a parse error on the client side |
 | `gigapipe_read.rs` | wiremock, always | the nine store reads are entirely URLs, and `/label` against `/labels` or a missing `/json` fails by returning nothing — which looks exactly like a store holding nothing |
+| `influx_write.rs` | wiremock, always | line protocol is a body rather than a query string, and a malformed one is accepted with a 204 by some receivers and dropped by others — the failure is a measurement that quietly never appears |
 | `demo_estate.rs` | `demo/compose.yml`, wrong on purpose | the only layer that proves the pieces *meet* — see [The demo estate](#the-demo-estate) |
 
 `tests/databases.rs` earns its keep twice over: writing it caught three genuine bugs —

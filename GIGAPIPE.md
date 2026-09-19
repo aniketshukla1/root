@@ -1,7 +1,11 @@
 # Gigapipe
 
-How root relates to [Gigapipe](https://github.com/metrico/gigapipe) — what is built, what is
-specified, and the one thing root should not do.
+How root relates to [Gigapipe](https://github.com/metrico/gigapipe) — what is built, and
+the one thing root should not do.
+
+Everything below that was a gap is now closed or deliberately declined. This is kept as a
+record of the reasoning rather than as a plan, because the interesting part was never the
+list: it was which of these root should *not* have built.
 
 Gigapipe is an AGPL-3.0 Go warehouse that stores logs, metrics, traces and profiles in
 ClickHouse and serves them back through four query languages. It is a drop-in replacement
@@ -94,7 +98,9 @@ gone quiet.
 
 ---
 
-## The five gaps
+## The five gaps, as they were
+
+Four are closed. The fifth is declined, on purpose, and says why.
 
 ### 1. Persistence — closed, both halves
 
@@ -324,7 +330,10 @@ nothing rather than by erroring — which looks exactly like a store with nothin
 
 ---
 
-## Order
+## Order, as it was planned
+
+Kept because the sequence was the argument: each item made the next one worth having, and
+profiling went last because a flame graph with no trace to open it from is a curiosity.
 
 1. ~~Connection type, LogQL tail, history source~~ — done.
 2. ~~Traces: model, section, waterfall~~ — done.

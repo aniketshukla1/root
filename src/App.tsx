@@ -54,6 +54,7 @@ import { Overview } from "./screens/Overview";
 import { Scorecard } from "./screens/Scorecard";
 import { ServiceDetail } from "./screens/ServiceDetail";
 import { TraceDetail } from "./screens/TraceDetail";
+import { ProfileDetail } from "./screens/ProfileDetail";
 import { Services } from "./screens/Services";
 import { Settings } from "./screens/Settings";
 
@@ -784,6 +785,15 @@ export default function App() {
           <TraceDetail
             profileId={view.profileId}
             traceId={view.traceId}
+            model={model}
+            onNavigate={setView}
+          />
+        )}
+
+        {view.name === "profile" && (
+          <ProfileDetail
+            profileId={view.profileId}
+            query={view.query}
             model={model}
             onNavigate={setView}
           />

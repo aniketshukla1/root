@@ -50,6 +50,9 @@
         // A warehouse connection. The point of previewing it is the traces
         // section: its `id` column is marked traceRef, which is what turns the
         // cell into the waterfall opener with no frontend knowledge of gigapipe.
+        const PROFILE_SELECTOR =
+          'process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name="checkout-api"}';
+
         const gigapipeSections = [
           sect("signals", "Query APIs", [
             col("signal", "Signal", { type: "text" }, { primary: true }),
@@ -67,6 +70,15 @@
               signal: txt("traces"), api: txt("/api/echo"), state: stat("healthy"), latency: num(9),
             }),
           ], 5, "No query APIs probed."),
+          sect("profiles", "Profiles", [
+            col("selector", "Profile", { type: "text" }, { primary: true, sortable: false, profileRef: true }),
+            col("state", "State", { type: "status" }),
+            col("latency", "Answered in", { type: "metric", unit: "millis" }),
+          ], [
+            mkRow("profile:declared", PROFILE_SELECTOR, "healthy", "answering in 34 ms", {
+              selector: txt(PROFILE_SELECTOR), state: stat("healthy"), latency: num(34),
+            }),
+          ], 6, "No profile selector declared on this connection."),
           sect("traces", "Traces", [
             col("trace", "Trace", { type: "text" }, { primary: true }),
             col("service", "Root service", { type: "text" }),
@@ -731,6 +743,45 @@
           get_findings: () => [],
           get_verdicts: () => [],
           get_judged_incidents: () => [],
+
+          // A flame graph shaped the way the backend hands one over: offsets
+          // already absolute, frames already parented, hot symbols already
+          // ranked. `lock` is the case the ranking exists for — two thin
+          // frames nobody would notice, one obvious row.
+          get_profile: () => {
+            const f = (name, depth, offset, total, own, parent) =>
+              ({ name, depth, offset, total, own, ...(parent === undefined ? {} : { parent }) });
+            return {
+              frames: [
+                f("total", 0, 0, 4200, 0),
+                f("http.serve", 1, 0, 2600, 120, 0),
+                f("worker.drain", 1, 2600, 1600, 80, 0),
+                f("orders.Create", 2, 120, 1500, 300, 1),
+                f("json.Marshal", 2, 1620, 980, 980, 1),
+                f("batch.Flush", 2, 2680, 1520, 210, 2),
+                f("sql.Query", 3, 420, 700, 700, 3),
+                f("sync.Mutex.Lock", 3, 1120, 500, 500, 3),
+                f("sync.Mutex.Lock", 3, 2890, 620, 620, 5),
+                f("net.Write", 3, 3510, 690, 690, 5),
+              ],
+              hot: [
+                { name: "sync.Mutex.Lock", own: 1120, share: 1120 / 4200, sites: 2 },
+                { name: "json.Marshal", own: 980, share: 980 / 4200, sites: 1 },
+                { name: "sql.Query", own: 700, share: 700 / 4200, sites: 1 },
+                { name: "net.Write", own: 690, share: 690 / 4200, sites: 1 },
+                { name: "orders.Create", own: 300, share: 300 / 4200, sites: 1 },
+                { name: "batch.Flush", own: 210, share: 210 / 4200, sites: 1 },
+                { name: "http.serve", own: 120, share: 120 / 4200, sites: 1 },
+                { name: "worker.drain", own: 80, share: 80 / 4200, sites: 1 },
+              ],
+              total: 4200,
+              maxSelf: 980,
+              unit: "samples",
+              sampleRate: 1000000000,
+              name: "cpu",
+              spy: "gospy",
+            };
+          },
 
           get_trace: (args) => {
             const base = Date.now() - 240000;

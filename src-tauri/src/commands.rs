@@ -630,6 +630,34 @@ pub async fn get_trace(
         .await
 }
 
+/// One flame graph, over a window.
+///
+/// `query` empty means the connection's own declared selector, so the screen
+/// opens on something rather than on a blank text box. The window defaults to
+/// the last hour: a profile is an aggregate over time, and a window measured
+/// in seconds is a sample of a sample.
+#[tauri::command]
+pub async fn get_profile(
+    state: Shared<'_>,
+    profile_id: String,
+    query: Option<String>,
+    minutes: Option<i64>,
+) -> Result<serde_json::Value> {
+    let minutes = minutes.unwrap_or(60).clamp(1, 60 * 24 * 7);
+    let to = chrono::Utc::now();
+    let from = to - chrono::Duration::minutes(minutes);
+
+    state
+        .collector(&profile_id)
+        .await?
+        .detail(&crate::collectors::DetailQuery::Profile {
+            query: query.unwrap_or_default(),
+            from,
+            to,
+        })
+        .await
+}
+
 // ------------------------------------------------------------------ history
 
 // ------------------------------------------------------------- deploy ingest

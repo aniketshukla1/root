@@ -1286,6 +1286,15 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
                     .default(serde_json::json!(15))
                     .range(1.0, 1440.0)
                     .advanced(),
+                    FieldSpec::new("profileQuery", "Pyroscope selector", FieldKind::Text)
+                        .placeholder(
+                            "process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name=\"checkout\"}",
+                        )
+                        .help(
+                            "The profile this connection opens its flame graph on: a profile \
+                             type, then a label set. Leave empty to leave profiling off — a \
+                             store holding no profiles should not grow a screen for them.",
+                        ),
                     FieldSpec::new(
                         "idleIngestMinutes",
                         "Degrade after idle minutes",

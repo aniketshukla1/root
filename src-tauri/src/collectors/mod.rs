@@ -159,6 +159,17 @@ pub enum DetailQuery {
         to: DateTime<Utc>,
         limit: usize,
     },
+    /// One flame graph over a window, decoded into positioned frames.
+    ///
+    /// `query` is the store's own selector — a profile type and a label set —
+    /// because nothing here can infer which of a dozen profile types an
+    /// operator meant. Empty means the connection's declared default, so the
+    /// screen opens on something rather than on a text box.
+    Profile {
+        query: String,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    },
 }
 
 /// The read APIs a gigapipe connection exposes, as a closed set.

@@ -330,6 +330,9 @@ export function ServiceDetail({
                   onOpenTrace={(traceId) =>
                     onNavigate({ name: "trace", profileId, traceId })
                   }
+                  onOpenProfile={(query) =>
+                    onNavigate({ name: "profile", profileId, query })
+                  }
                 />
               )
             )}

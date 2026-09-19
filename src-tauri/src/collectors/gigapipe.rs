@@ -70,6 +70,14 @@ const SIGNAL_PROBES: &[(&str, &str)] = &[
 /// Ingest pipelines listed before the table is truncated.
 const MAX_INGEST_ROWS: usize = 40;
 
+/// Frames the store is asked to collapse a profile into.
+///
+/// Pyroscope's own default. Past this the store folds the tail into a single
+/// `other` node, which is the right trade for a picture: a rectangle one
+/// pixel wide is not readable and the ranking beside the graph already sums
+/// what the tail was doing.
+const MAX_PROFILE_NODES: usize = 8192;
+
 /// The most a single read API answer may be before it is refused.
 ///
 /// Generous for any real query and far below what an unbounded selector can
@@ -98,6 +106,10 @@ pub struct GigapipeCollector {
     trace_slow_ms: f64,
     /// How far back the trace search looks on each poll.
     trace_lookback_minutes: i64,
+    /// Default Pyroscope selector for the flame graph — a profile type and a
+    /// label set, as the store spells it. Empty means this connection offers
+    /// no profiles and the screen says so rather than guessing a type.
+    profile_query: String,
     /// Whether an unreachable read API degrades the connection.
     signals_degrade: bool,
     /// Minutes without an ingested row before the connection is degraded.
@@ -436,6 +448,12 @@ impl GigapipeCollector {
                 .u64("traceLookbackMinutes")
                 .unwrap_or(15)
                 .clamp(1, 1440) as i64,
+            profile_query: profile
+                .options
+                .string("profileQuery")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
             signals_degrade: profile.options.get("signalsDegrade").is_none_or(|v| {
                 // Absent means on: a store that cannot answer is the failure
                 // this collector is for.
@@ -618,6 +636,35 @@ impl GigapipeCollector {
         (ok, elapsed_ms(start))
     }
 
+    /// Probe the render endpoint with the connection's declared selector.
+    ///
+    /// The other three signals are probed with a parameterless path, which is
+    /// why `/pyroscope/render` was left out of `SIGNAL_PROBES` — a probe that
+    /// has to invent a query, a from and an until is testing its own
+    /// parameters. Once a selector is *declared*, none of the three are
+    /// invented, and the probe becomes as honest as the other three.
+    ///
+    /// A one-minute window, because the question is whether the store answers
+    /// rather than what it holds.
+    async fn probe_profiles(&self) -> (bool, u64) {
+        let start = Instant::now();
+        let to = Utc::now();
+        let from = to - chrono::Duration::minutes(1);
+        let url = format!("{}/pyroscope/render", self.base);
+        let ok = self
+            .authed(self.client.get(&url))
+            .query(&[
+                ("query", self.profile_query.clone()),
+                ("from", from.timestamp_millis().to_string()),
+                ("until", to.timestamp_millis().to_string()),
+            ])
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+        (ok, elapsed_ms(start))
+    }
+
     /// The running version. Two paths because gigapipe registers the shared
     /// one and the reader registers a Prometheus-compatible alias; which
     /// answers depends on how the modules were deployed.
@@ -687,6 +734,58 @@ impl GigapipeCollector {
 
     /// The same search over an arbitrary window.
     ///
+    /// One flame graph, over a window.
+    ///
+    /// `/pyroscope/render` is a GET, and its three required parameters are
+    /// `query`, `from` and `until`. The two timestamps are **milliseconds**:
+    /// gigapipe parses them as an integer and divides by a thousand, so
+    /// sending seconds would silently ask for a window in 1970 and answer
+    /// with an empty profile rather than an error. That is the one detail in
+    /// this call worth stating twice.
+    ///
+    /// The response is the flamebearer, which `crate::profiles` decodes.
+    async fn fetch_profile(
+        &self,
+        query: &str,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<crate::profiles::Profile> {
+        // The caller's selector wins; the connection's declared one is the
+        // fallback, so the screen opens on something without asking.
+        let selector = if query.trim().is_empty() {
+            self.profile_query.as_str()
+        } else {
+            query.trim()
+        };
+        if selector.is_empty() {
+            return Err(AppError::Collector(
+                "this connection declares no profile query. Set one on the connection, \
+                 or type a selector — a profile type and a label set, such as \
+                 `process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name=\"checkout\"}`."
+                    .to_string(),
+            ));
+        }
+
+        let value = self
+            .read_api(
+                "/pyroscope/render",
+                &[
+                    ("query", selector.to_string()),
+                    ("from", from.timestamp_millis().to_string()),
+                    ("until", to.timestamp_millis().to_string()),
+                    ("maxNodes", MAX_PROFILE_NODES.to_string()),
+                ],
+            )
+            .await?;
+
+        let raw: crate::profiles::Flamebearer = serde_json::from_value(value).map_err(|e| {
+            AppError::Collector(format!(
+                "/pyroscope/render answered with something that is not a flame graph: {e}"
+            ))
+        })?;
+        crate::profiles::decode(&raw)
+    }
+
     /// The polling path asks for "the last N minutes"; a correlation asks for
     /// the window the operator clicked. One implementation, two callers, so a
     /// trace that shows on the dashboard and a trace that shows on a lane are
@@ -955,6 +1054,38 @@ impl Collector for GigapipeCollector {
         }
         *self.signal_state.lock().await = probed;
 
+        // ------------------------------------------------------ profiles
+        //
+        // Only when a selector is declared. A store holding no profiles — or
+        // one whose operator has not said which profile matters — should not
+        // grow an empty table and a screen behind it.
+        let profile_rows = if self.profile_query.is_empty() {
+            Vec::new()
+        } else {
+            let (ok, took) = self.probe_profiles().await;
+            if ok {
+                signals_up += 1;
+            } else {
+                signals_down += 1;
+            }
+            vec![Row::new(
+                "profile:declared",
+                &self.profile_query,
+                if ok { Health::Healthy } else { Health::Down },
+            )
+            .summary(if ok {
+                format!("answering in {took} ms")
+            } else {
+                "/pyroscope/render did not answer".to_string()
+            })
+            .cell("selector", CellValue::text(&self.profile_query))
+            .cell(
+                "state",
+                CellValue::status(if ok { Health::Healthy } else { Health::Down }),
+            )
+            .cell("latency", CellValue::number(took as f64))]
+        };
+
         // -------------------------------------------------------- ingest
         let previous = self.previous.lock().await.clone();
         let elapsed = previous
@@ -1219,6 +1350,20 @@ impl Collector for GigapipeCollector {
             .sorted_by_health()
             .empty_text("No query APIs probed."),
             Section::new(
+                "profiles",
+                "Profiles",
+                vec![
+                    // Marked, so the cell opens the flame graph. The frontend
+                    // learns nothing about gigapipe from this.
+                    ColumnSpec::text("selector", "Profile").primary().profile(),
+                    ColumnSpec::status("state", "State"),
+                    ColumnSpec::metric("latency", "Answered in", MetricUnit::Millis),
+                ],
+            )
+            .rows(profile_rows)
+            .priority(6)
+            .empty_text("No profile selector declared on this connection."),
+            Section::new(
                 "ingest",
                 "Ingest pipelines",
                 vec![
@@ -1433,6 +1578,12 @@ impl Collector for GigapipeCollector {
                 let traces = self.search_traces_between(*from, *to, *limit).await?;
                 serde_json::to_value(traces).map_err(|e| {
                     AppError::Collector(format!("could not serialize the traces: {e}"))
+                })
+            }
+            super::DetailQuery::Profile { query, from, to } => {
+                let profile = self.fetch_profile(query, *from, *to).await?;
+                serde_json::to_value(profile).map_err(|e| {
+                    AppError::Collector(format!("could not serialize the profile: {e}"))
                 })
             }
             _ => Err(AppError::UnsupportedAction(

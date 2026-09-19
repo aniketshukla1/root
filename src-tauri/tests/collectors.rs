@@ -579,6 +579,84 @@ async fn gigapipe_serving_every_signal_is_healthy() {
     assert_eq!(cell_number(row(ingest, "traces"), "bytes"), 900.0);
 }
 
+/// The Pyroscope selector, in the five-part form `ParseTypeId` expects.
+const PROFILE_SELECTOR: &str = "process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name=\"api\"}";
+
+fn with_profile_query() -> ProfileOptions {
+    let mut options = ProfileOptions::default();
+    options.set("profileQuery", json!(PROFILE_SELECTOR));
+    options
+}
+
+#[tokio::test]
+async fn gigapipe_without_a_profile_selector_grows_no_profiles_row() {
+    // Declared, never inferred. A warehouse holding no profiles — or one
+    // whose operator has not said which profile matters — must not sprout an
+    // empty table and a screen behind it.
+    let server = gigapipe_server(true).await;
+    let collector = build_collector(&gigapipe_profile(&server, ProfileOptions::default()), None)
+        .await
+        .expect("collector builds");
+
+    let snapshot = collector.collect().await.expect("collect succeeds");
+    assert!(section(&snapshot, "profiles").is_empty());
+    assert_eq!(metric(&snapshot, "signals_up"), 3.0);
+}
+
+#[tokio::test]
+async fn gigapipe_counts_a_declared_profile_as_a_signal_it_serves() {
+    let server = gigapipe_server(true).await;
+    Mock::given(method("GET"))
+        .and(path("/pyroscope/render"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "flamebearer": { "names": ["total"], "levels": [[0, 10, 0, 0]], "numTicks": 10, "maxSelf": 0 },
+            "metadata": { "format": "single", "units": "samples", "sampleRate": 100, "name": "cpu" },
+        })))
+        .mount(&server)
+        .await;
+
+    let collector = build_collector(&gigapipe_profile(&server, with_profile_query()), None)
+        .await
+        .expect("collector builds");
+
+    let snapshot = collector.collect().await.expect("collect succeeds");
+    assert_eq!(snapshot.health, Health::Healthy);
+    // Four now, not three: a declared profile is a query API like the rest.
+    assert_eq!(metric(&snapshot, "signals_up"), 4.0);
+
+    let profiles = section(&snapshot, "profiles");
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(cell_text(row(profiles, PROFILE_SELECTOR), "selector"), PROFILE_SELECTOR);
+}
+
+#[tokio::test]
+async fn gigapipe_that_cannot_serve_its_declared_profile_is_degraded_by_it() {
+    // The whole reason the probe exists rather than the row being static. A
+    // store whose other three APIs answer while `/pyroscope/render` does not
+    // is a store that has lost a signal, and it has to say so — the same way
+    // losing LogQL does.
+    let server = gigapipe_server(true).await;
+    Mock::given(method("GET"))
+        .and(path("/pyroscope/render"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("no such profile type"))
+        .mount(&server)
+        .await;
+
+    let collector = build_collector(&gigapipe_profile(&server, with_profile_query()), None)
+        .await
+        .expect("collector builds");
+
+    let snapshot = collector.collect().await.expect("collect succeeds");
+    assert_eq!(
+        snapshot.health,
+        Health::Degraded,
+        "a signal went down and the connection did not notice: {}",
+        snapshot.summary
+    );
+    assert_eq!(metric(&snapshot, "signals_up"), 3.0);
+    assert_eq!(row(section(&snapshot, "profiles"), PROFILE_SELECTOR).health, Health::Down);
+}
+
 #[tokio::test]
 async fn gigapipe_ready_with_a_dead_backend_is_down_and_says_why() {
     // The failure this collector exists for. `/ready` answers from the

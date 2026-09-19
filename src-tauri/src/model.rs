@@ -304,6 +304,16 @@ pub struct ColumnSpec {
     /// becomes openable — including for collectors that do not exist yet.
     #[serde(default)]
     pub trace_ref: bool,
+    /// This column holds a profile selector, and the value in it opens as a
+    /// flame graph rather than rendering as text.
+    ///
+    /// The third column marked this way, after `revision` and `trace_ref`,
+    /// and for the same reason each time: the frontend must not learn which
+    /// service types hold profiles. A collector that can resolve a selector
+    /// marks the column, and a collector written next year gets the screen
+    /// with no edit outside itself.
+    #[serde(default)]
+    pub profile_ref: bool,
 }
 
 impl ColumnSpec {
@@ -323,6 +333,7 @@ impl ColumnSpec {
             secondary: false,
             revision: false,
             trace_ref: false,
+            profile_ref: false,
         }
     }
 
@@ -376,6 +387,14 @@ impl ColumnSpec {
     /// Mark this column as holding a trace id. See [`ColumnSpec::trace_ref`].
     pub fn trace(mut self) -> Self {
         self.trace_ref = true;
+        self.sortable = false;
+        self
+    }
+
+    /// Mark this column as holding a profile selector. See
+    /// [`ColumnSpec::profile_ref`].
+    pub fn profile(mut self) -> Self {
+        self.profile_ref = true;
         self.sortable = false;
         self
     }

@@ -53,6 +53,26 @@ function TraceCell({
   );
 }
 
+function ProfileCell({
+  value,
+  onOpen,
+}: {
+  value: CellValue | undefined;
+  onOpen: (query: string) => void;
+}) {
+  const query = value && value.type === "text" ? value.value : "";
+  if (!query) return <span className="text-ink-4/60">—</span>;
+  return (
+    <button
+      onClick={() => onOpen(query)}
+      title={`Open the flame graph for ${query}`}
+      className="num truncate text-2xs text-accent underline decoration-accent/30 underline-offset-2 transition-colors hover:decoration-accent"
+    >
+      {query}
+    </button>
+  );
+}
+
 function Cell({ column, value }: { column: ColumnSpec; value: CellValue | undefined }) {
   if (!value || value.type === "null") return <span className="text-ink-4/60">—</span>;
 
@@ -121,6 +141,7 @@ export function SectionTable({
   onAction,
   onOpenRow,
   onOpenTrace,
+  onOpenProfile,
   initialLimit = 25,
   /** Prefixed to the primary column, for tables that span connections. */
   originOf,
@@ -130,6 +151,7 @@ export function SectionTable({
   /** Drill into one component. Omit to leave rows inert. */
   onOpenRow?: (row: Row) => void;
   onOpenTrace?: (traceId: string) => void;
+  onOpenProfile?: (query: string) => void;
   initialLimit?: number;
   originOf?: (row: Row) => React.ReactNode;
 }) {
@@ -261,7 +283,17 @@ export function SectionTable({
                             {/* The identifying cell is the drill-in. Making the
                                 whole row clickable would swallow the action
                                 buttons that sit at its other end. */}
-                            {onOpenRow ? (
+                            {/* A profile selector *is* the row's identity, so
+                                the marked column is the primary one — and the
+                                component drill-in would land on a page about
+                                a query string. The marking wins where there
+                                is one. */}
+                            {column.profileRef && onOpenProfile ? (
+                              <ProfileCell
+                                value={row.cells[column.key]}
+                                onOpen={onOpenProfile}
+                              />
+                            ) : onOpenRow ? (
                               <button
                                 onClick={() => onOpenRow(row)}
                                 title={`Open ${row.name}`}
@@ -275,6 +307,11 @@ export function SectionTable({
                               </span>
                             )}
                           </span>
+                        ) : column.profileRef && onOpenProfile ? (
+                          <ProfileCell
+                            value={row.cells[column.key]}
+                            onOpen={onOpenProfile}
+                          />
                         ) : column.traceRef && onOpenTrace ? (
                           // Declared by the collector, not inferred from the
                           // section id — any collector that can resolve a
@@ -334,11 +371,13 @@ export function SectionList({
   onAction,
   onOpenRow,
   onOpenTrace,
+  onOpenProfile,
 }: {
   sections: Section[];
   onAction?: (action: RowAction, row: Row) => void;
   onOpenRow?: (section: Section, row: Row) => void;
   onOpenTrace?: (traceId: string) => void;
+  onOpenProfile?: (query: string) => void;
 }) {
   const ordered = useMemo(
     () => [...sections].sort((a, b) => a.priority - b.priority),
@@ -355,6 +394,7 @@ export function SectionList({
           onAction={onAction}
           onOpenRow={onOpenRow ? (row) => onOpenRow(section, row) : undefined}
           onOpenTrace={onOpenTrace}
+          onOpenProfile={onOpenProfile}
         />
       ))}
     </div>

@@ -34,6 +34,7 @@ pub mod mcp;
 pub mod model;
 pub mod patterns;
 pub mod predict;
+pub mod profiles;
 pub mod promquery;
 pub mod registry;
 pub mod runtime;
@@ -167,6 +168,7 @@ pub fn run() {
             commands::correlate,
             commands::get_build_console,
             commands::get_trace,
+            commands::get_profile,
             commands::get_metric_history,
             commands::get_health_runs,
             commands::get_topology,

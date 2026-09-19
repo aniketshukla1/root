@@ -312,7 +312,7 @@ because most infrastructure exposes an API and not a stream.
 | --- | --- | --- |
 | **Jenkins** | Job results and durations, build queue depth *and the reason each item is blocked*, executor counts, agent online/offline with cause | Build outcomes as they finish, as `event` lines. Console output is not in the stream at all — it is a per-build detail fetch, because forty lines per failed build in the shared view buried everything else |
 | **Prometheus** | Scrape target health, firing alert rules, and TSDB series count. A target that silently stopped being scraped is invisible in a dashboard built on its data; the graph just goes flat. Deliberately not a PromQL client — the question here is whether Prometheus is scraping what it thinks it is | Each alert once, as it starts firing |
-| **Gigapipe** | The one connection that is two things: a service root watches, and a store root reads *from*. Query APIs are probed per signal — logs, metrics, traces — because `/ready` answers from the process, and a ClickHouse that has gone away leaves gigapipe answering happily while every query fails. Ingest rate is derived between polls from monotonic counters, and an interval where a counter went *down* is dropped rather than reported as a negative rate, because that means the process restarted. Plus rejected payloads, backend resets, traces matched and slow. See [`GIGAPIPE.md`](GIGAPIPE.md) | Version transitions, and — with a LogQL selector set — real application logs pulled from whatever ships *into* gigapipe, which is why root needs no OTLP receiver of its own |
+| **Gigapipe** | The one connection that is two things: a service root watches, and a store root reads *from*. Query APIs are probed per signal — logs, metrics, traces, and profiles when a selector is declared — because `/ready` answers from the process, and a ClickHouse that has gone away leaves gigapipe answering happily while every query fails. Ingest rate is derived between polls from monotonic counters, and an interval where a counter went *down* is dropped rather than reported as a negative rate, because that means the process restarted. Plus rejected payloads, backend resets, traces matched and slow. See [`GIGAPIPE.md`](GIGAPIPE.md) | Version transitions, and — with a LogQL selector set — real application logs pulled from whatever ships *into* gigapipe, which is why root needs no OTLP receiver of its own |
 | **AWS** | One connection is an account and region; buckets and queues are components inside it. S3 object count and stored bytes against lifecycle policy — growth that nothing will ever delete. SQS depth, in-flight count, and dead-letter configuration: depth with *nothing in flight* means no consumer is even trying. Object counts walk a bounded number of pages and say when they stopped rather than reporting a fraction as a total | None. Oldest-message age is left to CloudWatch on purpose: reading it off the queue would increment every message's receive count and dead-letter the backlog the monitor was watching |
 
 ### On log delivery
@@ -442,6 +442,32 @@ are read-only, so they stay available in **Read-only** mode.
 
 The `gigapipe_` prefix matters: root monitors Prometheus directly too, and an unprefixed
 `prometheus_query` would not say which connection it meant.
+
+### Where the time actually goes
+
+A trace says which service was slow. A profile says which *function* was, and it is the
+only thing root carries that answers "why" without somebody reading code. A gigapipe
+connection that declares a **Pyroscope selector** grows a `Profiles` row, and opening it
+draws a flame graph.
+
+The screen leads with the ranking rather than the picture. The same function usually
+appears in a dozen places in a graph — once per call path — and each of those rectangles
+is too thin to notice while together they are the reason the process is slow. So self
+samples are summed per symbol and listed first, with a count of how many call sites
+contributed, and the graph below is how you check the ranking rather than how you find
+it. Width is total time; **colour is self time**, so a frame that is wide only because it
+waited on what it called stays cool. Click a frame to zoom into it.
+
+The selector is declared, like the LogQL and TraceQL ones: a profile type and a label
+set, such as `process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name="checkout"}`.
+Nothing infers which of a dozen profile types you meant. A connection with no selector
+has no profiles section and no screen behind it, and a declared selector is probed each
+poll like the other query APIs — a store that stops serving profiles degrades the
+connection the same way losing LogQL does.
+
+Nothing in the frontend knows gigapipe has profiles. The collector marks the column, the
+table turns it into an opener, and a collector written next year gets the screen for
+free — the same mechanism trace ids and deploy revisions already use.
 
 ### Writing back to it
 
@@ -691,13 +717,13 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-505 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+520 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
 detection, component history admission and eviction, log filtering and stream separation,
 section renderability, conversation trimming, the per-provider message translation, and
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
 grouping, config rules, and the journal.
 
-Twelve integration suites sit in `src-tauri/tests/`, each against something real:
+Thirteen integration suites sit in `src-tauri/tests/`, each against something real:
 
 | Suite | Against | Why it is not a unit test |
 | --- | --- | --- |
@@ -712,6 +738,7 @@ Twelve integration suites sit in `src-tauri/tests/`, each against something real
 | `mcp_server.rs` | the real `root-mcp` binary, spawned over a pipe | a server can pass every handler test and still be unusable: one stray line on stdout makes every request a parse error on the client side |
 | `gigapipe_read.rs` | wiremock, always | the nine store reads are entirely URLs, and `/label` against `/labels` or a missing `/json` fails by returning nothing — which looks exactly like a store holding nothing |
 | `influx_write.rs` | wiremock, always | line protocol is a body rather than a query string, and a malformed one is accepted with a 204 by some receivers and dropped by others — the failure is a measurement that quietly never appears |
+| `profile_read.rs` | wiremock, always | `/pyroscope/render` takes its window in milliseconds and divides by a thousand — send seconds and it answers 200 with an empty profile for a window in 1970, which looks exactly like a service that was idle |
 | `demo_estate.rs` | `demo/compose.yml`, wrong on purpose | the only layer that proves the pieces *meet* — see [The demo estate](#the-demo-estate) |
 
 `tests/databases.rs` earns its keep twice over: writing it caught three genuine bugs —
@@ -794,8 +821,10 @@ actually watches:
 - **Jenkins** — **job filter** narrows to jobs containing a string; empty watches every job
   the credential can see.
 - **Gigapipe** — a **LogQL selector** turns the connection into a log source for whatever
-  ships into it, and a **TraceQL selector** with a slow-trace threshold decides which
-  traces are listed.
+  ships into it, a **TraceQL selector** with a slow-trace threshold decides which traces
+  are listed, and a **Pyroscope selector** decides which profile the flame graph opens
+  on. All three are empty by default: a store holding none of a signal should not grow a
+  table for it.
 - **NFS exports** and **RabbitMQ** — **path prefix** and **virtual host** narrow a busy
   host to the exports or vhost you care about.
 
@@ -832,6 +861,7 @@ src-tauri/src/
 
   history.rs      Rolling metric history and log bucketing — the data behind charts
   traces.rs       Spans as a tree — the one shape Section/Row cannot express
+  profiles.rs     Flamebearers decoded into positioned frames and a self-time ranking
   changes.rs      Deploy detection by diffing each component's revision column
   ingest.rs       Opt-in loopback listener for externally reported deploys
   incidents.rs    Correlating alerts into incidents, without a model
@@ -840,6 +870,7 @@ src-tauri/src/
   stats.rs        KS test + volume heuristic for ranking which metrics moved
   forecast.rs     Where a metric is heading, and when to refuse to say
   promquery.rs    Long-range history read from a Prometheus you already run
+  influx.rs       Snapshot write-out — the one place root writes to another store
 
   configsource.rs Where a connection's config lives, and reading it safely
   redact.rs       Removing secrets from text before it can leave the process
@@ -871,8 +902,8 @@ src/
   app.css         Tailwind v4 theme: tokens, density, base
   shell/          Sidebar, ScreenHeader, CommandPalette, AssistantDock,
                   ComponentDialog, ConfirmDialog, Splash, Toasts
-  screens/        One file per destination, incl. TraceDetail's waterfall,
-                  plus the Onboarding and SignIn gates
+  screens/        One file per destination, incl. TraceDetail's waterfall and
+                  ProfileDetail's flame graph, plus the Onboarding and SignIn gates
   ui/             Primitives, charts, icons, generic section table
   icons/marks/    Brand marks, auto-discovered per kind
 ```

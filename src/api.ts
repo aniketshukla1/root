@@ -160,6 +160,7 @@ import type {
   LogFilter,
   MetricSeries,
   PendingConfirmation,
+  Profile,
   ServiceDescriptor,
   TeamState,
   TopologyView,
@@ -384,6 +385,17 @@ export const api = {
     invoke<AppConfig>("save_profile", { profile, secret: secret ?? null }),
 
   deleteProfile: (profileId: string) => invoke<AppConfig>("delete_profile", { profileId }),
+
+  /**
+   * One flame graph over a window. An empty `query` uses the selector the
+   * connection declared, so the screen opens on something.
+   */
+  getProfile: (profileId: string, query?: string, minutes?: number) =>
+    invoke<Profile>("get_profile", {
+      profileId,
+      query: query ?? null,
+      minutes: minutes ?? null,
+    }),
 
   testProfile: (profile: ConnectionProfile, secret?: string) =>
     invoke<HealthSnapshot>("test_profile", { profile, secret: secret ?? null }),

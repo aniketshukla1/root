@@ -15,6 +15,8 @@ export type View =
   | { name: "component"; profileId: string; sectionId: string; rowId: string }
   /** One distributed trace, as a waterfall. */
   | { name: "trace"; profileId: string; traceId: string }
+  /** One flame graph. `query` is the store's own profile selector. */
+  | { name: "profile"; profileId: string; query: string }
   | { name: "correlate"; at: string };
 
 export type ServiceTab =
@@ -28,7 +30,12 @@ export type ServiceTab =
 
 /** Which nav entry should read as current, including for drill-downs. */
 export function rootOf(view: View): string {
-  if (view.name === "service" || view.name === "component" || view.name === "trace")
+  if (
+    view.name === "service" ||
+    view.name === "component" ||
+    view.name === "trace" ||
+    view.name === "profile"
+  )
     return "services";
   if (view.name === "correlate") return "logs";
   return view.name;

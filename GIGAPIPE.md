@@ -160,7 +160,7 @@ measurement with a count in it.
 to the wire under wiremock; ten unit tests in `influx.rs` cover the encoding, including
 the escaping and the every-kind-has-a-tag property.
 
-### 2. Traces — built. Profiling — not
+### 2. Traces and profiling — both built
 
 Gigapipe serves TraceQL at `/api/search` and `/api/traces/{traceId}`, and Pyroscope at
 `/pyroscope/render`.
@@ -192,12 +192,46 @@ wrong place: the operator cannot tell "it did not happen" from "we did not show 
 spend 900. Ranking the per-service breakdown by total duration would point at the wrong
 service every time.
 
-**Not built:** `Correlate` does not yet place spans on its lanes. That is where traces
-stop being a separate feature and start being the thing that explains an incident — about
-three days, and the obvious next move.
+5. `Correlate` places spans on its lanes. Each lane lists the requests that spent time
+   inside it, self time first, amber once the majority of a request's life was spent on
+   that one connection — and a lane that logged nothing during the window but held a
+   request for two seconds is no longer dropped for being empty.
 
-Profiling is untouched: a flame graph is one component, one screen, one query, about a
-week.
+**Profiling — built.** `/pyroscope/render`, decoded in `profiles.rs`, drawn by
+`ProfileDetail`.
+
+The wire format is Pyroscope's flamebearer: one array of symbol names and one array per
+row of the graph, each row a flat run of `[x offset, total, self, name index]`. The
+offset is **delta encoded against the end of the previous frame on that row**, which is
+the one detail that matters: read as an absolute position it produces a graph that is
+subtly, plausibly wrong — every frame shifted left, the wide ones still wide. Both
+implementations encode it the same way (Pyroscope's `deltaEncoding`, gigapipe's `BFS`),
+and neither promises the rows arrive in ascending order, so parents are resolved by
+containment against a sorted copy of the row above rather than by walking both in step.
+
+`from` and `until` are **milliseconds** — gigapipe parses them with `ParseInt` and
+divides by a thousand. Sending seconds asks for a window in 1970 and gets a 200 with an
+empty profile, which is indistinguishable from a service that was idle. Asserted on the
+URL in `tests/profile_read.rs` for that reason.
+
+**The ranking leads, not the picture.** The same function usually appears in a dozen
+places in a graph, once per call path, each sliver too thin to notice and together the
+reason the process is slow. So self samples are summed per symbol and ranked above the
+graph, with a count of how many call sites contributed. The graph is how you check the
+ranking. Colour is self time rather than width, so a frame that is wide only because it
+waited on its children stays cool.
+
+**Declared, like everything else.** `profileQuery` on the connection names the profile
+type and label set; nothing infers which of a dozen profile types an operator meant. A
+connection that declares one gets a `Profiles` section whose selector column is marked
+`ColumnSpec::profile()` — the third such marking after `revision` and `trace_ref`, and
+for the same reason each time: the frontend never learns which service kinds hold
+profiles. A declared profile is also probed each poll like the other three query APIs,
+so a store that stops serving profiles degrades the connection.
+
+**Not built:** the diff view. `/pyroscope/render-diff` answers in the `double` format,
+seven integers per frame instead of four, which `decode` refuses by name rather than
+misreading. It is a different question and would be a different screen.
 
 ### 3. Push ingest — closed by proxy
 
@@ -300,7 +334,8 @@ nothing rather than by erroring — which looks exactly like a store with nothin
 4. ~~Assistant access to LogQL, PromQL and TraceQL~~ — done, as nine `gigapipe_*` tools.
 5. ~~Snapshot write-out over Influx line protocol, opt-in~~ — done, off by default.
 
-Then profiling: one flame graph screen, about a week.
+~~Then profiling: one flame graph screen~~ — done, and reachable from the connection's
+own Profiles section rather than from a destination of its own.
 
 Multi-user is deliberately absent. It closes as a consequence of 3, in the only form
 root should want.

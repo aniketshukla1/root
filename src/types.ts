@@ -116,6 +116,8 @@ export interface ColumnSpec {
    * frontend never learns which service types have traces.
    */
   traceRef?: boolean;
+  /** This column holds a profile selector; the cell opens a flame graph. */
+  profileRef?: boolean;
 }
 
 export type SpanStatus = "unset" | "ok" | "error";
@@ -1140,3 +1142,48 @@ export interface ChatEntry {
 export const LOG_LEVELS: LogLevel[] = ["trace", "debug", "info", "warn", "error", "fatal"];
 
 export const HEALTH_ORDER: Health[] = ["down", "degraded", "unknown", "healthy"];
+
+/**
+ * One rectangle in a flame graph.
+ *
+ * Positions arrive absolute — the wire format delta-encodes them and the
+ * backend decodes once, in `profiles.rs`, so nothing here does arithmetic on
+ * an offset it did not receive.
+ */
+export interface Frame {
+  name: string;
+  /** Row in the graph. Zero is the root spanning everything. */
+  depth: number;
+  /** Samples from the left edge. */
+  offset: number;
+  total: number;
+  /** Samples in this frame alone. */
+  own: number;
+  /** Index into `frames` of the frame this one sits inside. */
+  parent?: number;
+}
+
+/** One symbol, with every call site of it summed. */
+export interface HotSymbol {
+  name: string;
+  own: number;
+  /** Share of the whole profile, 0–1. */
+  share: number;
+  /** How many separate places in the graph carried this name. */
+  sites: number;
+}
+
+/** A decoded profile, ready to draw. */
+export interface Profile {
+  frames: Frame[];
+  /** Ranked by self samples, worst first. */
+  hot: HotSymbol[];
+  total: number;
+  maxSelf: number;
+  /** `samples`, `bytes`, `objects`, `nanoseconds` — or empty when unstated. */
+  unit: string;
+  sampleRate: number;
+  /** What was profiled, as the store names it. */
+  name: string;
+  spy?: string;
+}

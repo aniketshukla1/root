@@ -20,13 +20,14 @@ of a connection — they are columns, filters, and group-by keys, not screens.
 | **Scorecard** | Is root any good yet — precision from findings, recall from incidents. |
 | **Settings** | Connections, workspace, assistant, deploy ingest, MCP server, display. |
 
-Four drill-downs are reachable from several screens and are deliberately not in
+Five drill-downs are reachable from several screens and are deliberately not in
 the nav: **service detail**
 (`Dashboard · Components · Alerts · Metrics · Logs · Config · Connection`, where
 **Config** carries the rule findings and **Connection** the profile itself),
 **component detail** — one container, node, or job — **trace detail**, one
-distributed trace as a waterfall, and **correlate**, one moment across every
-connection, from any log line or alert.
+distributed trace as a waterfall, **profile detail**, one flame graph over a
+window, and **correlate**, one moment across every connection, from any log line
+or alert.
 
 Two gates render outside the nav rather than as destinations: **Onboarding**,
 when no connection is configured yet, and **SignIn**, when a workspace server is
@@ -140,8 +141,8 @@ src/
                    ComponentDialog, ConfirmDialog, Splash, Toasts
   screens/         Overview, Services, Alerts, Metrics, Logs, Assistant,
                    Scorecard, Settings, ServiceDetail, ServiceDashboard,
-                   ComponentDetail, TraceDetail, Correlate, TeamSettings,
-                   Onboarding, SignIn
+                   ComponentDetail, TraceDetail, ProfileDetail, Correlate,
+                   TeamSettings, Onboarding, SignIn
   ui/              primitives, charts, icons, SectionTable, AlertList
   icons/marks/     brand marks, auto-discovered per kind
 ```
@@ -177,11 +178,22 @@ which service types have which capability, so the collector declares it:
 - `ColumnSpec::trace()` marks a column as holding a trace id, and every cell in
   it becomes an opener for the waterfall — including for collectors that do not
   exist yet.
+- `ColumnSpec::profile()` marks a column as holding a profile selector, and the
+  cell opens a flame graph. Where a section has one it *is* the row's identity,
+  so it wins over the component drill-in — which would otherwise land on a page
+  about a query string.
 - `Section::tracked()` keeps per-row history for that section's numeric columns.
 
 The trace waterfall takes its span colours from `seriesColor`, not a palette of
 its own, because that ordering already holds back the hues nearest a status
 colour — which is what stops a span bar reading as a health signal.
+
+The flame graph is the one place a warm hue is deliberate: colour there is self
+time rather than health, scaled against the profile's own worst frame, so a
+frame that is wide only because it waited on its children stays cool. Frames
+arrive already positioned and parented from `profiles.rs` — the wire format
+delta-encodes every offset, and a renderer that read those as absolute
+positions would draw a graph that was subtly, plausibly wrong.
 
 Operational context lives in each `ConnectionProfile`'s open `metadata`
 envelope, separate from collector `options`. The `operations` namespace holds

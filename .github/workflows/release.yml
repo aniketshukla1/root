@@ -1,0 +1,148 @@
+# Signed, notarized installers, on a tag.
+#
+# Everything here exists because of one fact about macOS: an unsigned bundle
+# does not open with a warning, it opens with "root is damaged and can't be
+# opened", which reads as a corrupt download rather than as a missing
+# signature. Nobody files a bug about that. They delete it.
+#
+# What a tag produces:
+#
+#   - macOS .dmg, universal, Developer ID signed and notarized
+#   - Windows .msi and .exe
+#   - Linux .deb and .AppImage
+#   - latest.json, which is what the in-app updater reads
+#
+# Secrets required, all under Settings → Secrets → Actions:
+#
+#   APPLE_CERTIFICATE            base64 of the Developer ID .p12
+#   APPLE_CERTIFICATE_PASSWORD   its password
+#   APPLE_SIGNING_IDENTITY       "Developer ID Application: Name (TEAMID)"
+#   APPLE_ID                     the Apple account used to notarize
+#   APPLE_PASSWORD               an app-specific password, not the real one
+#   APPLE_TEAM_ID
+#   TAURI_SIGNING_PRIVATE_KEY    `npm run tauri signer generate`
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#
+# The Tauri signing key is separate from the Apple one and does a different
+# job: Apple's proves the installer came from a known developer, and Tauri's
+# proves an *update* did. Without the second one the updater will install
+# anything the update server hands it.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One universal binary rather than two downloads and a question
+          # nobody should have to answer about their own laptop.
+          - os: macos-latest
+            target: universal-apple-darwin
+            args: --target universal-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse to release with the placeholders still in place
+        shell: bash
+        # tauri.conf.json ships with a placeholder public key and an
+        # OWNER/REPO endpoint, because only this repository's owner can supply
+        # the real ones. A release built with them produces installers that
+        # look fine and an updater that can never work: the key verifies
+        # nothing and the endpoint is a 404. Better to fail here than to find
+        # out when the first update does not arrive.
+        run: |
+          if grep -q "REPLACE_WITH_OUTPUT_OF" src-tauri/tauri.conf.json; then
+            echo "::error::Set plugins.updater.pubkey in src-tauri/tauri.conf.json."
+            echo "Generate one with: npm run tauri signer generate -- -w ~/.tauri/root.key"
+            exit 1
+          fi
+          if grep -q "OWNER/REPO" src-tauri/tauri.conf.json; then
+            echo "::error::Set plugins.updater.endpoints to this repository."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The universal build needs both halves; on the other platforms this
+          # is the host target and costs nothing.
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Linux build dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updates are signed with this. A release built without it produces
+          # installers that work and an updater that cannot verify anything.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Apple. tauri-action signs when these are present and silently does
+          # not when they are absent, which is why the check below exists.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: root ${{ github.ref_name }}
+          releaseBody: |
+            Installers below. macOS is signed and notarized; Windows and Linux
+            are unsigned unless their certificates are configured.
+
+            The desktop app updates itself from this release. The server runs
+            from `deploy/compose.yml`.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+      - name: Confirm the macOS build is actually signed
+        if: matrix.os == 'macos-latest'
+        # tauri-action does not fail when the Apple secrets are missing — it
+        # builds an unsigned bundle and says nothing. Shipping one of those is
+        # the failure this whole workflow exists to prevent, so it is checked
+        # rather than assumed.
+        run: |
+          APP=$(find src-tauri/target -name "*.app" -maxdepth 6 | head -1)
+          if [ -z "$APP" ]; then echo "no .app was produced"; exit 1; fi
+          echo "checking $APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          # Gatekeeper's own verdict, which is the one a user's machine uses.
+          spctl --assess --type execute --verbose "$APP"

@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "root · infrastructure manager",
+        "title": "root \u00b7 infrastructure manager",
         "width": 1440,
         "height": 900,
         "minWidth": 820,
@@ -34,6 +34,21 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_OUTPUT_OF_npm_run_tauri_signer_generate",
+      "endpoints": [
+        "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -172,14 +172,6 @@ export function ServerSignIn({
             </Button>
           </>
         )}
-
-        {/* A server that has a shared token configured can also be reached
-            with it. Said plainly rather than hidden, because somebody
-            automating against this needs to know it is the supported path. */}
-        <p className="num text-2xs leading-relaxed text-ink-4">
-          Scripts and scrapes use the server's shared token instead, as a bearer
-          header. It has no account behind it and is treated as an administrator.
-        </p>
       </div>
     </div>
   );

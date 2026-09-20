@@ -35,6 +35,11 @@ uuid = { version = "1.24.0", features = ["v4", "serde"] }
 # `ws` for the event stream the browser client subscribes to; the desktop app
 # does not use it and pays for it only in compile time.
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "ws", "query"] }
+# Password hashing. Argon2id is the current answer and the parameters that
+# matter are its defaults; this is not a place to be clever.
+argon2 = { version = "0.5", features = ["std"] }
+# Session tokens are stored as their digest, never as themselves.
+sha2 = "0.10"
 tower-http = { version = "0.6", default-features = false, features = ["fs", "cors"] }
 # Constant-time token comparison, so a wrong token cannot be recovered by
 # timing the reply.

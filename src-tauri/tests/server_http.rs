@@ -43,6 +43,7 @@ async fn start() -> (SocketAddr, Events) {
         state,
         events: sender,
         token: TOKEN.to_string(),
+        directory: None,
         web_root: None,
     });
 

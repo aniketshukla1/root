@@ -66,7 +66,17 @@ pub struct Ctx {
     pub state: Arc<AppState>,
     pub events: broadcast::Sender<Envelope>,
     /// The shared bearer token. Never logged, never returned.
+    ///
+    /// The machine path: a scrape, a script, the bootstrap before any account
+    /// exists. Treated as an administrator, because whoever holds it
+    /// configured this server.
     pub token: String,
+    /// Accounts and sessions, when a database is configured.
+    ///
+    /// `None` means the shared token is the only way in. Accounts need
+    /// somewhere to live, and a server that pretended to have users without a
+    /// database would lose them all on restart.
+    pub directory: Option<crate::auth::Directory>,
     /// Where the built frontend lives, when this server is also serving it.
     pub web_root: Option<std::path::PathBuf>,
 }
@@ -78,6 +88,10 @@ pub fn router(ctx: Ctx) -> Router {
     let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/rpc/{command}", post(rpc))
+        .route("/auth/login", post(login))
+        .route("/auth/logout", post(logout))
+        .route("/auth/me", get(whoami))
+        .route("/auth/users", get(list_users).post(create_user))
         .route("/events", get(events))
         .with_state(ctx);
 
@@ -122,6 +136,24 @@ async fn healthz(State(ctx): State<Ctx>) -> Json<Value> {
     }))
 }
 
+/// Who is making this request, if anyone.
+///
+/// Two credentials reach the same place: the shared token, which has no person
+/// behind it, and a session token belonging to an account. Both arrive as a
+/// bearer, so a client never has to know which kind it holds.
+async fn identify(ctx: &Ctx, headers: &HeaderMap) -> Option<crate::auth::Identity> {
+    if crate::local_listener::authorized(headers, &ctx.token) {
+        return Some(crate::auth::Identity::machine());
+    }
+
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))?;
+
+    ctx.directory.as_ref()?.identify(bearer).await
+}
+
 /// One command, by name, with its arguments as the body.
 async fn rpc(
     State(ctx): State<Ctx>,
@@ -135,10 +167,24 @@ async fn rpc(
     // request right, so the body is parsed below, after the door.
     body: axum::body::Bytes,
 ) -> Response {
-    if !crate::local_listener::authorized(&headers, &ctx.token) {
-        // No detail. A caller without a token learns that it needs one, and
-        // a caller with a wrong one learns nothing about why.
+    let Some(identity) = identify(&ctx, &headers).await else {
+        // No detail. A caller without a credential learns that it needs one,
+        // and a caller with a wrong one learns nothing about why.
         return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "unauthorized" })))
+            .into_response();
+    };
+
+    // Authentication is not authorization. A viewer holds a perfectly valid
+    // session and still may not restart a container.
+    if !crate::auth::may(identity.role, &command) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": format!(
+                    "`{command}` changes something, and this account can only read"
+                )
+            })),
+        )
             .into_response();
     }
 
@@ -174,6 +220,189 @@ async fn rpc(
     }
 }
 
+/// Sign in and open a session.
+///
+/// Rate limiting is deliberately absent here and belongs at the proxy: a
+/// counter in this process is per-instance, resets on deploy, and gives a
+/// false sense of a control somebody else is better placed to apply. What is
+/// here instead is a single failure message and a password check that costs
+/// the same whether or not the account exists.
+async fn login(State(ctx): State<Ctx>, body: axum::body::Bytes) -> Response {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Body {
+        email: String,
+        password: String,
+    }
+
+    let Some(directory) = ctx.directory.as_ref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "error": "this server has no database, so it has no accounts. \
+                          Use the shared token."
+            })),
+        )
+            .into_response();
+    };
+
+    let Ok(body) = serde_json::from_slice::<Body>(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "expected an email and a password" })),
+        )
+            .into_response();
+    };
+
+    match directory.sign_in(&body.email, &body.password).await {
+        Ok((token, identity)) => (
+            StatusCode::OK,
+            // The token is returned exactly once and never again. It is not
+            // stored anywhere this server can read it back — only its digest.
+            Json(json!({ "token": token, "identity": identity })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// End this session.
+async fn logout(State(ctx): State<Ctx>, headers: HeaderMap) -> Response {
+    if let (Some(directory), Some(bearer)) = (
+        ctx.directory.as_ref(),
+        headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer ")),
+    ) {
+        let _ = directory.sign_out(bearer).await;
+    }
+    // Always 200. Whether the token was real is not something an unauthorized
+    // caller should be able to learn by signing out with a guess.
+    (StatusCode::OK, Json(json!({ "ok": true }))).into_response()
+}
+
+/// Who the caller is. The client uses this on load to decide whether to show
+/// a sign-in screen or the estate.
+async fn whoami(State(ctx): State<Ctx>, headers: HeaderMap) -> Response {
+    match identify(&ctx, &headers).await {
+        Some(identity) => (
+            StatusCode::OK,
+            Json(json!({
+                "identity": identity,
+                // So the client knows whether a sign-in form is worth showing
+                // at all on a server with no database behind it.
+                "accounts": ctx.directory.is_some(),
+            })),
+        )
+            .into_response(),
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "accounts": ctx.directory.is_some() })),
+        )
+            .into_response(),
+    }
+}
+
+/// Every account. Administrators only.
+async fn list_users(State(ctx): State<Ctx>, headers: HeaderMap) -> Response {
+    let Some(identity) = identify(&ctx, &headers).await else {
+        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "unauthorized" })))
+            .into_response();
+    };
+    if identity.role != crate::auth::Role::Admin {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "only an administrator can see the account list" })),
+        )
+            .into_response();
+    }
+    let Some(directory) = ctx.directory.as_ref() else {
+        return (StatusCode::OK, Json(json!([]))).into_response();
+    };
+
+    match directory.list().await {
+        Ok(accounts) => (StatusCode::OK, Json(json!(accounts))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// Create an account.
+///
+/// Open only while there are none, so a fresh server can be claimed by the
+/// first person to reach it; after that it is an administrator's job. The
+/// alternative — a password printed into a log on first boot — is a secret
+/// sitting in whatever collects that log.
+async fn create_user(
+    State(ctx): State<Ctx>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Body {
+        email: String,
+        password: String,
+        #[serde(default)]
+        display_name: String,
+        #[serde(default)]
+        role: Option<crate::auth::Role>,
+    }
+
+    let Some(directory) = ctx.directory.as_ref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "this server has no database, so it has no accounts" })),
+        )
+            .into_response();
+    };
+
+    let bootstrapping = directory.count().await.unwrap_or(1) == 0;
+    if !bootstrapping {
+        let admin = identify(&ctx, &headers)
+            .await
+            .is_some_and(|i| i.role == crate::auth::Role::Admin);
+        if !admin {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "only an administrator can create an account" })),
+            )
+                .into_response();
+        }
+    }
+
+    let Ok(body) = serde_json::from_slice::<Body>(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "expected an email and a password" })),
+        )
+            .into_response();
+    };
+
+    let name = if body.display_name.trim().is_empty() {
+        body.email.clone()
+    } else {
+        body.display_name.clone()
+    };
+
+    match directory.create(&body.email, &body.password, &name, body.role).await {
+        Ok(account) => (StatusCode::CREATED, Json(json!(account))).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 /// The event stream.
 ///
 /// Authenticated before the upgrade, because a WebSocket that authenticates
@@ -191,7 +420,7 @@ async fn events(
     // Browsers cannot set headers on a WebSocket handshake, so the token may
     // also arrive as a subprotocol — which is the standard workaround and is
     // why this does not simply reuse the header check alone.
-    let via_header = crate::local_listener::authorized(&headers, &ctx.token);
+    let via_header = identify(&ctx, &headers).await.is_some();
     let via_protocol = headers
         .get("sec-websocket-protocol")
         .and_then(|v| v.to_str().ok())
@@ -274,6 +503,7 @@ mod tests {
             )),
             events: tx,
             token: token.to_string(),
+            directory: None,
             web_root: None,
         }
     }

@@ -107,6 +107,41 @@ async fn run() -> Result<(), String> {
         );
     }
 
+    // Accounts live in the same database as the history. Without one the
+    // shared token is the only way in, which the client is told rather than
+    // left to discover at a sign-in form that cannot work.
+    let directory = match state.config.read().await.storage.resolved_url() {
+        Some(url) => match sqlx::PgPool::connect(&url).await {
+            Ok(pool) => match inframonitoring_lib::auth::Directory::open(pool).await {
+                Ok(directory) => {
+                    let swept = directory.sweep().await.unwrap_or(0);
+                    let count = directory.count().await.unwrap_or(0);
+                    if count == 0 {
+                        tracing::warn!(
+                            "no accounts yet — the first POST to /auth/users claims this \
+                             server as an administrator"
+                        );
+                    } else {
+                        tracing::info!(accounts = count, expired_sessions_removed = swept, "accounts ready");
+                    }
+                    Some(directory)
+                }
+                Err(e) => {
+                    tracing::warn!("accounts are unavailable: {e}");
+                    None
+                }
+            },
+            Err(e) => {
+                tracing::warn!("accounts are unavailable: {e}");
+                None
+            }
+        },
+        None => {
+            tracing::warn!("no database — the shared token is the only way in");
+            None
+        }
+    };
+
     supervisor::reload_all(Arc::clone(&state)).await;
 
     let web_root = std::env::var("ROOT_WEB_ROOT").ok().map(PathBuf::from);
@@ -119,6 +154,7 @@ async fn run() -> Result<(), String> {
             state,
             events: sender,
             token,
+            directory,
             web_root,
         },
         addr,

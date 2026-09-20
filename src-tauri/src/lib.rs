@@ -20,6 +20,7 @@ pub mod error;
 pub mod events;
 pub mod forecast;
 pub mod advisor;
+pub mod auth;
 pub mod backtest;
 pub mod configsource;
 pub mod redact;

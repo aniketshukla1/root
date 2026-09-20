@@ -195,7 +195,13 @@ function Connections({
             hint="Add one to start collecting health, metrics, and logs from your infrastructure."
           />
         ) : (
-          <table className="w-full border-collapse">
+          // Eight columns of connection detail do not fit a narrow window, and
+          // a table is the one thing on this screen that should scroll rather
+          // than shrink: every column is a fact somebody came to read, and
+          // truncating them all turns a list of connections into a list of
+          // ellipses.
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] border-collapse">
             <thead>
               <tr className="border-b border-line">
                 <th className="label px-3 py-1.5 text-left font-semibold">Name</th>
@@ -277,7 +283,8 @@ function Connections({
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
         )}
       </Panel>
 

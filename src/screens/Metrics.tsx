@@ -277,11 +277,18 @@ function ConnectionMetrics({
   return (
     <Panel
       title={
-        <span className="flex items-center gap-2">
+        <span className="flex min-w-0 items-center gap-2">
           <ServiceMark descriptor={descriptor} size={17} />
           {/* An identifier, not chrome: the panel title is uppercase mono,
               and "ORDERS-API" is not the name of anything. */}
-          <span className="font-mono text-xs tracking-normal text-ink normal-case">
+          {/* Truncated here, not only by the header above it: that clips with
+              `overflow-hidden`, which cuts a name off mid-word with no
+              ellipsis — and a name that silently becomes a shorter name is
+              worse than one that visibly ran out of room. */}
+          <span
+            className="min-w-0 truncate font-mono text-xs tracking-normal text-ink normal-case"
+            title={service.snapshot.profileName}
+          >
             {service.snapshot.profileName}
           </span>
         </span>

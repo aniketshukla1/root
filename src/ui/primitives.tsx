@@ -170,9 +170,17 @@ export function PanelHeader({
         className,
       )}
     >
-      <h2 className="label truncate whitespace-nowrap">{title}</h2>
-      {subtitle && <span className="truncate font-mono text-2xs text-ink-4">{subtitle}</span>}
-      {actions && <div className="ml-auto flex items-center gap-1.5">{actions}</div>}
+      {/* `min-w-0` on both, `shrink-0` on the actions. A flex child's default
+          minimum is its content, so `truncate` alone does nothing here — the
+          title refuses to shrink and pushes the buttons out of the panel.
+          When something has to give it should be the words, which are still
+          readable from the tooltip, and never the controls, which cannot be
+          clicked once they are off the edge. */}
+      <h2 className="label min-w-0 truncate whitespace-nowrap">{title}</h2>
+      {subtitle && (
+        <span className="min-w-0 truncate font-mono text-2xs text-ink-4">{subtitle}</span>
+      )}
+      {actions && <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div>}
     </header>
   );
 }

@@ -1,0 +1,10 @@
+# The two directories that make the build context enormous and are rebuilt
+# inside the image anyway.
+**/target
+**/node_modules
+**/dist
+.git
+.claude
+demo
+design
+preview.html

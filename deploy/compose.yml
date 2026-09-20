@@ -1,0 +1,64 @@
+# root, as a deployment.
+#
+#   cp .env.example .env     # then put a real token in it
+#   docker compose up -d
+#   open http://localhost:7777
+#
+# Two containers. root-server runs the engine and serves the client; Postgres
+# with TimescaleDB keeps everything the engine learns. Nothing else is
+# required — no message broker, no cache, no sidecar — because the engine is
+# one process that polls and the database is one place it writes.
+
+name: root
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: root-server:local
+    restart: unless-stopped
+    ports:
+      - "${ROOT_PORT:-7777}:7777"
+    environment:
+      # No default, and the server refuses to start without one. A compose
+      # file that shipped a working token would put the same token on every
+      # deployment of this that anyone ever ran.
+      # Quoted: the message contains a colon, which YAML would otherwise read
+      # as the start of a mapping.
+      ROOT_TOKEN: "${ROOT_TOKEN:?set ROOT_TOKEN in .env, try openssl rand -hex 32}"
+      ROOT_DATABASE_URL: "postgres://root:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/root"
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      # The connection list, so it survives a redeploy. Everything else lives
+      # in Postgres.
+      - config:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    # The engine reaches out to whatever it is pointed at, which on a single
+    # host usually includes things on the host itself.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  db:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+      POSTGRES_DB: root
+    volumes:
+      - history:/var/lib/postgresql/data
+    # Deliberately not published. Nothing outside this network needs the
+    # database, and a Postgres on a public port is the most common way an
+    # estate's history becomes somebody else's.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d root"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  config:
+  history:

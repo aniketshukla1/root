@@ -48,7 +48,9 @@ import { ComponentDetail } from "./screens/ComponentDetail";
 import { Correlate } from "./screens/Correlate";
 import { Logs } from "./screens/Logs";
 import { Metrics } from "./screens/Metrics";
+import * as remote from "./remote";
 import { Onboarding } from "./screens/Onboarding";
+import { ServerSignIn } from "./screens/ServerSignIn";
 import { SignIn } from "./screens/SignIn";
 import { Overview } from "./screens/Overview";
 import { Scorecard } from "./screens/Scorecard";
@@ -158,6 +160,30 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   /** Set by "Skip for now": the estate is empty on purpose, for now. */
   const [skippedOnboarding, setSkippedOnboarding] = useState(false);
+
+  // Against a server, the first question is whether this browser is allowed
+  // in at all. `undefined` while the answer is outstanding, so the estate is
+  // never rendered against a server that has not accepted us.
+  const server = remote.serverUrl();
+  const [authorized, setAuthorized] = useState<boolean | undefined>(
+    server ? undefined : true,
+  );
+
+  useEffect(() => {
+    if (!server) return;
+    let cancelled = false;
+    const token = remote.token();
+    fetch(`${server}/auth/me`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => !cancelled && setAuthorized(r.ok))
+      // A server that cannot be reached is not a server that refused us, but
+      // the sign-in screen is the only place that can say so usefully.
+      .catch(() => !cancelled && setAuthorized(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [server]);
   const [team, setTeam] = useState<TeamState | null>(null);
 
   // Alert ids already toasted, so a still-firing alert does not re-notify on
@@ -593,6 +619,22 @@ export default function App() {
    * demanded an account before it would look at your own Docker socket would
    * have taken something away rather than added anything.
    */
+  // Before every other gate. Nothing below can load its data without one.
+  if (server && authorized === undefined) return null;
+  if (server && !authorized) {
+    return (
+      <ServerSignIn
+        server={server}
+        onSignedIn={() => {
+          setAuthorized(true);
+          // Reload rather than re-fetch piecemeal: every screen's data was
+          // fetched as an unauthorized client and all of it is empty.
+          window.location.reload();
+        }}
+      />
+    );
+  }
+
   if (team?.serverUrl && !team.hasSession) {
     return (
       <SignIn

@@ -128,11 +128,26 @@ pub async fn serve(ctx: Ctx, addr: SocketAddr) -> crate::error::Result<()> {
 /// which a client needs in order to fail usefully against a server that is too
 /// old — and nothing about the estate, which is the part worth protecting.
 async fn healthz(State(ctx): State<Ctx>) -> Json<Value> {
+    // Whether anyone has claimed this server yet. A client cannot infer it —
+    // an anonymous caller is refused the account list with 401 whether the
+    // list is empty or not — and guessing produces a "claim this server" form
+    // on a server that already has an administrator, which then fails.
+    //
+    // It reveals only that the server has been set up, which is the same
+    // thing its own sign-in page says to whoever opens it.
+    let claimed = match ctx.directory.as_ref() {
+        Some(directory) => directory.count().await.unwrap_or(1) > 0,
+        // No database, no accounts to claim: the shared token is the way in.
+        None => true,
+    };
+
     Json(json!({
         "service": "root",
         "version": env!("CARGO_PKG_VERSION"),
         "commands": crate::rpc::known().len(),
         "history": ctx.state.store.read().await.is_some(),
+        "accounts": ctx.directory.is_some(),
+        "claimed": claimed,
     }))
 }
 
@@ -653,6 +668,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["service"], "root");
         assert_eq!(body["commands"], 64);
+        // No database, so there are no accounts to claim and the client must
+        // not offer to create one.
+        assert_eq!(body["accounts"], false);
+        assert_eq!(body["claimed"], true);
         // No connection names, no alerts, no token.
         assert!(body.get("profiles").is_none());
         assert!(!body.to_string().contains("secret"));

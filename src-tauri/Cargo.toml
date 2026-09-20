@@ -32,7 +32,10 @@ chrono = { version = "0.4.45", features = ["serde"] }
 uuid = { version = "1.24.0", features = ["v4", "serde"] }
 # Local deploy ingest. Only the pieces a single POST route needs — no tower
 # middleware stack, no multipart, no compression.
-axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+# `ws` for the event stream the browser client subscribes to; the desktop app
+# does not use it and pays for it only in compile time.
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "ws", "query"] }
+tower-http = { version = "0.6", default-features = false, features = ["fs", "cors"] }
 # Constant-time token comparison, so a wrong token cannot be recovered by
 # timing the reply.
 subtle = "2.6"
@@ -104,3 +107,5 @@ rdkafka = { version = "0.39", default-features = false, features = [
 [dev-dependencies]
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
 wiremock = "0.6.5"
+# ServiceExt::oneshot, for driving the router in tests without binding a port.
+tower = { version = "0.5", features = ["util"] }

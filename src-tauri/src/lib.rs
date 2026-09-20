@@ -40,6 +40,7 @@ pub mod promquery;
 pub mod rca;
 pub mod registry;
 pub mod rpc;
+pub mod server;
 pub mod runtime;
 pub mod scenarios;
 pub mod secrets;

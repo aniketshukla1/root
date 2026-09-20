@@ -1,6 +1,7 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 
 import * as fixtures from "./fixtures";
+import * as remote from "./remote";
 
 /**
  * Outside the Tauri webview there is no `invoke`, so a plain browser would
@@ -117,6 +118,13 @@ const SLOW_MS = (() => {
 })();
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  // A configured server wins over everything. This is the one branch that
+  // makes the whole frontend work against a remote engine, and it is here
+  // rather than at sixty-four call sites because the server's RPC surface was
+  // shaped like `invoke` for exactly that reason.
+  const server = remote.serverUrl();
+  if (server) return remote.call<T>(server, cmd, args);
+
   if (!fixtures.isTauri()) {
     const fixture = FIXTURES[cmd];
     if (!fixture) return Promise.reject(new Error(`No development fixture for "${cmd}"`));

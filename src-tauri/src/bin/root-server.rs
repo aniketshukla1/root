@@ -142,6 +142,28 @@ async fn run() -> Result<(), String> {
         }
     };
 
+    // Single sign-on, when it is fully configured. Discovery happens now
+    // rather than on the first click, so a wrong issuer is a line in the log
+    // at startup instead of a failure halfway through somebody's sign-in.
+    let oidc = match state.config.read().await.oidc.resolved() {
+        Some(settings) => match inframonitoring_lib::oidc::Provider::discover(settings).await {
+            Ok(provider) => {
+                tracing::info!("single sign-on is ready");
+                Some(provider)
+            }
+            Err(e) => {
+                tracing::warn!("single sign-on is configured but unusable: {e}");
+                None
+            }
+        },
+        None => None,
+    };
+    if oidc.is_some() && directory.is_none() {
+        // The provider says who somebody is; the account they become lives in
+        // the database. Without one there is nowhere to put them.
+        tracing::warn!("single sign-on needs a database for the accounts it creates");
+    }
+
     supervisor::reload_all(Arc::clone(&state)).await;
 
     let web_root = std::env::var("ROOT_WEB_ROOT").ok().map(PathBuf::from);
@@ -156,6 +178,7 @@ async fn run() -> Result<(), String> {
             token,
             directory,
             web_root,
+            oidc,
         },
         addr,
     )

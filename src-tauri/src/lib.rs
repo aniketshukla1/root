@@ -34,6 +34,7 @@ pub mod llm;
 pub mod local_listener;
 pub mod mcp;
 pub mod model;
+pub mod oidc;
 pub mod patterns;
 pub mod predict;
 pub mod profiles;

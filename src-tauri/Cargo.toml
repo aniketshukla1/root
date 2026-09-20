@@ -43,6 +43,9 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "json
 argon2 = { version = "0.5", features = ["std"] }
 # Session tokens are stored as their digest, never as themselves.
 sha2 = "0.10"
+# PKCE challenge encoding, and the authorize URL.
+base64 = "0.22"
+urlencoding = "2"
 tower-http = { version = "0.6", default-features = false, features = ["fs", "cors"] }
 # Constant-time token comparison, so a wrong token cannot be recovered by
 # timing the reply.

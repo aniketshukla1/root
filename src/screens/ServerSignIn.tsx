@@ -33,6 +33,7 @@ export function ServerSignIn({
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
+  const [sso, setSso] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Ask the server which door this is rather than inferring it. An anonymous
@@ -45,12 +46,20 @@ export function ServerSignIn({
       .then((health) => {
         if (cancelled) return;
         setMode(health.accounts && !health.claimed ? "claim" : "signIn");
+        setSso(Boolean(health.sso));
       })
       .catch(() => !cancelled && setMode("signIn"));
     return () => {
       cancelled = true;
     };
   }, [server]);
+
+  // A failed round trip comes back here rather than to a dead end, carrying
+  // the provider's own message — the only part anyone can act on.
+  useEffect(() => {
+    const failed = new URLSearchParams(window.location.search).get("sso_error");
+    if (failed) setError(failed);
+  }, []);
 
   const submit = async () => {
     setBusy(true);
@@ -150,6 +159,19 @@ export function ServerSignIn({
             {busy ? "…" : claiming ? "Create the first account" : "Sign in"}
           </Button>
         </form>
+
+        {sso && (
+          <>
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-line" />
+              <span className="num text-2xs text-ink-4">or</span>
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            <Button onClick={() => window.location.assign(`${server}/auth/oidc/start`)}>
+              Continue with single sign-on
+            </Button>
+          </>
+        )}
 
         {/* A server that has a shared token configured can also be reached
             with it. Said plainly rather than hidden, because somebody

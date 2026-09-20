@@ -45,6 +45,7 @@ async fn start() -> (SocketAddr, Events) {
         token: TOKEN.to_string(),
         directory: None,
         web_root: None,
+        oidc: None,
     });
 
     tokio::spawn(async move {

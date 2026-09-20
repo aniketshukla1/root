@@ -413,6 +413,68 @@ impl Directory {
         Ok(())
     }
 
+    /// Find or create the account behind an identity a provider vouched for.
+    ///
+    /// A new one arrives as a viewer, never with the role the provider would
+    /// like. An identity provider says who somebody is; what they may do is
+    /// this estate's business, and "anyone in the company directory can
+    /// restart production on first login" is not a thing to build by accident.
+    ///
+    /// An existing account keeps its role, so somebody promoted to operator
+    /// stays one across sign-ins.
+    pub async fn upsert_federated(&self, email: &str, display_name: &str) -> Result<Identity> {
+        let email = normalize(email);
+
+        if let Some(row) = sqlx::query(
+            "SELECT id, email, display_name, role, disabled FROM users WHERE email = $1",
+        )
+        .bind(&email)
+        .fetch_optional(&self.pool)
+        .await?
+        {
+            if row.get::<bool, _>("disabled") {
+                return Err(AppError::Rejected("that account is disabled".into()));
+            }
+            return Ok(Identity {
+                user_id: Some(row.get("id")),
+                email: row.get("email"),
+                display_name: row.get("display_name"),
+                role: Role::parse(&row.get::<String, _>("role")),
+            });
+        }
+
+        // First in, administrator — the same rule as a password account, so
+        // an estate can be claimed through single sign-on without a password
+        // ever being set.
+        let first = self.count().await? == 0;
+        let role = if first { Role::Admin } else { Role::Viewer };
+        let id = uuid::Uuid::new_v4().to_string();
+        let name = if display_name.trim().is_empty() {
+            email.clone()
+        } else {
+            display_name.trim().to_string()
+        };
+
+        sqlx::query(
+            "INSERT INTO users (id, email, password_hash, display_name, role, created_at, disabled)
+             VALUES ($1,$2,NULL,$3,$4,$5,FALSE)",
+        )
+        .bind(&id)
+        .bind(&email)
+        .bind(&name)
+        .bind(role.as_str())
+        .bind(Utc::now())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(Identity {
+            user_id: Some(id),
+            email,
+            display_name: name,
+            role,
+        })
+    }
+
     pub async fn count(&self) -> Result<i64> {
         let row = sqlx::query("SELECT COUNT(*) AS n FROM users")
             .fetch_one(&self.pool)

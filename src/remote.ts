@@ -60,6 +60,24 @@ export function serverUrl(): string | null {
   return null;
 }
 
+/**
+ * Take a session out of the URL fragment, if single sign-on just put one
+ * there, and remove it from the address bar.
+ *
+ * A fragment rather than a query parameter because a fragment is never sent to
+ * a server: it stays out of access logs and out of the `Referer` header on the
+ * next request. It is still in the address bar until this runs, which is why
+ * this runs before anything renders.
+ */
+export function claimTokenFromUrl(): boolean {
+  const hash = window.location.hash;
+  if (!hash.startsWith("#token=")) return false;
+
+  setToken(decodeURIComponent(hash.slice("#token=".length)));
+  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  return true;
+}
+
 export function token(): string | null {
   try {
     return localStorage.getItem(TOKEN_KEY);

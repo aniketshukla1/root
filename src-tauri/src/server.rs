@@ -79,6 +79,8 @@ pub struct Ctx {
     pub directory: Option<crate::auth::Directory>,
     /// Where the built frontend lives, when this server is also serving it.
     pub web_root: Option<std::path::PathBuf>,
+    /// The identity provider, when one is configured.
+    pub oidc: Option<crate::oidc::Provider>,
 }
 
 /// Build the router. Split from [`serve`] so tests can drive it without a port.
@@ -92,6 +94,8 @@ pub fn router(ctx: Ctx) -> Router {
         .route("/auth/logout", post(logout))
         .route("/auth/me", get(whoami))
         .route("/auth/users", get(list_users).post(create_user))
+        .route("/auth/oidc/start", get(oidc_start))
+        .route("/auth/oidc/callback", get(oidc_callback))
         .route("/events", get(events))
         .with_state(ctx);
 
@@ -148,6 +152,8 @@ async fn healthz(State(ctx): State<Ctx>) -> Json<Value> {
         "history": ctx.state.store.read().await.is_some(),
         "accounts": ctx.directory.is_some(),
         "claimed": claimed,
+        // So the client knows whether to draw a single sign-on button at all.
+        "sso": ctx.oidc.is_some(),
     }))
 }
 
@@ -418,6 +424,70 @@ async fn create_user(
     }
 }
 
+/// Send the browser to the identity provider.
+async fn oidc_start(State(ctx): State<Ctx>) -> Response {
+    let Some(provider) = ctx.oidc.as_ref() else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "single sign-on is not configured on this server" })),
+        )
+            .into_response();
+    };
+
+    let (url, _state) = provider.start().await;
+    axum::response::Redirect::temporary(&url).into_response()
+}
+
+/// Where the provider sends them back.
+///
+/// Ends in a redirect to the client with the session in the fragment rather
+/// than the query string: a fragment is not sent to the server, does not reach
+/// access logs, and does not end up in a `Referer` header on the next request.
+/// The client takes it out of the URL and puts it in storage.
+async fn oidc_callback(
+    State(ctx): State<Ctx>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let fail = |message: String| {
+        axum::response::Redirect::temporary(&format!(
+            "/?sso_error={}",
+            urlencoding::encode(&message)
+        ))
+        .into_response()
+    };
+
+    let (Some(provider), Some(directory)) = (ctx.oidc.as_ref(), ctx.directory.as_ref()) else {
+        return fail("single sign-on is not configured on this server".into());
+    };
+
+    // The provider's own refusal, which is the only part anyone can act on.
+    if let Some(error) = params.get("error") {
+        return fail(format!("the provider refused: {error}"));
+    }
+
+    let (Some(code), Some(state)) = (params.get("code"), params.get("state")) else {
+        return fail("that sign-in came back without a code".into());
+    };
+
+    let claims = match provider.finish(code, state).await {
+        Ok(claims) => claims,
+        Err(e) => return fail(e.to_string()),
+    };
+
+    let identity = match directory.upsert_federated(&claims.email, &claims.name).await {
+        Ok(identity) => identity,
+        Err(e) => return fail(e.to_string()),
+    };
+
+    let Some(user_id) = identity.user_id.as_deref() else {
+        return fail("that identity has no account".into());
+    };
+    match directory.open_session(user_id).await {
+        Ok(token) => axum::response::Redirect::temporary(&format!("/#token={token}")).into_response(),
+        Err(e) => fail(e.to_string()),
+    }
+}
+
 /// The event stream.
 ///
 /// Authenticated before the upgrade, because a WebSocket that authenticates
@@ -520,6 +590,7 @@ mod tests {
             token: token.to_string(),
             directory: None,
             web_root: None,
+            oidc: None,
         }
     }
 

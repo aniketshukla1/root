@@ -3096,6 +3096,7 @@ dependencies = [
  "aws-sdk-s3",
  "aws-sdk-sqs",
  "axum",
+ "base64 0.22.1",
  "bollard",
  "chrono",
  "futures-util",
@@ -3125,6 +3126,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "urlencoding",
  "uuid",
  "wiremock",
 ]

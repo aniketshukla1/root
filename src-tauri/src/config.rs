@@ -312,6 +312,10 @@ pub struct AppConfig {
     pub team: TeamSettings,
     #[serde(default)]
     pub storage: StorageSettings,
+    /// The identity provider, when the server has one. Ignored by the desktop
+    /// app, which has nobody to authenticate to.
+    #[serde(default)]
+    pub oidc: crate::oidc::OidcSettings,
 }
 
 /// Where the estate's history is kept, when it is kept anywhere.

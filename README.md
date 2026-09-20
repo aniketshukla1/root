@@ -724,6 +724,51 @@ That is the trade for not binding a credential-holding desktop app to the networ
 
 ---
 
+## Two ways to run it
+
+root is a desktop app and a server, and they run the same engine. The
+collectors, the rules, the incident grouping, the forecaster and all sixty-four
+commands are one implementation; what differs is the transport and the door.
+
+### The desktop app
+
+Nothing to configure and nobody to sign in to. It reads a config file you own,
+holds credentials in the OS keychain, binds loopback only, and everything it
+learns lives in memory until you quit. That is the arrangement that requires no
+trust in anything but the OS, and it stays the default.
+
+### The server
+
+```bash
+cd deploy && cp .env.example .env    # put a real token in it
+docker compose up -d
+```
+
+Collectors run somewhere that stays up, history goes to Postgres, and the
+client is a browser on any device. The first person to open it claims the
+server and becomes its administrator.
+
+Three ways in, all ending in the same session:
+
+- a **shared token**, for scripts and scrapes, with no person behind it
+- an **account**, with a password, a role and a name in the audit trail
+- **single sign-on**, when `ROOT_OIDC_*` is configured
+
+Three roles. An administrator manages accounts; an operator does anything to
+the estate; a viewer reads. What a viewer may not do is a list in `auth.rs`
+rather than a rule about command names — `refresh_connection` reaches out to
+live infrastructure and `run_row_action` restarts containers, and a prefix
+heuristic reads both of those as reads.
+
+The server refuses to start without a token. Not a warning and not a generated
+default printed into a log — a non-zero exit. It holds the credentials to
+everything it watches and a map of which parts are already failing.
+
+See [`deploy/README.md`](deploy/README.md) to run it and
+[`RELEASING.md`](RELEASING.md) to ship it.
+
+---
+
 ## Credentials
 
 Passwords and API keys go into the OS keychain (Keychain on macOS, Credential Manager on
@@ -774,13 +819,13 @@ inspected in a plain browser. It is dev-only; `vite build` bundles `index.html` 
 cd src-tauri && cargo test
 ```
 
-532 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
+569 unit tests, none ignored. They cover health mapping, alert lifecycle, deploy
 detection, component history admission and eviction, log filtering and stream separation,
 section renderability, conversation trimming, the per-provider message translation, and
 the parts with the most judgement in them — redaction, forecasting's refusals, incident
 grouping, config rules, and the journal.
 
-Fourteen integration suites sit in `src-tauri/tests/`, each against something real:
+Seventeen integration suites sit in `src-tauri/tests/`, each against something real:
 
 | Suite | Against | Why it is not a unit test |
 | --- | --- | --- |
@@ -795,6 +840,8 @@ Fourteen integration suites sit in `src-tauri/tests/`, each against something re
 | `mcp_server.rs` | the real `root-mcp` binary, spawned over a pipe | a server can pass every handler test and still be unusable: one stray line on stdout makes every request a parse error on the client side |
 | `gigapipe_read.rs` | wiremock, always | the nine store reads are entirely URLs, and `/label` against `/labels` or a missing `/json` fails by returning nothing — which looks exactly like a store holding nothing |
 | `influx_write.rs` | wiremock, always | line protocol is a body rather than a query string, and a malformed one is accepted with a 204 by some receivers and dropped by others — the failure is a measurement that quietly never appears |
+| `server_http.rs` | a real port, always | the WebSocket upgrade needs hyper's `OnUpgrade`, which a router driven in-process never has — an upgrade that works against a router and not against a socket has tested nothing |
+| `auth_directory.rs` | real PostgreSQL | a wrong password and an unknown address must fail identically, and what is stored must not be what was handed out — neither is observable without a database |
 | `store.rs` | real PostgreSQL, TimescaleDB when present | the whole value of that layer is what survives the process, and a fake answering from memory tests the one property that does not matter |
 | `profile_read.rs` | wiremock, always | `/pyroscope/render` takes its window in milliseconds and divides by a thousand — send seconds and it answers 200 with an empty profile for a window in 1970, which looks exactly like a service that was idle |
 | `demo_estate.rs` | `demo/compose.yml`, wrong on purpose | the only layer that proves the pieces *meet* — see [The demo estate](#the-demo-estate) |
@@ -930,6 +977,13 @@ src-tauri/src/
   promquery.rs    Long-range history read from a Prometheus you already run
   rca.rs          Why one incident happened — the model, on root's own evidence
   store.rs        The estate's history on disk — Postgres, TimescaleDB when present
+  server.rs       The engine over HTTP, and the only file that knows a network exists
+  rpc.rs          The same 64 commands, dispatched by name
+  tauri_cmds.rs   The same 64 commands, as Tauri IPC
+  events.rs       Where an event goes, without the sender knowing
+  auth.rs         Accounts, sessions and roles — the server only
+  oidc.rs         Single sign-on, as a third way to the same session
+  bin/root-server.rs  The engine without a window
   influx.rs       Snapshot write-out — the one place root writes to another store
 
   configsource.rs Where a connection's config lives, and reading it safely

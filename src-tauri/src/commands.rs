@@ -1,9 +1,13 @@
-//! Tauri command surface — everything the UI can ask the backend to do.
+//! Everything the UI can ask the backend to do.
+//!
+//! These are plain async functions over `&Arc<AppState>`, reachable two ways:
+//! `tauri_cmds.rs` wraps each one for the desktop app's IPC, and `rpc.rs`
+//! dispatches the same set by name over HTTP. One implementation, because two
+//! would drift the first week and in the direction nobody tests.
 
 use std::sync::Arc;
 
 use serde::Serialize;
-use tauri::State;
 
 use crate::agent::{self, AgentTurn};
 use crate::config::{ConnectionProfile, LlmSettings};
@@ -18,22 +22,18 @@ use crate::state::{AppState, LogFilter, PendingConfirmation};
 use crate::team;
 use crate::supervisor;
 
-type Shared<'a> = State<'a, Arc<AppState>>;
 
 // ---------------------------------------------------------------- dashboard
 
-#[tauri::command]
-pub async fn get_dashboard(state: Shared<'_>) -> Result<DashboardState> {
+pub async fn get_dashboard(state: &Arc<AppState>) -> Result<DashboardState> {
     Ok(state.dashboard().await)
 }
 
-#[tauri::command]
-pub async fn refresh_connection(state: Shared<'_>, profile_id: String) -> Result<HealthSnapshot> {
-    supervisor::poll_once(&state, &profile_id).await
+pub async fn refresh_connection(state: &Arc<AppState>, profile_id: String) -> Result<HealthSnapshot> {
+    supervisor::poll_once(state, &profile_id).await
 }
 
-#[tauri::command]
-pub async fn acknowledge_alert(state: Shared<'_>, alert_id: String) -> Result<Alert> {
+pub async fn acknowledge_alert(state: &Arc<AppState>, alert_id: String) -> Result<Alert> {
     state.alerts.write().await.acknowledge(&alert_id)
 }
 
@@ -43,9 +43,8 @@ pub async fn acknowledge_alert(state: Shared<'_>, alert_id: String) -> Result<Al
 /// resolve to exactly the same operation. The gate differs by design: the agent
 /// must ask, whereas a click *is* the operator's decision — the UI confirms
 /// before calling here.
-#[tauri::command]
 pub async fn run_row_action(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
     tool: String,
     args: serde_json::Value,
@@ -53,19 +52,17 @@ pub async fn run_row_action(
     let action = crate::agent::tools::action_for(&tool, &args)?;
     let result = state.collector(&profile_id).await?.run_action(&action).await?;
     // Reflect the change immediately rather than waiting for the next poll.
-    let _ = supervisor::poll_once(&state, &profile_id).await;
+    let _ = supervisor::poll_once(state, &profile_id).await;
     Ok(result)
 }
 
 // --------------------------------------------------------------------- logs
 
-#[tauri::command]
-pub async fn query_logs(state: Shared<'_>, filter: LogFilter) -> Result<Vec<LogEvent>> {
+pub async fn query_logs(state: &Arc<AppState>, filter: LogFilter) -> Result<Vec<LogEvent>> {
     Ok(state.logs.read().await.query(&filter))
 }
 
-#[tauri::command]
-pub async fn clear_logs(state: Shared<'_>) -> Result<()> {
+pub async fn clear_logs(state: &Arc<AppState>) -> Result<()> {
     state.logs.write().await.clear();
     Ok(())
 }
@@ -108,9 +105,8 @@ const PATTERN_SPARK_BUCKETS: usize = 24;
 /// Ranking is severity first, then volume. Pure volume ranking — what a log
 /// aggregator usually does — buries the panic under the storm, which is the
 /// opposite of what an operator needs.
-#[tauri::command]
 pub async fn log_patterns(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     filter: LogFilter,
     minutes: Option<i64>,
 ) -> Result<Vec<LogPattern>> {
@@ -216,9 +212,8 @@ fn template_id(template: &str) -> String {
 ///
 /// Bucketing happens here rather than in the UI so it spans the whole server
 /// buffer instead of only the slice the client happens to be holding.
-#[tauri::command]
 pub async fn log_histogram(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     filter: LogFilter,
     minutes: Option<i64>,
     buckets: Option<usize>,
@@ -450,9 +445,8 @@ const MOVEMENT_THRESHOLD_PCT: f64 = 15.0;
 /// unreadable — it groups by source and aligns on time, so the Docker OOM that
 /// actually caused the Jenkins failure sits in its own lane at the same
 /// instant, next to the database connection spike.
-#[tauri::command]
 pub async fn correlate(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     at: chrono::DateTime<chrono::Utc>,
     window_secs: Option<i64>,
 ) -> Result<Correlation> {
@@ -539,7 +533,7 @@ pub async fn correlate(
         });
     }
 
-    attach_traces(&state, &mut lanes, from, to).await;
+    attach_traces(state, &mut lanes, from, to).await;
 
     // Now that every source has reported, drop the lanes that carry nothing.
     // "elasticsearch logged nothing" is evidence, but only for a connection
@@ -592,9 +586,8 @@ pub async fn correlate(
 ///
 /// Build logs live with the build rather than in the shared stream — this is
 /// what the Jenkins build-history strip opens.
-#[tauri::command]
 pub async fn get_build_console(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
     job: String,
     build: Option<i64>,
@@ -617,9 +610,8 @@ pub async fn get_build_console(
 /// assembling it here means the orphan, cycle and duplicate cases are handled
 /// once, in `traces.rs`, where they are tested — rather than once per
 /// component that tries to render a trace.
-#[tauri::command]
 pub async fn get_trace(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
     trace_id: String,
 ) -> Result<serde_json::Value> {
@@ -636,9 +628,8 @@ pub async fn get_trace(
 /// opens on something rather than on a blank text box. The window defaults to
 /// the last hour: a profile is an aggregate over time, and a window measured
 /// in seconds is a sample of a sample.
-#[tauri::command]
 pub async fn get_profile(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
     query: Option<String>,
     minutes: Option<i64>,
@@ -675,8 +666,7 @@ pub struct IngestStatus {
     pub keychain_available: bool,
 }
 
-#[tauri::command]
-pub async fn get_ingest_settings(state: Shared<'_>) -> Result<IngestStatus> {
+pub async fn get_ingest_settings(state: &Arc<AppState>) -> Result<IngestStatus> {
     let settings = state.config.read().await.ingest.clone();
     let has_token = crate::secrets::get_secret(crate::ingest::TOKEN_KEY)
         .await
@@ -696,9 +686,8 @@ pub async fn get_ingest_settings(state: Shared<'_>) -> Result<IngestStatus> {
 ///
 /// Enabling with no token stored mints one, so a user never ends up with a
 /// listener that cannot authenticate anybody.
-#[tauri::command]
 pub async fn save_ingest_settings(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     enabled: bool,
     port: u16,
 ) -> Result<IngestStatus> {
@@ -729,17 +718,16 @@ pub async fn save_ingest_settings(
         crate::secrets::set_secret(crate::ingest::TOKEN_KEY, &token).await?;
     }
 
-    crate::ingest::restart(&state).await?;
+    crate::ingest::restart(state).await?;
     get_ingest_settings(state).await
 }
 
 /// Mint a new token and return it once. Any pipeline using the old one stops
 /// working immediately, which is the point.
-#[tauri::command]
-pub async fn rotate_ingest_token(state: Shared<'_>) -> Result<String> {
+pub async fn rotate_ingest_token(state: &Arc<AppState>) -> Result<String> {
     let token = uuid::Uuid::new_v4().simple().to_string();
     crate::secrets::set_secret(crate::ingest::TOKEN_KEY, &token).await?;
-    crate::ingest::restart(&state).await?;
+    crate::ingest::restart(state).await?;
     Ok(token)
 }
 
@@ -763,9 +751,8 @@ pub struct PredictionReport {
 ///
 /// Also raises the alerts, so asking for a sweep and waiting for the timer
 /// produce the same result rather than two behaviours to reason about.
-#[tauri::command]
-pub async fn run_prediction(state: Shared<'_>) -> Result<PredictionReport> {
-    let predictions = crate::predict::sweep(&state).await?;
+pub async fn run_prediction(state: &Arc<AppState>) -> Result<PredictionReport> {
+    let predictions = crate::predict::sweep(state).await?;
     Ok(PredictionReport {
         model: predictions
             .first()
@@ -786,9 +773,8 @@ pub async fn run_prediction(state: Shared<'_>) -> Result<PredictionReport> {
 /// Exists so an operator can see exactly what leaves the machine before
 /// enabling a feature that sends it. "Trust us" is not a security posture, and
 /// this is the same courtesy `redact.rs` extends to config.
-#[tauri::command]
-pub async fn preview_prediction_evidence(state: Shared<'_>) -> Result<Vec<String>> {
-    Ok(crate::predict::gather_evidence(&state).await)
+pub async fn preview_prediction_evidence(state: &Arc<AppState>) -> Result<Vec<String>> {
+    Ok(crate::predict::gather_evidence(state).await)
 }
 
 #[derive(serde::Serialize)]
@@ -801,8 +787,7 @@ pub struct PredictionStatus {
     pub assistant_ready: bool,
 }
 
-#[tauri::command]
-pub async fn get_prediction_settings(state: Shared<'_>) -> Result<PredictionStatus> {
+pub async fn get_prediction_settings(state: &Arc<AppState>) -> Result<PredictionStatus> {
     let config = state.config.read().await;
     let settings = config.prediction.clone();
     let provider = config.llm.provider;
@@ -821,9 +806,8 @@ pub async fn get_prediction_settings(state: Shared<'_>) -> Result<PredictionStat
     })
 }
 
-#[tauri::command]
 pub async fn save_prediction_settings(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     enabled: bool,
     interval_minutes: u64,
 ) -> Result<PredictionStatus> {
@@ -858,8 +842,7 @@ pub struct McpStatus {
     pub tools: Vec<String>,
 }
 
-#[tauri::command]
-pub async fn get_mcp_settings(state: Shared<'_>) -> Result<McpStatus> {
+pub async fn get_mcp_settings(state: &Arc<AppState>) -> Result<McpStatus> {
     let settings = state.config.read().await.mcp.clone();
     let has_token = crate::secrets::get_secret(crate::mcp::http::TOKEN_KEY)
         .await
@@ -886,9 +869,8 @@ pub async fn get_mcp_settings(state: Shared<'_>) -> Result<McpStatus> {
 ///
 /// Enabling with no token stored mints one, so a user never ends up with a
 /// listener that cannot authenticate anybody.
-#[tauri::command]
 pub async fn save_mcp_settings(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     enabled: bool,
     port: u16,
 ) -> Result<McpStatus> {
@@ -919,17 +901,16 @@ pub async fn save_mcp_settings(
         crate::secrets::set_secret(crate::mcp::http::TOKEN_KEY, &token).await?;
     }
 
-    crate::mcp::http::restart(&state).await?;
+    crate::mcp::http::restart(state).await?;
     get_mcp_settings(state).await
 }
 
 /// Mint a new token and return it once. Any client using the old one stops
 /// working immediately, which is the point.
-#[tauri::command]
-pub async fn rotate_mcp_token(state: Shared<'_>) -> Result<String> {
+pub async fn rotate_mcp_token(state: &Arc<AppState>) -> Result<String> {
     let token = uuid::Uuid::new_v4().simple().to_string();
     crate::secrets::set_secret(crate::mcp::http::TOKEN_KEY, &token).await?;
-    crate::mcp::http::restart(&state).await?;
+    crate::mcp::http::restart(state).await?;
     Ok(token)
 }
 
@@ -937,9 +918,8 @@ pub async fn rotate_mcp_token(state: Shared<'_>) -> Result<String> {
 ///
 /// Omit `profile_id` for the whole estate — the correlation view wants every
 /// connection's changes in one window, while a service dashboard wants its own.
-#[tauri::command]
 pub async fn get_change_events(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: Option<String>,
     minutes: Option<i64>,
     limit: Option<usize>,
@@ -953,9 +933,8 @@ pub async fn get_change_events(
 }
 
 /// Rolling metric history for one connection.
-#[tauri::command]
 pub async fn get_metric_history(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
     minutes: Option<i64>,
 ) -> Result<Vec<MetricSeries>> {
@@ -970,8 +949,7 @@ pub async fn get_metric_history(
 /// failing, which failures are not explained by another failure. It is a
 /// narrowing, never a verdict — an undeclared edge is invisible here, so a
 /// root may just be a connection nobody finished configuring.
-#[tauri::command]
-pub async fn get_topology(state: Shared<'_>) -> Result<TopologyView> {
+pub async fn get_topology(state: &Arc<AppState>) -> Result<TopologyView> {
     let profiles = state.config.read().await.profiles.clone();
     let graph = crate::topology::Topology::build(&profiles);
 
@@ -1029,8 +1007,7 @@ pub struct TeamState {
     pub has_session: bool,
 }
 
-#[tauri::command]
-pub async fn get_team(state: Shared<'_>) -> Result<TeamState> {
+pub async fn get_team(state: &Arc<AppState>) -> Result<TeamState> {
     let team = state.config.read().await.team.clone();
     Ok(TeamState {
         server_url: team.server_url,
@@ -1043,8 +1020,7 @@ pub async fn get_team(state: Shared<'_>) -> Result<TeamState> {
 ///
 /// Clearing signs out too. Leaving a session behind for a server nobody is
 /// talking to any more is a token sitting in a keychain for no reason.
-#[tauri::command]
-pub async fn save_team_server(state: Shared<'_>, server_url: Option<String>) -> Result<TeamState> {
+pub async fn save_team_server(state: &Arc<AppState>, server_url: Option<String>) -> Result<TeamState> {
     let normalized = match server_url.as_deref().map(str::trim) {
         None | Some("") => None,
         Some(url) => Some(team::normalize_server(url)?),
@@ -1067,8 +1043,7 @@ pub async fn save_team_server(state: Shared<'_>, server_url: Option<String>) -> 
 }
 
 /// The password is used to get a token and is not retained anywhere.
-#[tauri::command]
-pub async fn sign_in(state: Shared<'_>, email: String, password: String) -> Result<TeamState> {
+pub async fn sign_in(state: &Arc<AppState>, email: String, password: String) -> Result<TeamState> {
     let server = state
         .config
         .read()
@@ -1087,8 +1062,7 @@ pub async fn sign_in(state: Shared<'_>, email: String, password: String) -> Resu
     get_team(state).await
 }
 
-#[tauri::command]
-pub async fn sign_out(state: Shared<'_>) -> Result<TeamState> {
+pub async fn sign_out(state: &Arc<AppState>) -> Result<TeamState> {
     let server = state.config.read().await.team.server_url.clone();
     team::sign_out(server.as_deref()).await?;
     {
@@ -1101,8 +1075,7 @@ pub async fn sign_out(state: Shared<'_>) -> Result<TeamState> {
 
 /// Who else is in the workspace. Errors in local mode rather than returning an
 /// empty list — nobody is not the same fact as no workspace.
-#[tauri::command]
-pub async fn get_workspace(state: Shared<'_>) -> Result<team::Workspace> {
+pub async fn get_workspace(state: &Arc<AppState>) -> Result<team::Workspace> {
     let server = state
         .config
         .read()
@@ -1135,8 +1108,7 @@ pub struct TopologyView {
 /// the list is where to look. Incidents that are entirely acknowledged sink
 /// below the ones that are not, whatever their severity — an acknowledged
 /// outage is someone else's open tab.
-#[tauri::command]
-pub async fn get_incidents(state: Shared<'_>) -> Result<Vec<Incident>> {
+pub async fn get_incidents(state: &Arc<AppState>) -> Result<Vec<Incident>> {
     let profiles = state.config.read().await.profiles.clone();
     let graph = crate::topology::Topology::build(&profiles);
     let dashboard = state.dashboard().await;
@@ -1155,9 +1127,8 @@ pub async fn get_incidents(state: Shared<'_>) -> Result<Vec<Incident>> {
 /// with no samples in the window still gets a run, marked unknown, rather than
 /// being omitted — a lane that is missing and a lane that is silent are
 /// different facts.
-#[tauri::command]
 pub async fn get_health_runs(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     minutes: Option<i64>,
 ) -> Result<std::collections::HashMap<String, Vec<crate::history::HealthRun>>> {
     let now = chrono::Utc::now();
@@ -1181,9 +1152,8 @@ pub async fn get_health_runs(
 ///
 /// Empty for sections a collector did not mark `tracked`; those are readable
 /// live from the snapshot but have no series behind them, by design.
-#[tauri::command]
 pub async fn get_component_history(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
     section_id: String,
     row_id: String,
@@ -1206,9 +1176,8 @@ pub async fn get_component_history(
 ///
 /// Bodies are redacted before they reach this function. There is no variant of
 /// this command that returns the original bytes.
-#[tauri::command]
 pub async fn get_config_documents(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
 ) -> Result<Vec<crate::configsource::ConfigDocument>> {
     let profile = {
@@ -1243,9 +1212,8 @@ pub async fn get_config_documents(
 /// Omit `profile_id` for the whole estate. Deterministic rules, not the
 /// assistant: every finding names the setting, the metric and the projection
 /// behind it, so the reasoning can be checked rather than trusted.
-#[tauri::command]
 pub async fn get_findings(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: Option<String>,
 ) -> Result<Vec<crate::advisor::Finding>> {
     let profiles: Vec<crate::config::ConnectionProfile> = {
@@ -1309,16 +1277,15 @@ pub async fn get_findings(
 /// is recomputed over the long window, which is the entire point: a volume
 /// filling in three weeks is invisible to a few hours of samples, and root
 /// currently refuses that projection honestly but uselessly.
-#[tauri::command]
 pub async fn get_long_history(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
     hours: Option<i64>,
 ) -> Result<Vec<crate::history::MetricSeries>> {
     let hours = hours.unwrap_or(24 * 14).clamp(1, 24 * 365);
     let end = chrono::Utc::now();
     let start = end - chrono::Duration::hours(hours);
-    long_history(&state, &profile_id, start, end).await
+    long_history(state, &profile_id, start, end).await
 }
 
 /// Build long-range series for one profile, or nothing if it declares no source.
@@ -1409,8 +1376,7 @@ async fn long_history(
 /// For when a conversation went somewhere unhelpful and left findings nobody
 /// wants to rate. Clearing is not the same as rating something "not a
 /// problem" — that is a judgement worth recording, and this is a wastebasket.
-#[tauri::command]
-pub async fn clear_claims(state: Shared<'_>, profile_id: String) -> Result<()> {
+pub async fn clear_claims(state: &Arc<AppState>, profile_id: String) -> Result<()> {
     let mut claims = state.claims.write().await;
     claims.clear(&profile_id);
     Ok(())
@@ -1445,8 +1411,7 @@ pub struct RuntimeReport {
 }
 
 /// Reconcile every declared runtime against the live estate.
-#[tauri::command]
-pub async fn get_runtime_report(state: Shared<'_>) -> Result<RuntimeReport> {
+pub async fn get_runtime_report(state: &Arc<AppState>) -> Result<RuntimeReport> {
     let profiles: Vec<crate::config::ConnectionProfile> = {
         let config = state.config.read().await;
         config.profiles.iter().filter(|p| p.enabled).cloned().collect()
@@ -1592,7 +1557,6 @@ fn components_of(snapshot: &crate::model::HealthSnapshot) -> Vec<crate::runtime:
 /// rule reworded, is the product better or worse than it was? Pure computation
 /// over embedded fixtures — it touches no infrastructure and needs nothing
 /// configured, so it works on a fresh install with no connections at all.
-#[tauri::command]
 pub async fn run_scenarios() -> Result<crate::scenarios::SuiteResult> {
     let library = crate::scenarios::library()
         .map_err(crate::error::AppError::Collector)?;
@@ -1600,7 +1564,6 @@ pub async fn run_scenarios() -> Result<crate::scenarios::SuiteResult> {
 }
 
 /// The scenarios themselves, for reading rather than running.
-#[tauri::command]
 pub async fn list_scenarios() -> Result<Vec<crate::scenarios::Scenario>> {
     crate::scenarios::library().map_err(crate::error::AppError::Collector)
 }
@@ -1616,9 +1579,8 @@ pub async fn list_scenarios() -> Result<Vec<crate::scenarios::Scenario>> {
 /// Scored against the incidents somebody has already judged: the useful output
 /// is not "these rules fire" but "these rules would have fired before the
 /// thing we recorded as a miss".
-#[tauri::command]
 pub async fn run_backtest(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
     days: Option<i64>,
     step_minutes: Option<i64>,
@@ -1640,11 +1602,11 @@ pub async fn run_backtest(
             )
         })?;
 
-    let documents = collect_config(&state, &profile_id).await?;
+    let documents = collect_config(state, &profile_id).await?;
 
     // Prefer the estate's own long history. The in-memory ring is the fallback
     // and is rarely long enough to fit anything — which the caveats say.
-    let series = match long_history(&state, &profile_id, start, end).await {
+    let series = match long_history(state, &profile_id, start, end).await {
         Ok(series) if !series.is_empty() => series,
         Ok(_) => state.history.read().await.series(&profile_id, Some(start)),
         Err(e) => {
@@ -1712,9 +1674,8 @@ async fn collect_config(
 /// Always an insert. Changing a rating writes a second row and leaves the
 /// first — the history of a mind changing is itself a signal, and a score that
 /// can be edited cannot answer "did root get better".
-#[tauri::command]
 pub async fn record_verdict(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     verdict: crate::journal::Verdict,
 ) -> Result<i64> {
     state.journal().await?.record_verdict(&verdict).await
@@ -1724,29 +1685,25 @@ pub async fn record_verdict(
 ///
 /// The half of the measurement that ratings on findings cannot produce: if
 /// root never mentioned the thing that broke, there was no card to rate.
-#[tauri::command]
-pub async fn record_recall(state: Shared<'_>, recall: crate::journal::Recall) -> Result<i64> {
+pub async fn record_recall(state: &Arc<AppState>, recall: crate::journal::Recall) -> Result<i64> {
     state.journal().await?.record_recall(&recall).await
 }
 
 /// The latest judgement per finding, so the UI can show what is already rated.
-#[tauri::command]
 pub async fn get_verdicts(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     limit: Option<i64>,
 ) -> Result<Vec<crate::journal::RecordedVerdict>> {
     state.journal().await?.verdicts(limit.unwrap_or(500)).await
 }
 
 /// Incidents already judged, so nobody is asked the same question twice.
-#[tauri::command]
-pub async fn get_judged_incidents(state: Shared<'_>) -> Result<Vec<String>> {
+pub async fn get_judged_incidents(state: &Arc<AppState>) -> Result<Vec<String>> {
     state.journal().await?.judged_incidents().await
 }
 
 /// Precision by provenance and by rule, and recall from the incident side.
-#[tauri::command]
-pub async fn get_scorecard(state: Shared<'_>) -> Result<crate::journal::Scorecard> {
+pub async fn get_scorecard(state: &Arc<AppState>) -> Result<crate::journal::Scorecard> {
     state.journal().await?.scorecard().await
 }
 
@@ -1755,9 +1712,8 @@ pub async fn get_scorecard(state: Shared<'_>) -> Result<crate::journal::Scorecar
 /// One call rather than one per connection per component, because the ranking
 /// needs every series at once to be a ranking at all — and the alternative is
 /// shipping the whole history store to the client to sort six rows.
-#[tauri::command]
 pub async fn get_capacity_risks(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     take: Option<usize>,
 ) -> Result<Vec<crate::history::CapacityRisk>> {
     let mut risks = state
@@ -1788,7 +1744,7 @@ pub async fn get_capacity_risks(
         // must not empty the panel. The short-window answer is worse but it is
         // still an answer, and losing the whole capacity view because one
         // exporter moved would be a poor trade.
-        let long = match long_history(&state, &profile_id, start, end).await {
+        let long = match long_history(state, &profile_id, start, end).await {
             Ok(series) => series,
             Err(e) => {
                 tracing::debug!(profile = %profile_id, "long history unavailable: {e}");
@@ -1829,9 +1785,8 @@ pub async fn get_capacity_risks(
 
 /// History for every connection at once, so the dashboard can draw a sparkline
 /// on each card without a request per card.
-#[tauri::command]
 pub async fn get_all_metric_history(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     minutes: Option<i64>,
 ) -> Result<std::collections::HashMap<String, Vec<MetricSeries>>> {
     let since = minutes
@@ -1859,19 +1814,16 @@ pub async fn get_all_metric_history(
 
 /// Every service type this build supports, with the field specs the settings
 /// form renders from. The frontend enumerates nothing itself.
-#[tauri::command]
 pub async fn get_service_catalog() -> Result<Vec<ServiceDescriptor>> {
     Ok(registry::catalog())
 }
 
 // ----------------------------------------------------------------- settings
 
-#[tauri::command]
-pub async fn get_config(state: Shared<'_>) -> Result<crate::config::AppConfig> {
+pub async fn get_config(state: &Arc<AppState>) -> Result<crate::config::AppConfig> {
     Ok(state.config.read().await.clone())
 }
 
-#[tauri::command]
 pub async fn secret_store_available() -> Result<bool> {
     Ok(secrets::store_available())
 }
@@ -1879,9 +1831,8 @@ pub async fn secret_store_available() -> Result<bool> {
 /// Create or update a connection. `secret` is written to the OS keychain and
 /// never persisted to the config file. Passing `None` leaves any existing
 /// credential in place, so editing a profile does not silently clear it.
-#[tauri::command]
 pub async fn save_profile(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     mut profile: ConnectionProfile,
     secret: Option<String>,
 ) -> Result<crate::config::AppConfig> {
@@ -1921,20 +1872,19 @@ pub async fn save_profile(
 
     // Restart just this connection so the change takes effect immediately.
     if profile.enabled {
-        supervisor::start_profile(Arc::clone(&state), profile).await;
+        supervisor::start_profile(Arc::clone(state), profile).await;
     } else {
-        supervisor::stop_profile(&state, &profile.id).await;
+        supervisor::stop_profile(state, &profile.id).await;
     }
 
     Ok(state.config.read().await.clone())
 }
 
-#[tauri::command]
 pub async fn delete_profile(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
 ) -> Result<crate::config::AppConfig> {
-    supervisor::stop_profile(&state, &profile_id).await;
+    supervisor::stop_profile(state, &profile_id).await;
 
     let secret_key = {
         let mut config = state.config.write().await;
@@ -1958,7 +1908,6 @@ pub async fn delete_profile(
 
 /// Try a profile's settings without saving it, so a bad URL or credential is
 /// caught before it lands in the connection list.
-#[tauri::command]
 pub async fn test_profile(
     profile: ConnectionProfile,
     secret: Option<String>,
@@ -1985,8 +1934,7 @@ pub async fn test_profile(
 /// Takes the last snapshot root already has rather than polling: the point is
 /// to test the write, and a collect here would fold two failures into one
 /// message.
-#[tauri::command]
-pub async fn test_snapshot_write(state: Shared<'_>, profile_id: String) -> Result<String> {
+pub async fn test_snapshot_write(state: &Arc<AppState>, profile_id: String) -> Result<String> {
     let snapshot = state
         .snapshots
         .read()
@@ -2024,15 +1972,14 @@ pub async fn test_snapshot_write(state: Shared<'_>, profile_id: String) -> Resul
         )
     })?;
 
-    crate::influx::write_snapshot(&state, &snapshot).await?;
+    crate::influx::write_snapshot(state, &snapshot).await?;
     Ok(line)
 }
 
 // ---------------------------------------------------------------- assistant
 
-#[tauri::command]
 pub async fn save_llm_settings(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     settings: LlmSettings,
     api_key: Option<String>,
 ) -> Result<crate::config::AppConfig> {
@@ -2062,23 +2009,21 @@ pub async fn save_llm_settings(
 }
 
 /// Model ids available for the configured provider and key.
-#[tauri::command]
-pub async fn list_models(state: Shared<'_>) -> Result<Vec<String>> {
+pub async fn list_models(state: &Arc<AppState>) -> Result<Vec<String>> {
     let settings = state.config.read().await.llm.clone();
     let api_key = secrets::get_secret(settings.provider.secret_key()).await?;
     build_provider(&settings, api_key)?.list_models().await
 }
 
-#[tauri::command]
 pub async fn send_message(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     conversation_id: String,
     message: String,
 ) -> Result<AgentTurn> {
     if message.trim().is_empty() {
         return Err(AppError::Llm("the message is empty".to_string()));
     }
-    agent::run_turn(state.events().await, Arc::clone(&state), conversation_id, message).await
+    agent::run_turn(state.events().await, Arc::clone(state), conversation_id, message).await
 }
 
 /// A short model reading of one failing component, for the matrix tooltip.
@@ -2093,9 +2038,8 @@ pub async fn send_message(
 /// Healthy rows are refused rather than answered. A model asked what is wrong
 /// with something that is fine will find something, and a tooltip that
 /// speculates over 357 working components is worse than no tooltip at all.
-#[tauri::command]
 pub async fn explain_component(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     profile_id: String,
     section_id: String,
     row_id: String,
@@ -2157,7 +2101,7 @@ pub async fn explain_component(
         }
     }
 
-    let grounds = component_grounds(&state, &snapshot, &section, &row, alert.as_ref()).await;
+    let grounds = component_grounds(state, &snapshot, &section, &row, alert.as_ref()).await;
 
     let (settings, _mode) = {
         let config = state.config.read().await;
@@ -2209,9 +2153,8 @@ pub async fn explain_component(
 /// Cached on the incident's own state rather than on the clock. Re-opening the
 /// same incident is free; an incident that grew a member, recovered one, or was
 /// acknowledged is a different question and is asked again.
-#[tauri::command]
 pub async fn explain_incident(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     incident_id: String,
     refresh: Option<bool>,
 ) -> Result<crate::rca::RootCause> {
@@ -2249,7 +2192,7 @@ pub async fn explain_incident(
         }
     }
 
-    let cause = crate::rca::analyse(&state, &incident).await?;
+    let cause = crate::rca::analyse(state, &incident).await?;
     state.analyses.write().await.insert(
         incident_id,
         crate::state::CachedAnalysis {
@@ -2372,28 +2315,25 @@ fn cell_text(value: &crate::model::CellValue) -> Option<String> {
     }
 }
 
-#[tauri::command]
 pub async fn resolve_confirmation(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     call_id: String,
     approved: bool,
 ) -> Result<()> {
-    agent::resolve_confirmation(&state, &call_id, approved).await
+    agent::resolve_confirmation(state, &call_id, approved).await
 }
 
 /// Approval requests still waiting — used to restore the dialog if the UI
 /// reloads while the assistant is mid-turn.
-#[tauri::command]
-pub async fn pending_confirmations(state: Shared<'_>) -> Result<Vec<PendingConfirmation>> {
+pub async fn pending_confirmations(state: &Arc<AppState>) -> Result<Vec<PendingConfirmation>> {
     let mut pending: Vec<PendingConfirmation> =
         state.pending_meta.read().await.values().cloned().collect();
     pending.sort_by_key(|p| p.requested_at);
     Ok(pending)
 }
 
-#[tauri::command]
 pub async fn get_conversation(
-    state: Shared<'_>,
+    state: &Arc<AppState>,
     conversation_id: String,
 ) -> Result<Vec<ChatMessage>> {
     Ok(state
@@ -2405,8 +2345,7 @@ pub async fn get_conversation(
         .unwrap_or_default())
 }
 
-#[tauri::command]
-pub async fn clear_conversation(state: Shared<'_>, conversation_id: String) -> Result<()> {
+pub async fn clear_conversation(state: &Arc<AppState>, conversation_id: String) -> Result<()> {
     state.conversations.write().await.remove(&conversation_id);
     Ok(())
 }

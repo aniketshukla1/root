@@ -110,6 +110,29 @@ pub struct PastAlert {
     pub resolved_at: Option<DateTime<Utc>>,
 }
 
+/// A change as it was recorded.
+///
+/// Enums arrive as the strings they were stored as, exactly as [`PastAlert`]
+/// does. A history row is read to be displayed and counted, never to be acted
+/// on, and parsing back into the live enums would buy nothing while adding a
+/// way for a row written by an older build to fail to load at all.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastChange {
+    pub id: String,
+    pub at: DateTime<Utc>,
+    pub profile_id: String,
+    pub profile_name: String,
+    pub kind: String,
+    pub change: String,
+    pub source: String,
+    pub section: Option<String>,
+    pub component: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub summary: String,
+}
+
 /// The persistent half of root's memory.
 #[derive(Clone)]
 pub struct Store {
@@ -189,8 +212,8 @@ impl Store {
                 row.push_bind(event.timestamp)
                     .push_bind(&event.profile_id)
                     .push_bind(&event.source)
-                    .push_bind(format!("{:?}", event.level).to_lowercase())
-                    .push_bind(format!("{:?}", event.stream).to_lowercase())
+                    .push_bind(wire(event.level))
+                    .push_bind(wire(event.stream))
                     .push_bind(&event.message);
             });
             builder.build().execute(&self.pool).await?;
@@ -222,8 +245,8 @@ impl Store {
         .bind(alert.first_seen)
         .bind(&alert.profile_id)
         .bind(&alert.profile_name)
-        .bind(format!("{:?}", alert.kind).to_lowercase())
-        .bind(format!("{:?}", alert.severity).to_lowercase())
+        .bind(wire(alert.kind))
+        .bind(wire(alert.severity))
         .bind(&alert.title)
         .bind(&alert.detail)
         .bind(&alert.component)
@@ -251,9 +274,9 @@ impl Store {
         .bind(change.at)
         .bind(&change.profile_id)
         .bind(&change.profile_name)
-        .bind(format!("{:?}", change.kind).to_lowercase())
-        .bind(format!("{:?}", change.change).to_lowercase())
-        .bind(format!("{:?}", change.source).to_lowercase())
+        .bind(wire(change.kind))
+        .bind(wire(change.change))
+        .bind(wire(change.source))
         .bind(&change.section)
         .bind(&change.component)
         .bind(&change.from)
@@ -375,31 +398,54 @@ impl Store {
         Ok(out)
     }
 
-    /// Changes across the estate since a moment, newest first.
+    /// Changes since a moment, newest first. One connection, or the estate.
+    ///
+    /// Every column, not the three a tooltip needs. The write path has always
+    /// stored the whole event and a read that dropped nine of its twelve
+    /// columns made the table unable to answer the questions it was already
+    /// holding the data for — which component, what it moved from, whether a
+    /// human or a webhook reported it.
     pub async fn changes_since(
         &self,
+        profile_id: Option<&str>,
         since: DateTime<Utc>,
         limit: i64,
-    ) -> Result<Vec<(String, String, DateTime<Utc>)>> {
-        let rows = sqlx::query(
-            "SELECT profile_name, summary, at FROM changes
-             WHERE at >= $1 ORDER BY at DESC LIMIT $2",
-        )
-        .bind(since)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .iter()
-            .map(|r| {
-                (
-                    r.get::<String, _>("profile_name"),
-                    r.get::<String, _>("summary"),
-                    r.get::<DateTime<Utc>, _>("at"),
+    ) -> Result<Vec<PastChange>> {
+        // Two statements rather than one with `($1 IS NULL OR profile_id = $1)`,
+        // which reads as if it were free and costs the index: Postgres cannot
+        // plan the estate-wide case and the single-connection case the same
+        // way, and the null-guard form plans for neither.
+        let rows = match profile_id {
+            Some(id) => {
+                sqlx::query(
+                    "SELECT id, at, profile_id, profile_name, kind, change, source,
+                            section, component, from_value, to_value, summary
+                     FROM changes
+                     WHERE profile_id = $1 AND at >= $2
+                     ORDER BY at DESC LIMIT $3",
                 )
-            })
-            .collect())
+                .bind(id)
+                .bind(since)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?
+            }
+            None => {
+                sqlx::query(
+                    "SELECT id, at, profile_id, profile_name, kind, change, source,
+                            section, component, from_value, to_value, summary
+                     FROM changes
+                     WHERE at >= $1
+                     ORDER BY at DESC LIMIT $2",
+                )
+                .bind(since)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?
+            }
+        };
+
+        Ok(rows.iter().map(past_change).collect())
     }
 
     /// Rows held, per table, for the Settings panel.
@@ -441,6 +487,21 @@ impl Store {
     }
 }
 
+/// An enum's wire name, as serde writes it everywhere else in the app.
+///
+/// Not `format!("{:?}").to_lowercase()`, which is what this used to be and
+/// which agrees with serde only by coincidence. Every one of these enums is
+/// `rename_all`, so a multi-word variant diverges the moment one exists:
+/// `ServiceKind::LinuxHost` is `linux_host` to serde and `linuxhost` to
+/// `Debug`. The column is read back now, and a kind that matches nothing in
+/// the registry renders as an unknown service.
+fn wire<T: Serialize>(value: T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 fn hourly_point(row: &PgRow) -> HourlyPoint {
     HourlyPoint {
         at: row.get("at"),
@@ -467,6 +528,23 @@ fn past_alert(row: &PgRow) -> PastAlert {
         first_seen: row.get("first_seen"),
         last_seen: row.get("last_seen"),
         resolved_at: row.try_get("resolved_at").ok(),
+    }
+}
+
+fn past_change(row: &PgRow) -> PastChange {
+    PastChange {
+        id: row.get("id"),
+        at: row.get("at"),
+        profile_id: row.get("profile_id"),
+        profile_name: row.get("profile_name"),
+        kind: row.get("kind"),
+        change: row.get("change"),
+        source: row.get("source"),
+        section: row.try_get("section").ok(),
+        component: row.try_get("component").ok(),
+        from: row.try_get("from_value").ok(),
+        to: row.try_get("to_value").ok(),
+        summary: row.get("summary"),
     }
 }
 
@@ -524,6 +602,14 @@ async fn migrate(pool: &PgPool) -> Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS changes_at ON changes (at DESC)")
         .execute(pool)
         .await?;
+
+    // The per-connection read. Without it, asking one connection for its
+    // changes scans every connection's.
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS changes_profile_at ON changes (profile_id, at DESC)",
+    )
+    .execute(pool)
+    .await?;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS metric_samples (

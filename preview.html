@@ -16,6 +16,7 @@
       (function () {
         const now = Date.now();
         const iso = (msAgo) => new Date(now - msAgo).toISOString();
+        const DAY = 24 * 60 * 60_000;
 
         function walk(count, start, drift, jitter, floor, ceil) {
           const points = [];
@@ -652,6 +653,61 @@
           log_histogram: () => buckets,
           get_all_metric_history: () => history,
           get_metric_history: (args) => history[args.profileId] ?? [],
+          // History off disk. `configured: true` is what makes the dashboard
+          // offer the day-scale windows and render its History section at all,
+          // so the preview is the only place that surface can be looked at
+          // without a Postgres running.
+          get_history_stats: () => ({
+            configured: true,
+            timescale: true,
+            rows: {
+              alerts: 1284, changes: 3907,
+              metric_samples: 2410556, log_lines: 18332104,
+            },
+          }),
+          // Each live alert, plus earlier firings of the same condition. The
+          // fingerprint ties them together exactly as it does on disk, and the
+          // counts are deliberately uneven — a fixture where every condition
+          // had fired the same number of times would make the one column this
+          // section exists for look like decoration.
+          get_alert_history: (args) => {
+            const mine = alerts.filter((a) => a.profileId === args.profileId);
+            const TIMES = [4, 1, 2];
+            return mine.flatMap((alert, i) =>
+              Array.from({ length: TIMES[i % TIMES.length] }, (_, n) => ({
+                fingerprint: alert.fingerprint,
+                profileId: alert.profileId,
+                profileName: alert.profileName,
+                severity: alert.severity,
+                title: alert.title,
+                detail: alert.detail,
+                component: alert.component,
+                predicted: false,
+                firstSeen: iso(n * DAY * 3 + 6 * 60_000),
+                lastSeen: iso(n * DAY * 3),
+                // The newest is still firing; the older ones ended.
+                resolvedAt: n === 0 ? undefined : iso(n * DAY * 3),
+              })),
+            );
+          },
+          get_flapping: () =>
+            alerts.slice(0, 3).map((alert, i) => ({
+              profileName: alert.profileName,
+              title: alert.title,
+              times: [9, 4, 2][i],
+            })),
+          get_change_history: (args) => {
+            const scoped = args.profileId
+              ? changeEvents.filter((c) => c.profileId === args.profileId)
+              : changeEvents;
+            return scoped.flatMap((change, i) =>
+              [0, 5, 12].map((daysAgo, n) => ({
+                ...change,
+                id: change.id + "-h" + n,
+                at: iso(daysAgo * DAY + i * 90_000),
+              })),
+            );
+          },
           // Per-component history. Only sections marked `tracked` have any;
           // everything else returns empty and the UI falls back to live values.
           get_component_history: (args) => {

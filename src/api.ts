@@ -50,6 +50,11 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_judged_incidents: () => fixtures.judgedIncidents(),
   get_scorecard: () => fixtures.scorecard(),
   get_long_history: () => [],
+  get_alert_history: ({ profileId }) => fixtures.alertHistory(profileId as string),
+  get_flapping: () => fixtures.flapping(),
+  get_change_history: ({ profileId }) =>
+    fixtures.changeHistory(profileId as string | undefined),
+  get_history_stats: () => fixtures.historyStats(),
   run_backtest: ({ profileId }) => fixtures.backtest(profileId as string),
   run_scenarios: () => fixtures.scenarios(),
   get_runtime_report: () => fixtures.runtimeReport(),
@@ -146,6 +151,10 @@ import type {
   ConfigDocument,
   ConnectionProfile,
   Finding,
+  FlappingCondition,
+  HistoryStats,
+  PastAlert,
+  PastChange,
   Recall,
   RecordedVerdict,
   RuntimeReport,
@@ -213,6 +222,29 @@ export const api = {
 
   getMetricHistory: (profileId: string, minutes?: number) =>
     invoke<MetricSeries[]>("get_metric_history", { profileId, minutes: minutes ?? null }),
+
+  /**
+   * Every past firing of every condition on one connection.
+   *
+   * Empty rather than an error when no database is configured: the screen
+   * asking should say "nothing kept", not "failed". Same for the three below.
+   */
+  getAlertHistory: (profileId: string, days?: number) =>
+    invoke<PastAlert[]>("get_alert_history", { profileId, days: days ?? null }),
+
+  /** Conditions that keep firing, worst first. Estate-wide. */
+  getFlapping: (days?: number) =>
+    invoke<FlappingCondition[]>("get_flapping", { days: days ?? null }),
+
+  /** Recorded changes. Omit `profileId` for the whole estate. */
+  getChangeHistory: (profileId?: string, days?: number) =>
+    invoke<PastChange[]>("get_change_history", {
+      profileId: profileId ?? null,
+      days: days ?? null,
+    }),
+
+  /** Whether history is being kept at all, and how much of it there is. */
+  getHistoryStats: () => invoke<HistoryStats>("get_history_stats"),
 
   /** Empty for sections the backend does not track — those have no series. */
   getComponentHistory: (

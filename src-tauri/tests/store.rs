@@ -30,8 +30,8 @@
 
 use chrono::{Duration, Utc};
 use inframonitoring_lib::model::{
-    Alert, AlertSeverity, Health, HealthSnapshot, LogEvent, LogLevel, LogStream, Metric,
-    MetricUnit, ServiceKind,
+    Alert, AlertSeverity, ChangeEvent, ChangeKind, ChangeSource, Health, HealthSnapshot, LogEvent,
+    LogLevel, LogStream, Metric, MetricUnit, ServiceKind,
 };
 use inframonitoring_lib::store::Store;
 
@@ -348,4 +348,236 @@ async fn clearing_history_leaves_nothing_behind() {
         counts.values().all(|&n| n == 0),
         "something survived a clear: {counts:?}"
     );
+}
+
+
+// ---------------------------------------------------------------- read path
+//
+// The buffer and the store overlap by construction: the database has been
+// recording the same hours the ring buffer is still holding. Everything below
+// is about that seam, because a chart that draws the same afternoon twice at
+// two resolutions is worse than one that stops short.
+
+#[tokio::test]
+async fn the_rollup_answers_further_back_than_a_ring_buffer_reaches() {
+    // The whole reason this layer exists. forecast.rs refuses a window under
+    // fifteen minutes and has only ever had three hours of buffer to look at;
+    // this is where a longer window comes from.
+    let Some(store) = store_for("rollup_reaches_further").await else {
+        return;
+    };
+
+    // Two days of hourly samples.
+    let start = Utc::now() - Duration::days(2);
+    for hour in 0..48 {
+        store
+            .write_snapshot(&snapshot(1.0e9 + hour as f64 * 1.0e8, start + Duration::hours(hour)))
+            .await
+            .unwrap();
+    }
+
+    let recent = store
+        .metric_hours("p1", "memory", Utc::now() - Duration::hours(3))
+        .await
+        .unwrap();
+    let everything = store
+        .metric_hours("p1", "memory", Utc::now() - Duration::days(3))
+        .await
+        .unwrap();
+
+    assert!(
+        everything.len() > recent.len(),
+        "a longer window should reach more hours: {} vs {}",
+        everything.len(),
+        recent.len()
+    );
+    assert!(everything.len() >= 40, "two days should be ~48 buckets, got {}", everything.len());
+}
+
+#[tokio::test]
+async fn every_bucket_carries_the_extremes_and_not_only_the_average() {
+    // An hour whose peak breached a threshold has to still read as a breach
+    // after it is averaged into one point, or a rollup quietly erases every
+    // spike that ever mattered.
+    let Some(store) = store_for("buckets_keep_extremes").await else {
+        return;
+    };
+
+    let hour = Utc::now() - Duration::hours(5);
+    for (i, value) in [1.0e9, 9.0e9, 2.0e9].into_iter().enumerate() {
+        store
+            .write_snapshot(&snapshot(value, hour + Duration::minutes(i as i64 * 5)))
+            .await
+            .unwrap();
+    }
+
+    let rows = store
+        .metric_hours("p1", "memory", hour - Duration::hours(1))
+        .await
+        .unwrap();
+    let bucket = rows.iter().find(|r| r.count == 3).expect("one bucket of three samples");
+
+    assert_eq!(bucket.min, 1.0e9);
+    assert_eq!(bucket.max, 9.0e9, "the spike must survive the averaging");
+    assert!(bucket.avg > 3.9e9 && bucket.avg < 4.1e9, "avg was {}", bucket.avg);
+}
+
+#[tokio::test]
+async fn asking_for_a_window_with_nothing_in_it_is_empty_and_not_an_error() {
+    // A connection added this morning has no history from last week, and the
+    // chart should say so by being short rather than by failing.
+    let Some(store) = store_for("empty_window_is_empty").await else {
+        return;
+    };
+    store.write_snapshot(&snapshot(1.0e9, Utc::now())).await.unwrap();
+
+    let ancient = store
+        .metric_hours("p1", "memory", Utc::now() - Duration::days(400))
+        .await
+        .expect("a question about the distant past is still a question");
+    let unknown_metric = store
+        .metric_hours("p1", "nothing_by_this_name", Utc::now() - Duration::days(1))
+        .await
+        .unwrap();
+
+    assert!(!ancient.is_empty(), "today's sample is inside a 400-day window");
+    assert!(unknown_metric.is_empty());
+}
+
+#[tokio::test]
+async fn history_survives_for_a_connection_that_is_no_longer_configured() {
+    // Deleting a connection drops it from the live state. The record of what
+    // it did is the point of keeping a record, so it stays until somebody
+    // clears the history deliberately.
+    let Some(store) = store_for("history_outlives_the_connection").await else {
+        return;
+    };
+    store
+        .write_alert(&alert("gone", Utc::now() - Duration::days(1), false), false)
+        .await
+        .unwrap();
+
+    let history = store
+        .alert_history("p1", Utc::now() - Duration::days(7), 50)
+        .await
+        .unwrap();
+    assert_eq!(history.len(), 1, "the row outlives the connection");
+}
+
+
+#[tokio::test]
+async fn a_change_reads_back_with_every_column_it_was_written_with() {
+    // The read used to return three of the twelve columns the write had always
+    // stored, which made the table unable to answer questions it was already
+    // holding the data for.
+    let Some(store) = store_for("changes_round_trip").await else {
+        return;
+    };
+
+    let event = ChangeEvent {
+        id: "c1".into(),
+        profile_id: "p1".into(),
+        profile_name: "prod-docker".into(),
+        kind: ServiceKind::Docker,
+        change: ChangeKind::Deployed,
+        source: ChangeSource::Observed,
+        section: "Containers".into(),
+        component: "checkout-api".into(),
+        from: Some("v1.4.2".into()),
+        to: "v1.5.0".into(),
+        at: Utc::now() - Duration::hours(2),
+        summary: "checkout-api v1.4.2 to v1.5.0".into(),
+    };
+    store.write_change(&event).await.unwrap();
+
+    let back = store
+        .changes_since(None, Utc::now() - Duration::days(1), 50)
+        .await
+        .unwrap();
+    assert_eq!(back.len(), 1);
+    let row = &back[0];
+
+    assert_eq!(row.id, "c1");
+    assert_eq!(row.component.as_deref(), Some("checkout-api"));
+    assert_eq!(row.section.as_deref(), Some("Containers"));
+    assert_eq!(row.from.as_deref(), Some("v1.4.2"), "the previous revision is the point");
+    assert_eq!(row.to.as_deref(), Some("v1.5.0"));
+    assert_eq!(row.summary, "checkout-api v1.4.2 to v1.5.0");
+}
+
+#[tokio::test]
+async fn changes_can_be_asked_for_one_connection_or_for_the_estate() {
+    let Some(store) = store_for("changes_scoping").await else {
+        return;
+    };
+
+    for (id, profile) in [("c1", "p1"), ("c2", "p2"), ("c3", "p1")] {
+        let mut event = ChangeEvent {
+            id: id.into(),
+            profile_id: profile.into(),
+            profile_name: profile.into(),
+            kind: ServiceKind::Docker,
+            change: ChangeKind::Deployed,
+            source: ChangeSource::Observed,
+            section: "Containers".into(),
+            component: "api".into(),
+            from: None,
+            to: "v2".into(),
+            at: Utc::now() - Duration::minutes(30),
+            summary: format!("{id} changed"),
+        };
+        event.summary = format!("{id} changed");
+        store.write_change(&event).await.unwrap();
+    }
+
+    let since = Utc::now() - Duration::days(1);
+    let estate = store.changes_since(None, since, 50).await.unwrap();
+    let one = store.changes_since(Some("p1"), since, 50).await.unwrap();
+
+    assert_eq!(estate.len(), 3, "the estate sees every connection's changes");
+    assert_eq!(one.len(), 2, "one connection sees only its own");
+    assert!(one.iter().all(|c| c.profile_id == "p1"));
+}
+
+
+#[tokio::test]
+async fn a_multi_word_kind_is_stored_the_way_the_rest_of_the_app_spells_it() {
+    // `ServiceKind::LinuxHost` is `linux_host` to serde and `linuxhost` to
+    // `Debug`. The column used to be written with the second and is now read
+    // back, and the frontend resolves a kind against the registry — so the
+    // wrong spelling is not a cosmetic difference, it is a row that renders as
+    // an unknown service.
+    let Some(store) = store_for("kind_spelling").await else {
+        return;
+    };
+
+    let event = ChangeEvent {
+        id: "c1".into(),
+        profile_id: "p1".into(),
+        profile_name: "build-box".into(),
+        kind: ServiceKind::LinuxHost,
+        change: ChangeKind::Appeared,
+        source: ChangeSource::Reported,
+        section: "Units".into(),
+        component: "nginx.service".into(),
+        from: None,
+        to: "active".into(),
+        at: Utc::now(),
+        summary: "nginx.service appeared".into(),
+    };
+    store.write_change(&event).await.unwrap();
+
+    let back = store
+        .changes_since(None, Utc::now() - Duration::hours(1), 10)
+        .await
+        .unwrap();
+
+    assert_eq!(back[0].kind, "linux_host", "not the Debug spelling");
+    assert_eq!(back[0].change, "appeared");
+    assert_eq!(back[0].source, "reported");
+
+    // And the value serde itself produces, so this stays true if the rename
+    // rule on the enum ever changes.
+    let expected = serde_json::to_value(ServiceKind::LinuxHost).unwrap();
+    assert_eq!(back[0].kind, expected.as_str().unwrap());
 }

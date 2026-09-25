@@ -932,15 +932,197 @@ pub async fn get_change_events(
         .query(profile_id.as_deref(), since, limit.unwrap_or(200).min(500)))
 }
 
+/// How far back a store-backed read may be asked to reach, in minutes.
+///
+/// Ninety days. The raw samples expire at thirty (`RAW_METRIC_DAYS`), but the
+/// hourly rollup has no retention policy and outlives them, so the honest
+/// ceiling is the rollup's rather than the raw table's. At one point an hour a
+/// ninety-day window is about 2,160 points per series, which a chart can draw.
+///
+/// Reads with nothing but the ring buffer behind them keep the old
+/// twenty-four-hour ceiling. Widening those would only promise a window they
+/// cannot fill, which is worse than refusing it: the chart draws short and
+/// nothing says why.
+const STORE_MAX_MINUTES: i64 = 90 * 24 * 60;
+
 /// Rolling metric history for one connection.
 pub async fn get_metric_history(
     state: &Arc<AppState>,
     profile_id: String,
     minutes: Option<i64>,
 ) -> Result<Vec<MetricSeries>> {
-    let since = minutes
-        .map(|m| chrono::Utc::now() - chrono::Duration::minutes(m.clamp(1, 1440)));
-    Ok(state.history.read().await.series(&profile_id, since))
+    let since =
+        minutes.map(|m| chrono::Utc::now() - chrono::Duration::minutes(m.clamp(1, STORE_MAX_MINUTES)));
+    let mut series = state.history.read().await.series(&profile_id, since);
+
+    // The ring buffer holds a few hours by design. When the question reaches
+    // further back than that, the rest comes off disk — see `backfill` for why
+    // the two are spliced rather than concatenated.
+    if let (Some(since), Some(store)) = (since, state.store.read().await.as_ref()) {
+        backfill(store, &profile_id, since, &mut series).await;
+    }
+    Ok(series)
+}
+
+/// Extend each series backwards with what the database kept.
+///
+/// The buffer is the live layer and stays authoritative for everything it
+/// covers: its samples are raw, at the poll interval, and that is what a
+/// recent chart should draw. The store's hourly rollup is coarser, and it
+/// exists to answer the question the buffer cannot — what did this look like
+/// before the last three hours.
+///
+/// Only points strictly older than the buffer's earliest sample are taken. The
+/// two sources overlap by construction — the store has been recording the same
+/// hours the buffer is holding — and concatenating them would draw the last
+/// three hours twice, at two different resolutions, with the seam somewhere in
+/// the middle of the chart.
+///
+/// Best-effort, like every other read of this store: a database that is not
+/// answering costs the long tail of the chart, not the chart.
+async fn backfill(
+    store: &crate::store::Store,
+    profile_id: &str,
+    since: chrono::DateTime<chrono::Utc>,
+    series: &mut [MetricSeries],
+) {
+    for one in series.iter_mut() {
+        let Some(earliest) = one.points.first().map(|p| p.t) else {
+            continue;
+        };
+        // The buffer already reaches the whole window. Nothing to add, and
+        // asking the database would be a query for rows that get discarded.
+        if earliest <= since {
+            continue;
+        }
+
+        let older = match store.metric_hours(profile_id, &one.key, since).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::debug!(metric = %one.key, "history backfill failed: {e}");
+                continue;
+            }
+        };
+
+        let buckets: Vec<_> = older.into_iter().filter(|h| h.at < earliest).collect();
+        if buckets.is_empty() {
+            continue;
+        }
+
+        // min and max come from each bucket's own extremes, not from the
+        // averages that are about to become the points. An hour holding one
+        // 9.9GB spike and eleven quiet samples averages to something
+        // unremarkable, and a series whose max was taken from that average
+        // would report that the breach never happened. The plotted point is
+        // still the average — that is what a rollup is — but the range the
+        // chart scales to, and any threshold read off it, comes from what was
+        // actually measured.
+        one.min = buckets.iter().map(|h| h.min).fold(one.min, f64::min);
+        one.max = buckets.iter().map(|h| h.max).fold(one.max, f64::max);
+
+        let mut prefix: Vec<crate::history::Point> = buckets
+            .into_iter()
+            .map(|h| crate::history::Point { t: h.at, v: h.avg })
+            .collect();
+        prefix.extend(std::mem::take(&mut one.points));
+        one.points = prefix;
+    }
+}
+
+/// Every time a condition has fired on one connection, newest first.
+///
+/// The question a ring buffer can never answer, and the reason the alert
+/// lifecycle is on disk: is this the first time, or the ninth time this month?
+pub async fn get_alert_history(
+    state: &Arc<AppState>,
+    profile_id: String,
+    days: Option<i64>,
+) -> Result<Vec<crate::store::PastAlert>> {
+    let Some(store) = state.store.read().await.as_ref().cloned() else {
+        // No database configured. An empty list rather than an error: the
+        // screen asking this should say "nothing kept" and not "failed".
+        return Ok(Vec::new());
+    };
+    let since = chrono::Utc::now() - chrono::Duration::days(days.unwrap_or(30).clamp(1, 3650));
+    store.alert_history(&profile_id, since, 200).await
+}
+
+/// Conditions that keep firing, worst first.
+///
+/// One alert that fired forty times and forty that fired once look identical
+/// in a list ordered by recency, and they are completely different problems.
+pub async fn get_flapping(
+    state: &Arc<AppState>,
+    days: Option<i64>,
+) -> Result<Vec<FlappingCondition>> {
+    let Some(store) = state.store.read().await.as_ref().cloned() else {
+        return Ok(Vec::new());
+    };
+    let since = chrono::Utc::now() - chrono::Duration::days(days.unwrap_or(7).clamp(1, 365));
+    Ok(store
+        .alert_frequency(since)
+        .await?
+        .into_iter()
+        .map(|(profile_name, title, times)| FlappingCondition {
+            profile_name,
+            title,
+            times,
+        })
+        .collect())
+}
+
+/// How much the database is holding, and whether Timescale is looking after it.
+///
+/// Shown in Settings because a store nobody can see the size of is a store
+/// somebody eventually finds full.
+pub async fn get_history_stats(state: &Arc<AppState>) -> Result<HistoryStats> {
+    let Some(store) = state.store.read().await.as_ref().cloned() else {
+        return Ok(HistoryStats::default());
+    };
+    Ok(HistoryStats {
+        configured: true,
+        timescale: store.has_timescale(),
+        rows: store.counts().await.unwrap_or_default(),
+    })
+}
+
+/// Every change recorded for one connection, or for the estate, newest first.
+///
+/// Separate from [`get_change_events`] rather than spliced into it, for the
+/// same reason [`get_alert_history`] is separate from the live alert list: a
+/// stored row is a record and a live row is a working object. They carry
+/// different types because they answer different questions, and a function
+/// that returned a mix of the two would make every caller check which it got.
+pub async fn get_change_history(
+    state: &Arc<AppState>,
+    profile_id: Option<String>,
+    days: Option<i64>,
+) -> Result<Vec<crate::store::PastChange>> {
+    let Some(store) = state.store.read().await.as_ref().cloned() else {
+        return Ok(Vec::new());
+    };
+    let since = chrono::Utc::now() - chrono::Duration::days(days.unwrap_or(30).clamp(1, 3650));
+    store.changes_since(profile_id.as_deref(), since, 500).await
+}
+
+/// One condition and how often it has fired.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlappingCondition {
+    pub profile_name: String,
+    pub title: String,
+    pub times: i64,
+}
+
+/// What the history store is holding.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryStats {
+    /// False when no database is configured, which is the default.
+    pub configured: bool,
+    /// Whether the rollup, compression and expiry are the database's job.
+    pub timescale: bool,
+    pub rows: std::collections::HashMap<String, i64>,
 }
 
 /// The declared dependency graph, resolved both ways.

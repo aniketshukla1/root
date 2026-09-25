@@ -23,6 +23,7 @@ use tauri::State;
 
 use crate::agent::AgentTurn;
 use crate::commands;
+use crate::store as inframonitoring_store;
 use crate::commands::{Correlation, IngestStatus, LogPattern, McpStatus, PredictionReport, PredictionStatus, RuntimeReport, TeamState, TopologyView};
 use crate::config::{ConnectionProfile, LlmSettings};
 use crate::error::Result;
@@ -154,6 +155,37 @@ pub async fn get_change_events(state: Shared<'_>, profile_id: Option<String>, mi
 #[tauri::command]
 pub async fn get_metric_history(state: Shared<'_>, profile_id: String, minutes: Option<i64>) -> Result<Vec<MetricSeries>> {
     commands::get_metric_history(&state, profile_id, minutes).await
+}
+
+#[tauri::command]
+pub async fn get_alert_history(
+    state: Shared<'_>,
+    profile_id: String,
+    days: Option<i64>,
+) -> Result<Vec<inframonitoring_store::PastAlert>> {
+    commands::get_alert_history(&state, profile_id, days).await
+}
+
+#[tauri::command]
+pub async fn get_flapping(
+    state: Shared<'_>,
+    days: Option<i64>,
+) -> Result<Vec<commands::FlappingCondition>> {
+    commands::get_flapping(&state, days).await
+}
+
+#[tauri::command]
+pub async fn get_change_history(
+    state: Shared<'_>,
+    profile_id: Option<String>,
+    days: Option<i64>,
+) -> Result<Vec<crate::store::PastChange>> {
+    commands::get_change_history(&state, profile_id, days).await
+}
+
+#[tauri::command]
+pub async fn get_history_stats(state: Shared<'_>) -> Result<commands::HistoryStats> {
+    commands::get_history_stats(&state).await
 }
 
 #[tauri::command]

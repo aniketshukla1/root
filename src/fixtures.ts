@@ -16,6 +16,10 @@
 import type {
   Alert,
   AlertSeverity,
+  FlappingCondition,
+  HistoryStats,
+  PastAlert,
+  PastChange,
   AppConfig,
   Account,
   ChangeEvent,
@@ -1955,5 +1959,91 @@ export function runtimeReport(): RuntimeReport {
         kind: "redis",
       },
     ],
+  };
+}
+
+// ------------------------------------------------------------------ history
+//
+// What a database would have kept. The ring buffer holds hours; these answer
+// the questions that need weeks, so the timestamps deliberately run back past
+// anything `seriesFor` produces — a preview where "30 days" and "3 hours" drew
+// the same rows would hide the whole point of the history store.
+
+const DAY = 24 * 60 * 60_000;
+
+/** Past firings of the conditions this scenario is already showing. */
+export function alertHistory(profileId: string): PastAlert[] {
+  const live = ALERTS.filter((a) => a.profileId === profileId);
+  if (live.length === 0) return [];
+
+  // Each live alert, plus earlier firings of the same condition. The
+  // fingerprint is what ties them together, exactly as it does on disk.
+  return live.flatMap((alert) =>
+    [0, 3, 9, 16].map((daysAgo, i) => ({
+      fingerprint: alert.fingerprint,
+      profileId: alert.profileId,
+      profileName: alert.profileName,
+      severity: alert.severity as string,
+      title: alert.title,
+      detail: alert.detail,
+      component: alert.component,
+      predicted: false,
+      firstSeen: iso(daysAgo * DAY),
+      lastSeen: iso(daysAgo * DAY - 6 * 60_000),
+      // The newest one is still firing; the older ones ended.
+      resolvedAt: i === 0 ? undefined : iso(daysAgo * DAY - 6 * 60_000),
+    })),
+  );
+}
+
+/** Conditions that fired more than once over the window, worst first. */
+export function flapping(): FlappingCondition[] {
+  const counts = new Map<string, FlappingCondition>();
+  for (const alert of ALERTS) {
+    const key = `${alert.profileId}:${alert.fingerprint}`;
+    const seen = counts.get(key);
+    if (seen) seen.times += 1;
+    else
+      counts.set(key, {
+        profileName: alert.profileName,
+        title: alert.title,
+        times: 4,
+      });
+  }
+  return [...counts.values()].sort((a, b) => b.times - a.times);
+}
+
+/** Recorded changes, reaching back further than the live change feed. */
+export function changeHistory(profileId?: string): PastChange[] {
+  const scoped = profileId ? CHANGES.filter((c) => c.profileId === profileId) : CHANGES;
+  return scoped.flatMap((change, i) =>
+    [0, 5, 12].map((daysAgo, n) => ({
+      id: `${change.id}-h${n}`,
+      at: iso(daysAgo * DAY + i * 90_000),
+      profileId: change.profileId,
+      profileName: change.profileName,
+      kind: change.kind as string,
+      change: change.change as string,
+      source: change.source as string,
+      section: change.section,
+      component: change.component,
+      from: change.from,
+      to: change.to,
+      summary: change.summary,
+    })),
+  );
+}
+
+/** A configured store with a plausible amount in it. */
+export function historyStats(): HistoryStats {
+  return {
+    configured: true,
+    timescale: true,
+    rows: {
+      alerts: 1_284,
+      changes: 3_907,
+      metric_samples: 2_410_556,
+      log_lines: 18_332_104,
+    },
   };
 }

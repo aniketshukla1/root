@@ -305,6 +305,67 @@ export interface ChangeEvent {
   summary: string;
 }
 
+// ------------------------------------------------------------------ history
+//
+// What the database kept, as opposed to what the ring buffer is holding. These
+// are records rather than working objects: they are read to be displayed and
+// counted, never acted on, so their enums arrive as the strings they were
+// stored as and there is no acknowledging or resolving them from here.
+
+/** One past firing of a condition, including when it ended. */
+export interface PastAlert {
+  fingerprint: string;
+  profileId: string;
+  profileName: string;
+  severity: string;
+  title: string;
+  detail: string;
+  component?: string;
+  /** Always false in this list — forecasts are kept apart on disk. */
+  predicted: boolean;
+  firstSeen: string;
+  lastSeen: string;
+  /** Absent while the condition is still firing. */
+  resolvedAt?: string;
+}
+
+/** One recorded change, with every column it was written with. */
+export interface PastChange {
+  id: string;
+  at: string;
+  profileId: string;
+  profileName: string;
+  kind: string;
+  change: string;
+  source: string;
+  section?: string;
+  component?: string;
+  from?: string;
+  to?: string;
+  summary: string;
+}
+
+/**
+ * A condition and how often it fired over the window.
+ *
+ * One alert that fired forty times and forty that fired once look identical in
+ * a list ordered by recency, and they are completely different problems.
+ */
+export interface FlappingCondition {
+  profileName: string;
+  title: string;
+  times: number;
+}
+
+/** What the history store is holding, for the Settings panel. */
+export interface HistoryStats {
+  /** False when no database is configured, which is the desktop default. */
+  configured: boolean;
+  /** Whether the rollup, compression and expiry are the database's job. */
+  timescale: boolean;
+  rows: Record<string, number>;
+}
+
 export interface DashboardState {
   snapshots: HealthSnapshot[];
   /** Conditions that are true now. */

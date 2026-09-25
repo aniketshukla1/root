@@ -14,6 +14,7 @@ import { DATA_INK, healthColor, isProblem } from "../catalog";
 import { formatDateTime, formatMetricValue, formatRelative, isBreaching } from "../format";
 import type { Entity, ServiceView } from "../model";
 import type { View } from "../nav";
+import { useHistoryStats } from "../history";
 import { clampMinutes, describeSpan, rangesFor, spanOf } from "../ranges";
 import type {
   Alert,
@@ -21,6 +22,7 @@ import type {
   HistogramBucket,
   LogEvent,
   MetricSeries,
+  PastAlert,
 } from "../types";
 import { GLOBAL_STREAMS } from "../types";
 import { AlertList } from "../ui/AlertList";
@@ -49,7 +51,7 @@ import { ChevronDown, ChevronRight, RefreshIcon, TimelineIcon } from "../ui/icon
 const HISTOGRAM_BUCKETS = 72;
 const AUTO_REFRESH_MS = 15000;
 
-type SectionKey = "signals" | "series" | "logs" | "changes" | "components";
+type SectionKey = "signals" | "series" | "logs" | "changes" | "components" | "history";
 
 const DEFAULT_OPEN: Record<SectionKey, boolean> = {
   signals: true,
@@ -57,6 +59,10 @@ const DEFAULT_OPEN: Record<SectionKey, boolean> = {
   logs: true,
   changes: true,
   components: true,
+  // Closed by default, and only rendered at all when a database is
+  // configured. It answers a question you go looking for rather than one you
+  // need on every glance.
+  history: false,
 };
 
 export function ServiceDashboard({
@@ -75,7 +81,8 @@ export function ServiceDashboard({
   const profileId = service.snapshot.profileId;
   const pollSecs = service.profile?.pollIntervalSecs ?? 15;
 
-  const ranges = useMemo(() => rangesFor(pollSecs), [pollSecs]);
+  const { configured: retained } = useHistoryStats();
+  const ranges = useMemo(() => rangesFor(pollSecs, retained), [pollSecs, retained]);
   const [minutes, setMinutes] = useState(() => clampMinutes(60, pollSecs));
 
   const [history, setHistory] = useState<MetricSeries[]>([]);
@@ -168,6 +175,64 @@ export function ServiceDashboard({
       subscription.then((unlisten) => unlisten());
     };
   }, [profileId]);
+
+  // Past firings, off disk. Fetched only when there is a database to ask and
+  // only once the section is open: it reaches back thirty days, which is a
+  // real query, and most visits to this screen are about right now.
+  const [past, setPast] = useState<PastAlert[]>([]);
+  const [pastLoaded, setPastLoaded] = useState(false);
+  useEffect(() => {
+    if (!retained || !open.history) return;
+    let live = true;
+    api
+      .getAlertHistory(profileId, 30)
+      .then((rows) => live && setPast(rows))
+      .catch(() => live && setPast([]))
+      .finally(() => live && setPastLoaded(true));
+    return () => {
+      live = false;
+    };
+  }, [retained, open.history, profileId]);
+
+  /**
+   * One row per condition, not per firing.
+   *
+   * The list off disk is every occurrence, newest first, and reading it
+   * straight would answer "what happened recently" — which the alert list
+   * above already answers, better. Grouped by fingerprint it answers the
+   * question a ring buffer cannot: is this the first time, or the ninth time
+   * this month?
+   */
+  const recurring = useMemo(() => {
+    const byCondition = new Map<
+      string,
+      { title: string; component?: string; severity: string; times: number; last: string;
+        first: string; open: boolean }
+    >();
+    for (const row of past) {
+      const seen = byCondition.get(row.fingerprint);
+      if (seen) {
+        seen.times += 1;
+        // The list arrives newest first, so anything after the first row of a
+        // condition is older than what is already recorded.
+        seen.first = row.firstSeen;
+        seen.open ||= !row.resolvedAt;
+      } else {
+        byCondition.set(row.fingerprint, {
+          title: row.title,
+          component: row.component,
+          severity: row.severity,
+          times: 1,
+          last: row.firstSeen,
+          first: row.firstSeen,
+          open: !row.resolvedAt,
+        });
+      }
+    }
+    return [...byCondition.values()].sort(
+      (a, b) => b.times - a.times || b.last.localeCompare(a.last),
+    );
+  }, [past]);
 
   const view: Domain = zoom ?? domain;
   const span = useMemo(() => spanOf(history), [history]);
@@ -682,6 +747,100 @@ export function ServiceDashboard({
           </div>
         )}
       </Section>
+
+      {/* Only when a database is configured. Without one there is nothing
+          behind this but the same few hours the charts above already draw, and
+          an empty section implying otherwise would be worse than no section. */}
+      {retained && (
+        <Section
+          title="History"
+          subtitle={
+            recurring.length > 0
+              ? `${recurring.length} condition${recurring.length === 1 ? "" : "s"} in 30 days`
+              : "nothing recorded in 30 days"
+          }
+          open={open.history}
+          onToggle={() => toggleSection("history")}
+          hint="Kept on disk, so it outlives both this window and this process."
+        >
+          {!pastLoaded ? (
+            <p className="text-xs text-ink-4">Reading…</p>
+          ) : recurring.length === 0 ? (
+            <Empty
+              title="Nothing recorded yet"
+              hint="Conditions appear here once they have fired at least once, and stay for as long as the database keeps them."
+            />
+          ) : (
+            <div className="overflow-hidden rounded-md border border-line">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-line">
+                    <th className="label px-2.5 py-1.5 text-left font-semibold">Condition</th>
+                    <th className="label px-2.5 py-1.5 text-right font-semibold">Times</th>
+                    <th className="label px-2.5 py-1.5 text-left font-semibold">Last</th>
+                    <th className="label hidden px-2.5 py-1.5 text-left font-semibold lg:table-cell">
+                      Since
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recurring.map((condition) => (
+                    <tr
+                      key={`${condition.title}:${condition.first}`}
+                      className="border-b border-line/40 last:border-0 row-hover"
+                      style={{ height: "var(--row-h)" }}
+                    >
+                      <td className="max-w-80 px-2.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-xs font-medium text-ink">
+                            {condition.title}
+                          </span>
+                          {condition.open && (
+                            <Tag title="This condition is firing now">open</Tag>
+                          )}
+                        </span>
+                        {condition.component && (
+                          <span className="truncate text-2xs text-ink-4">
+                            {condition.component}
+                          </span>
+                        )}
+                      </td>
+                      {/* The number this section exists for. Anything above one
+                          means the condition came back, which is a different
+                          problem from one that fired once and was fixed. */}
+                      <td className="w-px px-2.5 text-right whitespace-nowrap">
+                        <span
+                          className={`num text-xs ${
+                            condition.times > 1 ? "font-semibold text-ink" : "text-ink-3"
+                          }`}
+                        >
+                          {condition.times}
+                        </span>
+                      </td>
+                      <td className="w-px px-2.5 whitespace-nowrap">
+                        <span
+                          className="num text-2xs text-ink-4"
+                          title={formatDateTime(condition.last)}
+                        >
+                          {formatRelative(condition.last)}
+                        </span>
+                      </td>
+                      <td className="hidden w-px px-2.5 whitespace-nowrap lg:table-cell">
+                        <span
+                          className="num text-2xs text-ink-4"
+                          title={formatDateTime(condition.first)}
+                        >
+                          {formatRelative(condition.first)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+      )}
 
       <Section
         title="Components"

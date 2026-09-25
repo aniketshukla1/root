@@ -546,6 +546,25 @@ export function levelColor(level: LogLevel): string {
   return LEVEL_COLOR[level];
 }
 
+/**
+ * The same ordering, for text rather than for a mark.
+ *
+ * `trace` and `debug` are deliberately the quietest thing on the screen, and
+ * as a swatch — a filled square beside a label — `--color-line-strong` is
+ * exactly right. As *text* it measures 1.57:1 against the panel, which is not
+ * quiet but unreadable: the level is the first thing anyone scans a log line
+ * for, and a level nobody can read is a column of blanks.
+ *
+ * The same distinction `incident.tsx` makes about the cell tokens. A colour
+ * that works as a ground does not automatically work as a mark, and the
+ * failure is silent in both directions.
+ */
+export function levelTextColor(level: LogLevel): string {
+  return level === "trace" || level === "debug"
+    ? "var(--color-ink-4)"
+    : LEVEL_COLOR[level];
+}
+
 export interface Bucket {
   t: string;
   trace: number;

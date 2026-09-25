@@ -8,7 +8,7 @@ import type { View } from "../nav";
 import type { LogEvent, LogLevel, LogStream } from "../types";
 import { LOG_LEVELS } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
-import { LogHistogram, levelColor, type Bucket } from "../ui/charts";
+import { LogHistogram, levelColor, levelTextColor, type Bucket } from "../ui/charts";
 import { Button, Chip, cx, Empty, Input, Panel, Segmented, ServiceMark, Tag } from "../ui/primitives";
 import { AssistantIcon, SearchIcon, TimelineIcon } from "../ui/icons";
 
@@ -558,7 +558,7 @@ function LineTable({
             <td className="w-px px-1 py-1">
               <span
                 className="num text-2xs"
-                style={{ color: levelColor(event.level) }}
+                style={{ color: levelTextColor(event.level) }}
                 title={`Severity: ${event.level}`}
               >
                 {event.level.toUpperCase()}

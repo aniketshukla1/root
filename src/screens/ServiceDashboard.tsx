@@ -15,7 +15,7 @@ import { formatDateTime, formatMetricValue, formatRelative, isBreaching } from "
 import type { Entity, ServiceView } from "../model";
 import type { View } from "../nav";
 import { useHistoryStats } from "../history";
-import { clampMinutes, describeSpan, rangesFor, spanOf } from "../ranges";
+import { BACKEND_MAX_MINUTES, clampMinutes, describeSpan, rangesFor, spanOf } from "../ranges";
 import type {
   Alert,
   ChangeEvent,
@@ -23,6 +23,7 @@ import type {
   LogEvent,
   MetricSeries,
   PastAlert,
+  PastChange,
 } from "../types";
 import { GLOBAL_STREAMS } from "../types";
 import { AlertList } from "../ui/AlertList";
@@ -64,6 +65,43 @@ const DEFAULT_OPEN: Record<SectionKey, boolean> = {
   // need on every glance.
   history: false,
 };
+
+/**
+ * The live feed, extended with whatever the database has that it does not.
+ *
+ * Live wins on conflict. A recorded row and a live one for the same change
+ * carry the same id, and the live one is the object the rest of the screen is
+ * already holding — the same event arriving twice under two shapes would draw
+ * two markers on the timeline for one deploy.
+ *
+ * A stored row's enums are strings, because a history row is read to be
+ * displayed rather than acted on. They are the same strings serde writes
+ * everywhere else, so the widening is a cast rather than a conversion.
+ */
+function mergeChanges(live: ChangeEvent[], stored: PastChange[]): ChangeEvent[] {
+  if (stored.length === 0) return live;
+  const seen = new Set(live.map((c) => c.id));
+  const extra = stored
+    .filter((row) => !seen.has(row.id))
+    .map<ChangeEvent>((row) => ({
+      id: row.id,
+      profileId: row.profileId,
+      profileName: row.profileName,
+      kind: row.kind,
+      change: row.change as ChangeEvent["change"],
+      source: row.source as ChangeEvent["source"],
+      // Nullable on disk, required here. A change with no section or component
+      // is one an older build wrote before those columns were filled in; an
+      // empty string renders as a blank cell rather than as "undefined".
+      section: row.section ?? "",
+      component: row.component ?? "",
+      from: row.from,
+      to: row.to ?? "",
+      at: row.at,
+      summary: row.summary,
+    }));
+  return [...live, ...extra];
+}
 
 export function ServiceDashboard({
   service,
@@ -124,7 +162,13 @@ export function ServiceDashboard({
 
   const load = useCallback(async () => {
     try {
-      const [series, histogram, changeEvents] = await Promise.all([
+      // The live change feed is held in memory and reaches back about as far
+      // as the ring buffer does. Once the window is longer than that, the
+      // deploys that fall off it are on disk, and a list that quietly stopped
+      // at the ring's edge would report "4 in this window" while the database
+      // held forty.
+      const deep = retained && minutes > BACKEND_MAX_MINUTES;
+      const [series, histogram, changeEvents, deepChanges] = await Promise.all([
         api.getMetricHistory(profileId, minutes),
         api.logHistogram(
           { profileIds: [profileId], streams: GLOBAL_STREAMS },
@@ -132,10 +176,13 @@ export function ServiceDashboard({
           HISTOGRAM_BUCKETS,
         ),
         api.getChangeEvents(profileId, minutes),
+        deep
+          ? api.getChangeHistory(profileId, Math.ceil(minutes / 1440))
+          : Promise.resolve([] as PastChange[]),
       ]);
       setHistory(series);
       setBuckets(histogram);
-      setChanges(changeEvents);
+      setChanges(mergeChanges(changeEvents, deepChanges));
       const now = Date.now();
       setDomain([now - minutes * 60000, now]);
       setError(null);
@@ -144,7 +191,7 @@ export function ServiceDashboard({
     } finally {
       setLoading(false);
     }
-  }, [profileId, minutes]);
+  }, [profileId, minutes, retained]);
 
   useEffect(() => {
     setLoading(true);

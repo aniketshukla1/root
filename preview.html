@@ -703,8 +703,12 @@
             return scoped.flatMap((change, i) =>
               [0, 5, 12].map((daysAgo, n) => ({
                 ...change,
-                id: change.id + "-h" + n,
-                at: iso(daysAgo * DAY + i * 90_000),
+                // The most recent occurrence keeps the live row's id, because
+                // on a real backend it *is* that row — the same change, read
+                // back off disk. It is what makes the merge dedupe rather than
+                // draw the same deploy twice.
+                id: n === 0 ? change.id : change.id + "-h" + n,
+                at: n === 0 ? change.at : iso(daysAgo * DAY + i * 90_000),
               })),
             );
           },

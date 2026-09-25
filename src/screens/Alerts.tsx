@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { Catalog } from "../catalog";
 import { markColor } from "../catalog";
 import { formatDateTime, formatRelative } from "../format";
+import { api } from "../api";
+import { useHistoryStats } from "../history";
 import { confidenceMeaning } from "../incident";
 import type { EstateModel } from "../model";
 import type { View } from "../nav";
-import type { Alert, AlertSeverity, Incident } from "../types";
+import type { Alert, AlertSeverity, FlappingCondition, Incident } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { compareAlerts, SEVERITY } from "../ui/AlertList";
 import { PredictionList } from "../ui/PredictionList";
@@ -74,6 +76,29 @@ export function Alerts({
   onAsk: () => void;
   onExplain: (alert: Alert) => void;
 }) {
+  /**
+   * Conditions that keep coming back, off disk.
+   *
+   * This table is about what is firing. It cannot tell you that the row you
+   * are reading has fired nine times this month, because the alert store only
+   * holds what is live — that count only exists on disk, and without it a
+   * condition somebody has silenced nine times reads exactly like one that
+   * has never happened before.
+   */
+  const { configured: retained } = useHistoryStats();
+  const [flapping, setFlapping] = useState<FlappingCondition[]>([]);
+  useEffect(() => {
+    if (!retained) return;
+    let live = true;
+    api
+      .getFlapping(30)
+      .then((rows) => live && setFlapping(rows))
+      .catch(() => live && setFlapping([]));
+    return () => {
+      live = false;
+    };
+  }, [retained]);
+
   const [state, setState] = useState<StateFilter>("open");
   const [severity, setSeverity] = useState<AlertSeverity | "any">("any");
   const [groupBy, setGroupBy] = useState<GroupBy>("incident");
@@ -280,6 +305,37 @@ export function Alerts({
               onNavigate={onNavigate}
               onExplain={onExplain}
             />
+          </Panel>
+        )}
+
+        {/* Only what actually recurred. A list that included every condition
+            that fired once would be the table below, twice. */}
+        {flapping.length > 0 && (
+          <Panel
+            title="Keeps coming back"
+            subtitle={`fired more than once in the last 30 days · ${flapping.length} condition${
+              flapping.length === 1 ? "" : "s"
+            }`}
+            flush
+            bodyClassName="overflow-y-auto max-h-[200px]"
+          >
+            <ul>
+              {flapping.map((condition, i) => (
+                <li
+                  key={`${condition.profileName}:${condition.title}:${i}`}
+                  className="flex items-center gap-2 border-b border-line/40 px-3 last:border-0 row-hover"
+                  style={{ height: "var(--row-h)" }}
+                >
+                  <span className="num w-8 shrink-0 text-right text-xs font-semibold text-ink">
+                    {condition.times}×
+                  </span>
+                  <span className="truncate text-xs text-ink-2">{condition.title}</span>
+                  <span className="ml-auto shrink-0">
+                    <Tag>{condition.profileName}</Tag>
+                  </span>
+                </li>
+              ))}
+            </ul>
           </Panel>
         )}
 

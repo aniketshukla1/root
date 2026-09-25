@@ -2018,8 +2018,10 @@ export function changeHistory(profileId?: string): PastChange[] {
   const scoped = profileId ? CHANGES.filter((c) => c.profileId === profileId) : CHANGES;
   return scoped.flatMap((change, i) =>
     [0, 5, 12].map((daysAgo, n) => ({
-      id: `${change.id}-h${n}`,
-      at: iso(daysAgo * DAY + i * 90_000),
+      // The newest occurrence keeps the live row's id: on a real backend it is
+      // that row, read back off disk, and the merge has to dedupe it.
+      id: n === 0 ? change.id : `${change.id}-h${n}`,
+      at: n === 0 ? change.at : iso(daysAgo * DAY + i * 90_000),
       profileId: change.profileId,
       profileName: change.profileName,
       kind: change.kind as string,

@@ -289,10 +289,12 @@ function RadiusCell({
             <span className="num w-[104px] shrink-0 truncate text-2xs text-ink-2">
               {row.profileName}
             </span>
-            {/* `min-w-0` is load-bearing: a flex child's default minimum is
+            {/* `min-w-0` and nothing else. A flex child's default minimum is
                 its content, so without it the strip refuses to shrink and
-                pushes itself out of the card instead. */}
-            <span className="min-w-0 flex-1">
+                pushes itself out of the card — but `flex-1` would make it
+                *grow* too, stranding the FIRST tag at the far edge behind a
+                gap. It needs permission to shrink, not to fill. */}
+            <span className="min-w-0">
               <ComponentPips affected={row.affected} total={row.total} health={row.health} />
             </span>
             {row.root && <Tag color="var(--color-accent)">FIRST</Tag>}
@@ -347,15 +349,16 @@ function ComponentPips({
   const okColor = healthColor("healthy");
 
   return (
-    <span className="flex w-full items-center gap-[3px]" aria-hidden>
+    <span className="flex min-w-0 items-center gap-[3px]" aria-hidden>
       {Array.from({ length: shown }, (_, i) => (
         <span
           key={i}
-          // Square at full width and narrower when there is less room, rather
-          // than a fixed 9px that overflows the card the moment this sits in
-          // a third of a panel. Every cell is kept, because the ratio is the
-          // message and a clipped tail would quietly redraw it.
-          className="h-[9px] min-w-[2px] max-w-[9px] flex-1 rounded-xs"
+          // 9px when there is room and narrower when there is not — a basis
+          // that shrinks rather than a fixed width that overflows the card
+          // the moment this sits in a third of a panel. Every cell is kept,
+          // because the ratio is the message and a clipped tail would quietly
+          // redraw it.
+          className="h-[9px] w-[9px] min-w-[2px] shrink rounded-xs"
           style={
             i < bad
               ? { background: badColor, boxShadow: `inset 0 0 0 1px ${badColor}` }

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { formatRelative } from "../format";
@@ -29,6 +30,28 @@ export function ScreenHeader({
   live?: boolean;
 }) {
   useTick(15000);
+  const metaRef = useRef<HTMLDivElement>(null);
+  const [metaTitle, setMetaTitle] = useState<string>();
+
+  // The meta line truncates, and until now it truncated into nothing: no
+  // caller could pass a title because `meta` is arbitrary JSX, so the text
+  // simply ended. The element reads its own content instead, and only when it
+  // is genuinely clipped — a tooltip on text that already fits is noise that
+  // follows the pointer around.
+  useEffect(() => {
+    const measure = () => {
+      const el = metaRef.current;
+      if (!el) return;
+      const clipped = el.scrollWidth > el.clientWidth + 1;
+      setMetaTitle(clipped ? (el.textContent ?? "").trim() || undefined : undefined);
+    };
+    measure();
+
+    // Width is the whole question here, so a resize has to re-ask it.
+    const observer = new ResizeObserver(measure);
+    if (metaRef.current) observer.observe(metaRef.current);
+    return () => observer.disconnect();
+  }, [meta]);
 
   return (
     <header className="sticky top-0 z-10 flex min-h-[52px] shrink-0 items-start gap-3 border-b border-line bg-page/95 px-4 py-[11px] backdrop-blur">
@@ -36,7 +59,11 @@ export function ScreenHeader({
         {title}
       </h1>
       {meta && (
-        <div className="flex min-h-[30px] min-w-0 items-center gap-1.5 truncate text-xs text-ink-4">
+        <div
+          ref={metaRef}
+          title={metaTitle}
+          className="flex min-h-[30px] min-w-0 items-center gap-1.5 truncate text-xs text-ink-4"
+        >
           {meta}
         </div>
       )}

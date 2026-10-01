@@ -374,6 +374,14 @@ pub async fn explain_window(
 }
 
 #[tauri::command]
+pub async fn explain_lines(
+    state: Shared<'_>,
+    lines: Vec<crate::model::LogEvent>,
+) -> Result<crate::state::ComponentReading> {
+    commands::explain_lines(&state, lines).await
+}
+
+#[tauri::command]
 pub async fn explain_incident(state: Shared<'_>, incident_id: String, refresh: Option<bool>) -> Result<crate::rca::RootCause> {
     commands::explain_incident(&state, incident_id, refresh).await
 }

@@ -50,6 +50,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_judged_incidents: () => fixtures.judgedIncidents(),
   get_scorecard: () => fixtures.scorecard(),
   get_long_history: () => [],
+  explain_lines: ({ lines }) => fixtures.explainLines(lines as LogEvent[]),
   explain_window: ({ profileId, from, to }) =>
     fixtures.explainWindow(profileId as string, from as string, to as string),
   get_alert_history: ({ profileId }) => fixtures.alertHistory(profileId as string),
@@ -473,6 +474,9 @@ export const api = {
    */
   explainWindow: (profileId: string, from: string, to: string) =>
     invoke<ComponentReading>("explain_window", { profileId, from, to }),
+
+  /** What a handful of selected log lines mean — "✦ Explain these lines". */
+  explainLines: (lines: LogEvent[]) => invoke<ComponentReading>("explain_lines", { lines }),
 
   explainComponent: (profileId: string, sectionId: string, rowId: string) =>
     invoke<ComponentReading>("explain_component", { profileId, sectionId, rowId }),

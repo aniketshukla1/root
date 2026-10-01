@@ -2547,18 +2547,39 @@ async fn window_grounds(
 fn repeated(lines: &[crate::model::LogEvent], take: usize) -> Vec<(String, usize)> {
     let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for line in lines {
-        let folded: String = line
-            .message
-            .chars()
-            .map(|c| if c.is_ascii_digit() { '#' } else { c })
-            .take(110)
-            .collect();
-        *counts.entry(folded).or_default() += 1;
+        *counts.entry(fold_message(&line.message)).or_default() += 1;
     }
     let mut ranked: Vec<(String, usize)> = counts.into_iter().collect();
     ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     ranked.truncate(take);
     ranked
+}
+
+/// A message with its numbers folded, so a line that differs only by a
+/// latency, a port or an address is recognised as the same line.
+///
+/// Each whole number becomes one `#`, not each digit: folding digit by digit
+/// made `10.0.3.9` and `10.0.3.29` two different messages, so one recurring
+/// failure was counted as several smaller ones depending on how many digits
+/// its address happened to have.
+fn fold_message(message: &str) -> String {
+    let mut out = String::with_capacity(message.len().min(110));
+    let mut in_number = false;
+    for c in message.chars() {
+        if c.is_ascii_digit() {
+            if !in_number {
+                out.push('#');
+            }
+            in_number = true;
+        } else {
+            out.push(c);
+            in_number = false;
+        }
+        if out.len() >= 110 {
+            break;
+        }
+    }
+    out
 }
 
 /// A value the way the chart labels it, so the model quotes what the operator sees.
@@ -2579,6 +2600,195 @@ fn unit_value(v: f64, unit: crate::model::MetricUnit) -> String {
             }
         }
     }
+}
+
+/// What a handful of selected log lines mean: the log view's
+/// "✦ Explain these lines".
+///
+/// The lines come from the client because it is holding exactly what was
+/// selected; the buffer may already have rotated some of them out. The rest
+/// of the facts are read here: the state of each connection the lines came
+/// from, its alerts and recent changes, how often each message has repeated
+/// in the last hour — which is what separates a new failure from a chronic
+/// one — and errors elsewhere in the same couple of minutes.
+pub async fn explain_lines(
+    state: &Arc<AppState>,
+    lines: Vec<crate::model::LogEvent>,
+) -> Result<crate::state::ComponentReading> {
+    if lines.is_empty() {
+        return Err(AppError::Llm("select at least one line first".to_string()));
+    }
+    let lines: Vec<_> = lines.into_iter().take(LINES_CAP).collect();
+    let grounds = lines_grounds(state, &lines).await;
+    let fingerprint = grounds.join("\n");
+    let mut ids: Vec<&str> = lines.iter().map(|l| l.id.as_str()).collect();
+    ids.sort_unstable();
+    let key = format!("lines:{}", ids.join(","));
+    if let Some(cached) = state.readings.read().await.get(&key) {
+        if cached.fingerprint == fingerprint {
+            return Ok(cached.reading.clone());
+        }
+    }
+
+    let settings = state.config.read().await.llm.clone();
+    let api_key = secrets::get_secret(settings.provider.secret_key()).await?;
+    let provider = build_provider(&settings, api_key)?;
+    let response = provider
+        .complete(crate::llm::CompletionRequest {
+            model: settings.model.clone(),
+            system: LINES_READING_SYSTEM.to_string(),
+            messages: vec![ChatMessage::user(grounds.join("\n"))],
+            tools: Vec::new(),
+            max_tokens: 240,
+            temperature: 0.1,
+        })
+        .await?;
+
+    let text = response.text.trim().to_string();
+    if text.is_empty() {
+        return Err(AppError::Llm("the model returned nothing".to_string()));
+    }
+    let reading = crate::state::ComponentReading {
+        text,
+        model: settings.model.clone(),
+        grounds,
+        read_at: chrono::Utc::now(),
+    };
+    state.readings.write().await.insert(
+        key,
+        crate::state::CachedReading { fingerprint, reading: reading.clone() },
+    );
+    Ok(reading)
+}
+
+/// More than this is a search, not a selection.
+const LINES_CAP: usize = 40;
+
+const LINES_READING_SYSTEM: &str = "\
+You are reading log lines an operator has just selected in an infrastructure \
+monitoring tool.
+
+Answer in two or three short sentences, under 80 words, no preamble, no lists. \
+Say what the lines mean in plain words, the most likely cause with the facts \
+that support it, and whether this is new or recurring — use the recurrence \
+counts. If errors elsewhere moved at the same moment, say whether they look \
+like cause or consequence.
+
+Use only the facts given. If they do not explain the lines, say so plainly \
+and name the one thing worth checking next.";
+
+async fn lines_grounds(state: &Arc<AppState>, lines: &[crate::model::LogEvent]) -> Vec<String> {
+    use chrono::Duration;
+    let hm = |t: chrono::DateTime<chrono::Utc>| t.format("%H:%M:%S").to_string();
+    let earliest = lines.iter().map(|l| l.timestamp).min().unwrap_or_else(chrono::Utc::now);
+    let latest = lines.iter().map(|l| l.timestamp).max().unwrap_or_else(chrono::Utc::now);
+    let mut out = vec![format!(
+        "selected: {} line{} from {} to {} UTC",
+        lines.len(),
+        if lines.len() == 1 { "" } else { "s" },
+        hm(earliest),
+        hm(latest)
+    )];
+    for l in lines {
+        let message: String = l.message.chars().take(300).collect();
+        out.push(format!(
+            "line {} {} [{} / {}] {}",
+            hm(l.timestamp),
+            format!("{:?}", l.level).to_uppercase(),
+            l.profile_name,
+            l.source,
+            message
+        ));
+    }
+
+    // The connections the lines came from: their state, alerts and changes.
+    let mut connections: Vec<&str> = lines.iter().map(|l| l.profile_id.as_str()).collect();
+    connections.sort_unstable();
+    connections.dedup();
+    // Read what is needed and let go, rather than hold the snapshot lock
+    // while waiting on the change store's.
+    let states: Vec<Option<String>> = {
+        let snapshots = state.snapshots.read().await;
+        connections
+            .iter()
+            .map(|id| {
+                snapshots.get(*id).map(|s| {
+                    format!("connection {}: now {}: {}", s.profile_name, s.health.label(), s.summary)
+                })
+            })
+            .collect()
+    };
+    let alerts = state.alerts.read().await.all();
+    for (id, line) in connections.iter().zip(states) {
+        if let Some(line) = line {
+            out.push(line);
+        }
+        for a in alerts.iter().filter(|a| a.profile_id == *id && a.active).take(4) {
+            out.push(format!(
+                "alert {} {}: \"{}\"",
+                hm(a.first_seen),
+                format!("{:?}", a.severity).to_lowercase(),
+                a.title
+            ));
+        }
+        let changes = state
+            .changes
+            .read()
+            .await
+            .query(Some(id), Some(earliest - Duration::minutes(30)), 10);
+        for c in changes.iter().filter(|c| c.at <= latest).take(4) {
+            out.push(format!("change {} {}", hm(c.at), c.summary));
+        }
+    }
+
+    // Recurrence: how often each selected message has come up in the last
+    // hour on the same connections, and since when.
+    let hour = crate::state::LogFilter {
+        profile_ids: Some(connections.iter().map(|c| c.to_string()).collect()),
+        since: Some(latest - Duration::hours(1)),
+        limit: Some(20_000),
+        ..Default::default()
+    };
+    let pool = state.logs.read().await.query(&hour);
+    let mut seen = std::collections::HashSet::new();
+    for l in lines {
+        let folded = fold_message(&l.message);
+        if !seen.insert(folded.clone()) || seen.len() > 3 {
+            continue;
+        }
+        let matching: Vec<&crate::model::LogEvent> =
+            pool.iter().filter(|e| fold_message(&e.message) == folded).collect();
+        if let Some(first) = matching.iter().map(|e| e.timestamp).min() {
+            out.push(format!(
+                "recurrence: \"{folded}\" ×{} in the last hour, first at {}",
+                matching.len(),
+                hm(first)
+            ));
+        }
+    }
+
+    // Errors elsewhere around the same moment.
+    let near = crate::state::LogFilter {
+        min_level: Some(crate::model::LogLevel::Error),
+        since: Some(earliest - Duration::minutes(2)),
+        limit: Some(2_000),
+        ..Default::default()
+    };
+    let elsewhere: Vec<crate::model::LogEvent> = state
+        .logs
+        .read()
+        .await
+        .query(&near)
+        .into_iter()
+        .filter(|e| e.timestamp <= latest + Duration::minutes(2) && !connections.contains(&e.profile_id.as_str()))
+        .take(5)
+        .collect();
+    for e in &elsewhere {
+        let message: String = e.message.chars().take(160).collect();
+        out.push(format!("elsewhere {} [{}] {}", hm(e.timestamp), e.profile_name, message));
+    }
+
+    out
 }
 
 /// Why one incident happened, by the model, on evidence root already has.
@@ -2886,7 +3096,7 @@ mod window_tests {
         assert!(facts.contains("alert") && facts.contains("code 137") && facts.contains("still firing"), "{facts}");
         assert!(facts.contains("change") && facts.contains("2.14.3"), "a deploy in the lead-in is evidence: {facts}");
         assert!(facts.contains("logs: 5 lines at warn or above in the window, 5 of them errors"), "{facts}");
-        assert!(facts.contains("log ×5: OOMKilled after ####ms"), "numbers fold, so five timeouts are one message: {facts}");
+        assert!(facts.contains("log ×5: OOMKilled after #ms"), "numbers fold, so five timeouts are one message: {facts}");
     }
 
     #[tokio::test]
@@ -2900,5 +3110,49 @@ mod window_tests {
             .await
             .expect_err("a backwards window has nothing in it");
         assert!(err.to_string().contains("drag across a chart"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn selected_lines_carry_their_recurrence_and_what_failed_elsewhere() {
+        let state = Arc::new(AppState::new(
+            crate::config::AppConfig::default(),
+            std::path::PathBuf::from("/tmp/root-lines-test.json"),
+        ));
+        let now = Utc::now();
+        let line = |id: &str, profile: &str, name: &str, level: LogLevel, message: String, at| LogEvent {
+            id: id.into(),
+            profile_id: profile.into(),
+            profile_name: name.into(),
+            kind: ServiceKind::Docker,
+            source: "worker".into(),
+            level,
+            message,
+            timestamp: at,
+            stream: LogStream::Runtime,
+        };
+        state.snapshots.write().await.insert("p1".into(), snapshot(90.0, now));
+        // Thirty of the same failure over the last half hour, then the two selected.
+        state.logs.write().await.push_many((0..30).map(|i| {
+            line(&format!("old{i}"), "p1", "orders-api", LogLevel::Error,
+                 format!("connection reset by 10.0.3.{i}"), now - Duration::minutes(30) + Duration::minutes(i))
+        }));
+        state.logs.write().await.push_many([line(
+            "other", "p2", "payments-db", LogLevel::Error, "replication lag 42s".into(), now - Duration::seconds(40),
+        )]);
+        let selected = vec![
+            line("s1", "p1", "orders-api", LogLevel::Error, "connection reset by 10.0.3.9".into(), now - Duration::seconds(30)),
+            line("s2", "p1", "orders-api", LogLevel::Warn, "retrying in 500ms".into(), now - Duration::seconds(29)),
+        ];
+
+        let facts = lines_grounds(&state, &selected).await.join("\n");
+
+        assert!(facts.contains("selected: 2 lines"), "{facts}");
+        assert!(facts.contains("line ") && facts.contains("ERROR [orders-api / worker] connection reset by 10.0.3.9"), "{facts}");
+        assert!(facts.contains("connection orders-api: now down"), "{facts}");
+        assert!(
+            facts.contains("recurrence: \"connection reset by #.#.#.#\" ×30 in the last hour"),
+            "a selected line is counted against the hour before it, numbers folded: {facts}"
+        );
+        assert!(facts.contains("elsewhere") && facts.contains("payments-db") && facts.contains("replication lag"), "{facts}");
     }
 }

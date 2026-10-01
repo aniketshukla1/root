@@ -210,6 +210,7 @@ pub fn run() {
             tauri_cmds::get_flapping,
             tauri_cmds::get_change_history,
             tauri_cmds::explain_window,
+            tauri_cmds::explain_lines,
             tauri_cmds::get_history_stats,
             tauri_cmds::get_incidents,
             tauri_cmds::get_team,

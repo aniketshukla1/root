@@ -2074,12 +2074,37 @@ export function explainWindow(profileId: string, from: string, to: string): Prom
     ...(change ? [`change ${hm(change.at)} ${change.summary}`] : []),
     ...(alert ? [`alert ${hm(alert.firstSeen)} critical: "${alert.title}" — still firing`] : []),
     "logs: 41 lines at warn or above in the window, 37 of them errors",
-    "log ×33: OOMKilled: container worker exceeded memory limit ####Mi",
+    "log ×33: OOMKilled: container worker exceeded memory limit #Mi",
   ];
   return new Promise((resolve) =>
     setTimeout(
       () => resolve({ text, model: "preview — no model called", grounds, readAt: new Date().toISOString() }),
       1100,
+    ),
+  );
+}
+
+/** The log view's "✦ Explain these lines", answered from the selection. */
+export function explainLines(lines: LogEvent[]): Promise<ComponentReading> {
+  const name = lines[0]?.profileName ?? "this connection";
+  const bad = lines.filter((l) => l.level === "error" || l.level === "fatal").length;
+  const hm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour12: false });
+  const text =
+    bad > 0
+      ? `${lines.length === 1 ? "This line is" : "These lines are"} ${name} losing its connection mid-request and retrying. The same message has repeated through the last hour, starting just after the 2.14.3 deploy, so this is a recurring fault rather than a blip; payments-db's replication lag at the same moment looks like consequence, not cause.`
+      : `Routine activity on ${name}: nothing in these lines indicates a fault, and nothing failed elsewhere at the same moment.`;
+  const grounds = [
+    `selected: ${lines.length} line${lines.length === 1 ? "" : "s"}`,
+    ...lines.slice(0, 6).map((l) => `line ${hm(l.timestamp)} ${l.level.toUpperCase()} [${l.profileName} / ${l.source}] ${l.message}`),
+    `connection ${name}: now down`,
+    "change 15:19 worker 2.14.2 → 2.14.3",
+    'recurrence: "connection reset by #.#.#.#" ×30 in the last hour, first at 15:20',
+    "elsewhere [payments-db] replication lag #s",
+  ];
+  return new Promise((resolve) =>
+    setTimeout(
+      () => resolve({ text, model: "preview — no model called", grounds, readAt: new Date().toISOString() }),
+      1000,
     ),
   );
 }

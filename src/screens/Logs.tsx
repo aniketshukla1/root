@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Catalog } from "../catalog";
 import { markColor } from "../catalog";
@@ -9,8 +9,10 @@ import type { LogEvent, LogLevel, LogStream } from "../types";
 import { LOG_LEVELS } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { LogHistogram, levelColor, levelTextColor, type Bucket } from "../ui/charts";
-import { Button, Chip, cx, Empty, Input, Panel, Segmented, ServiceMark, Tag } from "../ui/primitives";
-import { AssistantIcon, SearchIcon, TimelineIcon } from "../ui/icons";
+import { Button, Chip, cx, Empty, Input, Kbd, Panel, Segmented, ServiceMark, Tag } from "../ui/primitives";
+import { AssistantIcon, SearchIcon, SparkleIcon, TimelineIcon } from "../ui/icons";
+import { AiNote, type AiState } from "../ui/AiNote";
+import { api, errorMessage } from "../api";
 
 /** Rendering the whole buffer would jank the scroll; this is well past a screen. */
 const MERGED_CAP = 600;
@@ -524,92 +526,224 @@ function LineTable({
   onExplain?: (event: LogEvent) => void;
   onNavigate: (view: View) => void;
 }) {
+  // ✦ Explain these lines, as ferro does it: select lines where they are,
+  // and the bar — then the answer — appears right under the selection.
+  const [picked, setPicked] = useState<string[]>([]);
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const [note, setNote] = useState<AiState>({ status: "idle" });
+
+  // A line that scrolled out of the buffer is no longer selected.
+  const present = useMemo(() => new Set(events.map((e) => e.id)), [events]);
+  const selection = useMemo(() => picked.filter((id) => present.has(id)), [picked, present]);
+  const selected = useMemo(() => new Set(selection), [selection]);
+  const lastSelected = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) if (selected.has(events[i].id)) return events[i].id;
+    return null;
+  }, [events, selected]);
+
+  const choose = (event: LogEvent, e: React.MouseEvent) => {
+    // The timestamp, the explain button and the like keep their own clicks.
+    if ((e.target as HTMLElement).closest("button, a, input, select")) return;
+    // A plain click that ends a drag across text is someone copying, not
+    // selecting lines. Shift and ⌘ always mean lines: the browser would
+    // otherwise read a shift-click as "extend the text selection".
+    const modified = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (!modified && window.getSelection()?.toString()) return;
+    if (modified) window.getSelection()?.removeAllRanges();
+    setNote({ status: "idle" });
+    if (e.shiftKey && anchor) {
+      const a = events.findIndex((x) => x.id === anchor);
+      const b = events.findIndex((x) => x.id === event.id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setPicked(events.slice(lo, hi + 1).map((x) => x.id));
+        return;
+      }
+    }
+    if (e.metaKey || e.ctrlKey) {
+      setPicked((current) =>
+        current.includes(event.id) ? current.filter((id) => id !== event.id) : [...current, event.id],
+      );
+      setAnchor(event.id);
+      return;
+    }
+    setPicked((current) => (current.length === 1 && current[0] === event.id ? [] : [event.id]));
+    setAnchor(event.id);
+  };
+
+  const explain = useCallback(async () => {
+    const lines = events.filter((e) => selected.has(e.id));
+    if (lines.length === 0) return;
+    setNote({ status: "loading" });
+    try {
+      setNote({ status: "done", reading: await api.explainLines(lines) });
+    } catch (e) {
+      setNote({ status: "error", message: errorMessage(e) });
+    }
+  }, [events, selected]);
+
+  const clear = useCallback(() => {
+    setPicked([]);
+    setAnchor(null);
+    setNote({ status: "idle" });
+  }, []);
+
+  // ⌥K explains the selection; Esc lets go of it — once the answer, if open,
+  // has been closed by its own Esc.
+  useEffect(() => {
+    if (selection.length === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && e.code === "KeyK") {
+        e.preventDefault();
+        void explain();
+      } else if (e.key === "Escape" && note.status === "idle") {
+        clear();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection.length, explain, clear, note.status]);
+
+  const count = selection.length;
+
   return (
     // `min-w` is what stops the message column collapsing to a ribbon when the
     // assistant dock takes its width; the pane scrolls instead.
     <table className="w-full min-w-[640px] border-collapse">
       <tbody>
-        {events.map((event) => (
-          <tr
-            key={event.id}
-            className="group border-b border-line/40 align-baseline row-hover"
-          >
-            {/* A 2px stripe in the connection's identity colour. Colour is on
-                the rule, never on the text — which stays neutral ink. */}
-            {showConnection && (
-              <td
-                className="w-0.5 p-0"
-                style={{ background: markColor(catalog.get(event.kind).accent) }}
-              />
-            )}
-            <td className="w-px px-3 py-1 whitespace-nowrap">
-              <button
-                onClick={() => onNavigate({ name: "correlate", at: event.timestamp })}
-                title={`${formatDateTime(event.timestamp)} — correlate across every connection`}
-                className="num flex items-center gap-1 text-2xs text-ink-4 transition-colors hover:text-accent"
-              >
-                {new Date(event.timestamp).toLocaleTimeString([], { hour12: false })}
-                <TimelineIcon
-                  size={11}
-                  className="opacity-0 transition-opacity group-hover:opacity-100"
-                />
-              </button>
-            </td>
-            <td className="w-px px-1 py-1">
-              <span
-                className="num text-2xs"
-                style={{ color: levelTextColor(event.level) }}
-                title={`Severity: ${event.level}`}
-              >
-                {event.level.toUpperCase()}
-              </span>
-            </td>
-            {showConnection && (
-              <td className="w-px max-w-32 px-2 py-1">
-                <span
-                  className="num block truncate text-2xs text-ink-3"
-                  title={`${event.profileName} · ${catalog.label(event.kind)}`}
-                >
-                  {event.profileName}
-                </span>
-              </td>
-            )}
-            <td className="w-px max-w-32 px-2 py-1">
-              <span className="num block truncate text-2xs text-ink-4" title={event.source}>
-                {event.source}
-              </span>
-            </td>
-            <td className="px-2 py-1">
-              <span
+        {events.map((event) => {
+          const on = selected.has(event.id);
+          return (
+            <Fragment key={event.id}>
+              <tr
+                onClick={(e) => choose(event, e)}
+                // Stop shift-click from starting a text selection at all.
+                onMouseDown={(e) => {
+                  if (e.shiftKey) e.preventDefault();
+                }}
+                aria-selected={on || undefined}
                 className={cx(
-                  "num block break-all",
-                  LEVEL_RANK[event.level] >= 4 ? "text-ink" : "text-ink-2",
+                  "group cursor-default border-b border-line/40 align-baseline",
+                  on ? "bg-wash-strong" : "row-hover",
                 )}
+                style={on ? { boxShadow: "inset 2px 0 0 var(--color-accent)" } : undefined}
               >
-                {event.message}
-              </span>
-            </td>
-            {event.stream !== "runtime" && (
-              <td className="w-px px-2 py-1">
-                <Tag>{event.stream}</Tag>
-              </td>
-            )}
-            {/* Its own column: an action inlined next to the message competes
-                with the thing you are trying to read. */}
-            <td className="w-px px-2 py-1">
-              {onExplain && (
-                <Button
-                  variant="ghost"
-                  onClick={() => onExplain(event)}
-                  title="Explain this line"
-                  className="gap-1.5 px-1.5 text-accent opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                >
-                  <AssistantIcon size={11} />
-                </Button>
+                {/* A 2px stripe in the connection's identity colour. Colour is on
+                    the rule, never on the text — which stays neutral ink. */}
+                {showConnection && (
+                  <td
+                    className="w-0.5 p-0"
+                    style={{ background: markColor(catalog.get(event.kind).accent) }}
+                  />
+                )}
+                <td className="w-px px-3 py-1 whitespace-nowrap">
+                  <button
+                    onClick={() => onNavigate({ name: "correlate", at: event.timestamp })}
+                    title={`${formatDateTime(event.timestamp)} — correlate across every connection`}
+                    className="num flex items-center gap-1 text-2xs text-ink-4 transition-colors hover:text-accent"
+                  >
+                    {new Date(event.timestamp).toLocaleTimeString([], { hour12: false })}
+                    <TimelineIcon
+                      size={11}
+                      className="opacity-0 transition-opacity group-hover:opacity-100"
+                    />
+                  </button>
+                </td>
+                <td className="w-px px-1 py-1">
+                  <span
+                    className="num text-2xs"
+                    style={{ color: levelTextColor(event.level) }}
+                    title={`Severity: ${event.level}`}
+                  >
+                    {event.level.toUpperCase()}
+                  </span>
+                </td>
+                {showConnection && (
+                  <td className="w-px max-w-32 px-2 py-1">
+                    <span
+                      className="num block truncate text-2xs text-ink-3"
+                      title={`${event.profileName} · ${catalog.label(event.kind)}`}
+                    >
+                      {event.profileName}
+                    </span>
+                  </td>
+                )}
+                <td className="w-px max-w-32 px-2 py-1">
+                  <span className="num block truncate text-2xs text-ink-4" title={event.source}>
+                    {event.source}
+                  </span>
+                </td>
+                <td className="px-2 py-1">
+                  <span
+                    className={cx(
+                      "num block break-all",
+                      LEVEL_RANK[event.level] >= 4 ? "text-ink" : "text-ink-2",
+                    )}
+                  >
+                    {event.message}
+                  </span>
+                </td>
+                {event.stream !== "runtime" && (
+                  <td className="w-px px-2 py-1">
+                    <Tag>{event.stream}</Tag>
+                  </td>
+                )}
+                {/* Its own column: an action inlined next to the message competes
+                    with the thing you are trying to read. */}
+                <td className="w-px px-2 py-1">
+                  {onExplain && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => onExplain(event)}
+                      title="Ask the assistant about this line"
+                      className="gap-1.5 px-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <AssistantIcon size={11} />
+                    </Button>
+                  )}
+                </td>
+              </tr>
+
+              {/* Under the last selected line: the bar, then the answer. */}
+              {event.id === lastSelected && (
+                <tr className="border-b border-line/40">
+                  <td colSpan={99} className="px-3 py-2">
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="num text-2xs text-ink-3">
+                          {count} line{count === 1 ? "" : "s"}
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={() => void explain()}
+                          disabled={note.status === "loading"}
+                          title="Ask the model what these lines mean (⌥K)"
+                        >
+                          <SparkleIcon size={12} />
+                          Explain {count === 1 ? "this line" : "these lines"}
+                          <Kbd>⌥K</Kbd>
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={clear} title="Clear the selection (Esc)">
+                          Clear
+                        </Button>
+                        <span className="ml-auto text-2xs text-ink-4">
+                          Shift-click to extend · ⌘-click to add
+                        </span>
+                      </div>
+                      <AiNote
+                        title={`What ${count === 1 ? "this line means" : `these ${count} lines mean`}`}
+                        state={note}
+                        onClose={() => setNote({ status: "idle" })}
+                        onRetry={() => void explain()}
+                        onSetup={() => onNavigate({ name: "settings" })}
+                      />
+                    </div>
+                  </td>
+                </tr>
               )}
-            </td>
-          </tr>
-        ))}
+            </Fragment>
+          );
+        })}
       </tbody>
     </table>
   );

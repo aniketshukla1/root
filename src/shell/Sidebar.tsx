@@ -34,6 +34,7 @@ export function Sidebar({
   model,
   team,
   collapsed,
+  markHidden = false,
   onNavigate,
   onToggleCollapsed,
   onOpenPalette,
@@ -44,6 +45,8 @@ export function Sidebar({
   /** Null until the first read; local mode is `{ hasSession: false }`. */
   team: TeamState | null;
   collapsed: boolean;
+  /** While the splash's mark is flying to this one's place. */
+  markHidden?: boolean;
   onNavigate: (view: View) => void;
   onToggleCollapsed: () => void;
   onOpenPalette: () => void;
@@ -143,7 +146,13 @@ export function Sidebar({
       >
         {!collapsed && (
           <>
-            <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-sm bg-accent text-on-accent">
+            {/* Where the splash's mark lands when it leaves. Hidden until it
+                has, then shown in its place — one mark, not two. */}
+            <span
+              data-splash-target
+              className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-sm bg-accent text-on-accent transition-opacity duration-150"
+              style={{ opacity: markHidden ? 0 : 1 }}
+            >
               <RootMark size={16} />
             </span>
             <span className="font-mono text-xs tracking-[.18em] text-ink uppercase">root</span>

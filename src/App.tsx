@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MotionConfig } from "motion/react";
+import { AnimatePresence, MotionConfig } from "motion/react";
 
 import { listen } from "./events";
 
@@ -40,6 +40,7 @@ import { AssistantDock } from "./shell/AssistantDock";
 import { ComponentDialog } from "./shell/ComponentDialog";
 import { Sidebar } from "./shell/Sidebar";
 import { Splash } from "./shell/Splash";
+import { SEQUENCE_MS } from "./shell/splash/script";
 import { Toasts, toastFromAlert, type Toast } from "./shell/Toasts";
 
 import { Alerts } from "./screens/Alerts";
@@ -75,14 +76,21 @@ const CONVERSATION_ID = "main";
 /**
  * How long the boot screen is guaranteed, and how long it is allowed.
  *
- * The floor exists so the mark can finish its own gesture — a splash that
- * flashes for 200ms is worse than none at all. The ceiling exists because a
+ * The floor is the title sequence's own length, so the name always lands — a
+ * splash that is cut off before its last beat is worse than none at all. A key
+ * or a click ends it sooner once the app is ready. The ceiling exists because a
  * collector that never answers must not hold the whole app hostage: the estate
  * has its own vocabulary for a connection that has not reported, and it is
  * better at saying so than a boot screen is.
  */
-const SPLASH_MIN_MS = 1200;
-const SPLASH_MAX_MS = 5000;
+const SPLASH_MIN_MS = SEQUENCE_MS;
+const SPLASH_MAX_MS = 6000;
+/**
+ * When the last answer lands after the floor, the splash stays this much
+ * longer — long enough to see that square take its colour, which is the fact
+ * the whole screen was waiting to show.
+ */
+const SPLASH_BEAT_MS = 350;
 
 /** Until the first fetch lands, an estate with no declared edges — not a lie. */
 const EMPTY_TOPOLOGY: TopologyView = { dependsOn: {}, dependents: {}, roots: [] };
@@ -587,28 +595,82 @@ export default function App() {
     team !== null &&
     (configured === 0 || reached >= configured);
 
+  // Measured from mount rather than from the last change. Re-arming both
+  // timers each time readiness changed meant a slow collector restarted the
+  // five-second ceiling, and a late answer added a whole floor after itself.
+  const bootStarted = useRef(performance.now());
   useEffect(() => {
     if (!booting) return;
-    const floor = window.setTimeout(() => {
-      if (bootReady) setBooting(false);
-    }, SPLASH_MIN_MS);
-    const ceiling = window.setTimeout(() => setBooting(false), SPLASH_MAX_MS);
+    const elapsed = performance.now() - bootStarted.current;
+    const ceiling = window.setTimeout(
+      () => setBooting(false),
+      Math.max(0, SPLASH_MAX_MS - elapsed),
+    );
+    const floor = bootReady
+      ? window.setTimeout(
+          () => setBooting(false),
+          Math.max(SPLASH_MIN_MS - elapsed, SPLASH_BEAT_MS),
+        )
+      : undefined;
     return () => {
-      window.clearTimeout(floor);
       window.clearTimeout(ceiling);
+      if (floor !== undefined) window.clearTimeout(floor);
     };
   }, [booting, bootReady]);
 
-  if (booting) {
-    return (
-      <Splash
-        workspaceLoaded={config !== null}
-        catalogLoaded={!catalog.isEmpty}
-        reached={reached}
-        total={configured}
-      />
-    );
-  }
+  /** The splash may be ended early by a key or a click, but only once the app can stand. */
+  const skipSplash = useCallback(() => {
+    if (bootReady) setBooting(false);
+  }, [bootReady]);
+
+  /**
+   * True from the first frame until the splash has finished leaving. The
+   * sidebar hides its own mark meanwhile, because the splash's mark is flying
+   * to that exact spot and two of them would land on top of each other.
+   */
+  const [handingOff, setHandingOff] = useState(true);
+
+  // The handoff ends when the splash has finished leaving or, at the latest,
+  // shortly after it began to. A window hidden while the splash leaves gets no
+  // animation frames, so its exit cannot finish until someone looks — and the
+  // sidebar must not keep its mark hidden for an exit nobody can see.
+  useEffect(() => {
+    if (booting || !handingOff) return;
+    const late = window.setTimeout(() => setHandingOff(false), 1200);
+    return () => window.clearTimeout(late);
+  }, [booting, handingOff]);
+
+  const splash = (
+    <MotionConfig reducedMotion="user">
+      <AnimatePresence onExitComplete={() => setHandingOff(false)}>
+        {booting && (
+          <Splash
+            key="splash"
+            workspaceLoaded={config !== null}
+            catalogLoaded={!catalog.isEmpty}
+            connections={config?.profiles ?? []}
+            snapshots={dashboard?.snapshots ?? []}
+            ready={bootReady}
+            onSkip={skipSplash}
+          />
+        )}
+      </AnimatePresence>
+    </MotionConfig>
+  );
+
+  /**
+   * Every screen below is drawn under the same splash, at the same place in
+   * the tree, so the splash can leave over whichever one the app lands on
+   * instead of being torn down the moment the gate changes.
+   */
+  const frame = (screen: React.ReactNode) => (
+    <>
+      {screen}
+      {splash}
+    </>
+  );
+
+  if (booting) return frame(null);
 
   /**
    * A workspace server is configured but this machine has no session.
@@ -622,7 +684,7 @@ export default function App() {
   // Before every other gate. Nothing below can load its data without one.
   if (server && authorized === undefined) return null;
   if (server && !authorized) {
-    return (
+    return frame(
       <ServerSignIn
         server={server}
         onSignedIn={() => {
@@ -631,12 +693,12 @@ export default function App() {
           // fetched as an unauthorized client and all of it is empty.
           window.location.reload();
         }}
-      />
+      />,
     );
   }
 
   if (team?.serverUrl && !team.hasSession) {
-    return (
+    return frame(
       <SignIn
         serverUrl={team.serverUrl}
         model={model}
@@ -649,7 +711,7 @@ export default function App() {
             .then(setTeam)
             .catch((e) => console.error("could not return to local mode:", errorMessage(e)));
         }}
-      />
+      />,
     );
   }
 
@@ -662,16 +724,16 @@ export default function App() {
    * around first should be able to.
    */
   if (configured === 0 && !skippedOnboarding && !catalog.isEmpty) {
-    return (
+    return frame(
       <Onboarding
         catalog={catalog}
         onConfigChange={onConfigChange}
         onSkip={() => setSkippedOnboarding(true)}
-      />
+      />,
     );
   }
 
-  return (
+  return frame(
     // `reducedMotion="user"` is resolved once here, so no variant has to
     // re-check the preference and no plot can forget to.
     <MotionConfig reducedMotion="user">
@@ -681,6 +743,7 @@ export default function App() {
         model={model}
         team={team}
         collapsed={collapsed}
+        markHidden={handingOff}
         onNavigate={setView}
         onToggleCollapsed={() => setCollapsed((c) => !c)}
         onOpenPalette={() => setPaletteOpen(true)}
@@ -930,6 +993,6 @@ export default function App() {
         />
       )}
     </div>
-    </MotionConfig>
+    </MotionConfig>,
   );
 }

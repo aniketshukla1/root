@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   motion,
   useIsPresent,
@@ -8,30 +8,43 @@ import {
 
 import { healthColor } from "../catalog";
 import type { Health, HealthSnapshot } from "../types";
-import { Feeds, type Answer } from "./splash/Feeds";
+import { Feeds, type Answer, type Lock } from "./splash/Feeds";
+import { Converge, Decode } from "./splash/Finale";
 import { grainUrl } from "./splash/grain";
-import { ACT, feedPlan, terminalLines } from "./splash/script";
+import {
+  ACT,
+  ALL_FEATURES,
+  VERDICTS,
+  feedPlan,
+  terminalLines,
+  type SplashFeatures,
+} from "./splash/script";
+import { Search, type Point } from "./splash/Search";
+import { playScore, readSplashSound } from "./splash/sound";
 import { Terminal } from "./splash/Terminal";
 
 /**
  * The boot screen, as a title sequence.
  *
  * root is named for the one who sees everything, and it opens the way a film
- * about that would: in the dark, a command types itself; monitoring footage
- * rushes out of the black and falls away behind it while terminals run faster
- * than anyone could read; the machine's brackets lock onto what it is
- * watching; a scan crosses the screen, the mark draws itself where everything
- * converged, and the name arrives.
+ * about that would. In the dark a command types itself. The camera flies
+ * forward through planes of footage — racks, aisles, the estate's globe,
+ * its instruments — while terminals run faster than anyone could read. The
+ * machine hunts through it, locking onto feed after feed and typing its
+ * verdict, each lock sending a line back to the centre. A scan crosses the
+ * screen, every line converges, the mark draws itself where they meet, and
+ * the name decodes out of noise.
  *
- * It is spectacle, but not invented spectacle. The feeds are named after the
- * connections actually configured, the brackets on those feeds take each
- * connection's real health the moment it answers, and the last line says
- * exactly how many systems answered and in what state. The cinema is how the
- * facts are shown, never a replacement for them.
+ * It is spectacle, but not invented spectacle. Feeds are named after the
+ * connections actually configured, the machine's verdict on a connection is
+ * its real health and latency, and the last line counts what answered. The
+ * cinema is how the facts are shown, never a replacement for them.
  *
- * And it leaves the way the app arrives: the mark flies to where the sidebar
- * keeps it, becoming the sidebar's mark on the way, while the dark dissolves
- * around it.
+ * It leaves the way the app arrives: the mark flies to where the sidebar
+ * keeps it, becoming the sidebar's mark on the way.
+ *
+ * Every upgrade over the first version can be switched off (`features`), so
+ * each can be judged on its own; the app runs with all of them.
  */
 
 /** A configured connection, by what the splash shows of it. */
@@ -48,6 +61,8 @@ interface Arrival extends Answer {
 }
 
 const LEAVE = [0.4, 0, 1, 1] as const;
+/** The root of the mark, in its 24-unit box. */
+const ROOT_DOT = { x: 5.6, y: 3.7 } as const;
 const TAGLINE = "Infrastructure intelligence";
 const COMMAND = "observe --everything";
 
@@ -59,6 +74,7 @@ export function Splash({
   workspace,
   ready,
   onSkip,
+  features,
 }: {
   workspaceLoaded: boolean;
   catalogLoaded: boolean;
@@ -70,12 +86,23 @@ export function Splash({
   /** The app can already stand on its own, so a key or a click may end this. */
   ready: boolean;
   onSkip: () => void;
+  /** Upgrades to switch off, for judging them one at a time. */
+  features?: Partial<SplashFeatures>;
 }) {
   const reduce = useReducedMotion() ?? false;
   const present = useIsPresent();
   const born = useRef(performance.now());
   const markBox = useRef<HTMLDivElement>(null);
   const [arrivals, setArrivals] = useState<Arrival[]>([]);
+  const [locks, setLocks] = useState<Map<string, { at: number; point: Point }>>(new Map());
+
+  // Fixed for the life of one splash: switching mid-sequence would only
+  // produce a sequence nobody designed.
+  const [f] = useState<SplashFeatures>(() => ({
+    ...ALL_FEATURES,
+    sound: readSplashSound(),
+    ...features,
+  }));
 
   const configured = useMemo(() => new Set(connections.map((c) => c.id)), [connections]);
 
@@ -113,6 +140,12 @@ export function Splash({
     };
   }, [ready, present, onSkip]);
 
+  // The score, once, from the first frame; faded out if the splash leaves early.
+  useEffect(() => {
+    if (!f.sound) return;
+    return playScore();
+  }, [f.sound]);
+
   // The material, seeded by the estate itself so it opens the same way each
   // launch — and differently for a different estate.
   const names = useMemo(() => connections.map((c) => c.name), [connections]);
@@ -121,7 +154,8 @@ export function Splash({
     [connections],
   );
   const seed = useMemo(() => hash(names.join("|")) || 1979, [names]);
-  const plan = useMemo(() => feedPlan(connections, seed), [connections, seed]);
+  const plan = useMemo(() => feedPlan(connections, seed, f.imagery), [connections, seed, f.imagery]);
+  const byKey = useMemo(() => new Map(plan.map((p) => [p.key, p])), [plan]);
   const left = useMemo(() => terminalLines(seed + 1, names, kinds, 110), [seed, names, kinds]);
   const right = useMemo(() => terminalLines(seed + 2, names, kinds, 110), [seed, names, kinds]);
   const grain = useMemo(() => grainUrl(), []);
@@ -130,6 +164,57 @@ export function Splash({
   const total = connections.length;
   const answered = arrivals.length;
   const allIn = total > 0 && answered >= total;
+
+  // What the machine says about each feed it has locked. A real connection's
+  // verdict is its health, and it updates if the answer lands after the lock.
+  const verdicts = useMemo(() => {
+    const out = new Map<string, Lock>();
+    for (const [key, lock] of locks) {
+      const feed = byKey.get(key);
+      const name = feed?.title.split(" · ")[1] ?? key;
+      const answer = feed?.connectionId ? answers.get(feed.connectionId) : undefined;
+      out.set(
+        key,
+        feed?.connectionId
+          ? answer
+            ? {
+                at: lock.at,
+                verdict: `${answer.health} · ${Math.round(answer.latencyMs)} ms`,
+                tone: healthColor(answer.health),
+              }
+            : { at: lock.at, verdict: `${name} · awaiting answer`, tone: "#ffffff" }
+          : { at: lock.at, verdict: VERDICTS[hash(key) % VERDICTS.length], tone: "rgba(255,255,255,0.85)" },
+      );
+    }
+    return out;
+  }, [locks, byKey, answers]);
+
+  const onLock = useCallback((key: string, point: Point) => {
+    setLocks((previous) =>
+      new Map(previous).set(key, { at: performance.now() - born.current, point }),
+    );
+  }, []);
+
+  // Where everything runs to: the root itself — the dot the mark grows from —
+  // not the middle of the box the mark sits in, which is beside the trunk.
+  //
+  // Worked out from the drawing's own coordinates rather than by measuring the
+  // dot, which is scaled to nothing until the mark draws — and measures as the
+  // corner of the drawing until then.
+  const centre = useCallback((): Point => {
+    const svg = markBox.current?.querySelector("svg")?.getBoundingClientRect();
+    if (svg && svg.width > 0) {
+      const unit = svg.width / 24;
+      return { x: svg.left + ROOT_DOT.x * unit, y: svg.top + ROOT_DOT.y * unit };
+    }
+    const box = markBox.current?.getBoundingClientRect();
+    return box && box.width > 0
+      ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+      : { x: window.innerWidth / 2, y: window.innerHeight * 0.42 };
+  }, []);
+
+  const lockPoints = useRef<Point[]>([]);
+  lockPoints.current = [...locks.values()].map((l) => l.point);
 
   const leave = (duration: number, delay = 0): TargetAndTransition => ({
     opacity: 0,
@@ -154,7 +239,16 @@ export function Splash({
               <Terminal lines={left} side="left" seconds={6.2} />
               <Terminal lines={right} side="right" seconds={4.8} />
             </div>
-            <Feeds plan={plan} answers={answers} />
+            <div className="a-footage absolute inset-0" style={{ animationDelay: `${ACT.sweep}ms` }}>
+              <Feeds
+                plan={plan}
+                answers={answers}
+                locks={verdicts}
+                camera={f.camera}
+                imagery={f.imagery}
+                search={f.search}
+              />
+            </div>
             <div className="splash-sweep" style={{ animationDelay: `${ACT.sweep}ms` }} />
           </>
         )}
@@ -166,6 +260,15 @@ export function Splash({
         <div className="splash-vignette" aria-hidden />
       </motion.div>
 
+      {!reduce && f.search && (
+        <motion.div className="absolute inset-0" exit={leave(0.15)}>
+          {/* The hunt is part of the footage, and leaves with it. */}
+          <div className="a-footage absolute inset-0" style={{ animationDelay: `${ACT.sweep}ms` }}>
+            <Search plan={plan} onLock={onLock} centre={centre} />
+          </div>
+        </motion.div>
+      )}
+      {!reduce && f.finale && <Converge from={() => lockPoints.current} centre={centre} />}
       {!reduce && <Command />}
 
       <div className="relative z-10 flex h-full flex-col">
@@ -181,33 +284,43 @@ export function Splash({
           </motion.div>
 
           <motion.div exit={leave(0.22)} className="flex flex-col items-center">
-            <h1
-              aria-label="root"
-              data-text="root"
-              className="splash-glitch a-flicker mt-4 text-[104px] leading-[0.84] font-bold tracking-[-.05em] text-white"
-              style={
-                { animationDelay: `${ACT.title}ms`, "--d": `${ACT.title}ms` } as React.CSSProperties
-              }
-            >
-              root
-            </h1>
+            {f.finale && !reduce ? (
+              <h1 className="mt-4 text-[104px] leading-[0.84] font-bold tracking-[-.05em] text-white">
+                <Decode text="root" start={ACT.title} hold={260} each={110} />
+              </h1>
+            ) : (
+              <h1
+                aria-label="root"
+                data-text="root"
+                className="splash-glitch a-flicker mt-4 text-[104px] leading-[0.84] font-bold tracking-[-.05em] text-white"
+                style={
+                  { animationDelay: `${ACT.title}ms`, "--d": `${ACT.title}ms` } as React.CSSProperties
+                }
+              >
+                root
+              </h1>
+            )}
 
-            <p className="mt-6 font-mono text-xs tracking-[.32em] text-white/70 uppercase" aria-hidden>
-              {TAGLINE.split("").map((ch, i) => (
-                <span
-                  key={i}
-                  className="a-char"
-                  style={{ animationDelay: `${ACT.tagline + i * 16}ms` }}
-                >
-                  {ch}
-                </span>
-              ))}
-              <span
-                className="a-char splash-cursor"
-                style={{ animationDelay: `${ACT.tagline + TAGLINE.length * 16}ms` }}
-              />
-            </p>
-            <span className="sr-only">Infrastructure intelligence</span>
+            {f.finale && !reduce ? (
+              <p className="mt-6 font-mono text-xs tracking-[.32em] text-white/70 uppercase">
+                <Decode text={TAGLINE} start={ACT.tagline} hold={120} each={15} />
+              </p>
+            ) : (
+              <>
+                <p className="mt-6 font-mono text-xs tracking-[.32em] text-white/70 uppercase" aria-hidden>
+                  {TAGLINE.split("").map((ch, i) => (
+                    <span key={i} className="a-char" style={{ animationDelay: `${ACT.tagline + i * 16}ms` }}>
+                      {ch}
+                    </span>
+                  ))}
+                  <span
+                    className="a-char splash-cursor"
+                    style={{ animationDelay: `${ACT.tagline + TAGLINE.length * 16}ms` }}
+                  />
+                </p>
+                <span className="sr-only">Infrastructure intelligence</span>
+              </>
+            )}
 
             <div
               className="a-wash mt-10 flex flex-col items-center gap-3"
@@ -355,11 +468,7 @@ function Status({
   const systems = `${total} system${total === 1 ? "" : "s"}`;
 
   return (
-    <p
-      role="status"
-      aria-live="polite"
-      className="num text-2xs tracking-[.18em] text-white/55 uppercase"
-    >
+    <p role="status" aria-live="polite" className="num text-2xs tracking-[.18em] text-white/55 uppercase">
       {loading ? (
         "loading workspace"
       ) : total === 0 ? (

@@ -5,6 +5,7 @@ import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
 import { applyDensity, readDensity, type Density } from "../density";
 import { applyTheme, readTheme, watchSystemTheme, type Theme } from "../theme";
+import { readSplashSound, writeSplashSound } from "../shell/splash/sound";
 import type {
   ConfigSource,
   Runtime,
@@ -1668,6 +1669,7 @@ function McpSettings() {
 function DisplaySettings() {
   const [density, setDensity] = useState<Density>(readDensity);
   const [theme, setTheme] = useState<Theme>(readTheme);
+  const [launchSound, setLaunchSound] = useState<"on" | "off">(() => (readSplashSound() ? "on" : "off"));
 
   const change = (next: Density) => {
     setDensity(next);
@@ -1712,6 +1714,24 @@ function DisplaySettings() {
           options={[
             { value: "compact", label: "Compact" },
             { value: "comfortable", label: "Comfortable" },
+          ]}
+        />
+      </Field>
+
+      <Field
+        label="Launch sound"
+        help="The quiet score under the opening sequence. Takes effect on the next launch."
+      >
+        <Segmented
+          label="Launch sound"
+          value={launchSound}
+          onChange={(next) => {
+            setLaunchSound(next);
+            writeSplashSound(next === "on");
+          }}
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
           ]}
         />
       </Field>

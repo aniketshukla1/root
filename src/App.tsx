@@ -84,7 +84,7 @@ const CONVERSATION_ID = "main";
  * better at saying so than a boot screen is.
  */
 const SPLASH_MIN_MS = SEQUENCE_MS;
-const SPLASH_MAX_MS = 6000;
+const SPLASH_MAX_MS = 8000;
 /**
  * When the last answer lands after the floor, the splash stays this much
  * longer — long enough to see that square take its colour, which is the fact

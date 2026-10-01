@@ -17,12 +17,12 @@ import "@fontsource/ibm-plex-mono/600.css";
 import "../app.css";
 
 import { Splash } from "../shell/Splash";
-import { SEQUENCE_MS } from "../shell/splash/script";
+import { ALL_FEATURES, SEQUENCE_MS, type SplashFeatures } from "../shell/splash/script";
 import type { Health, HealthSnapshot } from "../types";
 import { RootMark } from "../ui/primitives";
 
 const MIN_MS = SEQUENCE_MS;
-const MAX_MS = 6000;
+const MAX_MS = 8000;
 const BEAT_MS = 350;
 
 const NAMES = [
@@ -82,6 +82,13 @@ function Stage() {
   const [hold, setHold] = useState(params.get("hold") === "1");
   const [light, setLight] = useState(params.get("theme") === "light");
   const [run, setRun] = useState(0);
+  // Every upgrade on unless the URL says otherwise: ?off=camera,sound
+  const [features, setFeatures] = useState<SplashFeatures>(() => {
+    const off = new Set((params.get("off") ?? "").split(",").filter(Boolean));
+    return Object.fromEntries(
+      Object.keys(ALL_FEATURES).map((k) => [k, !off.has(k)]),
+    ) as unknown as SplashFeatures;
+  });
 
   const [booting, setBooting] = useState(true);
   const [handingOff, setHandingOff] = useState(true);
@@ -159,6 +166,7 @@ function Stage() {
               workspace="acme · production"
               ready={ready}
               onSkip={skip}
+              features={features}
             />
           )}
         </AnimatePresence>
@@ -174,6 +182,11 @@ function Stage() {
         onHold={() => setHold((v) => !v)}
         onLight={() => setLight((v) => !v)}
         onReplay={restart}
+        features={features}
+        onFeature={(k) => {
+          setFeatures((f) => ({ ...f, [k]: !f[k] }));
+          restart();
+        }}
       />
     </>
   );
@@ -217,6 +230,8 @@ function Controls(props: {
   onHold: () => void;
   onLight: () => void;
   onReplay: () => void;
+  features: SplashFeatures;
+  onFeature: (k: keyof SplashFeatures) => void;
 }) {
   const chip = (on: boolean) =>
     `rounded-sm border px-2 py-1 font-mono text-2xs tracking-[.12em] uppercase ${
@@ -233,6 +248,12 @@ function Controls(props: {
       {[0, 7, 12, 40, 120].map((n) => (
         <button key={n} className={chip(props.size === n)} onClick={() => props.onSize(n)}>
           {n}
+        </button>
+      ))}
+      <span className="mx-1 h-4 w-px bg-line" />
+      {(Object.keys(props.features) as (keyof SplashFeatures)[]).map((k) => (
+        <button key={k} className={chip(props.features[k])} onClick={() => props.onFeature(k)}>
+          {k}
         </button>
       ))}
       <span className="mx-1 h-4 w-px bg-line" />

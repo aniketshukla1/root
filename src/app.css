@@ -544,11 +544,11 @@
 .a-scroll { animation: scroll 6s linear infinite; }
 /* Wake with the feeds, fall back when the scan crosses. */
 @keyframes term-life {
-  0%, 14% { opacity: 0; }
-  22%, 68% { opacity: 0.85; }
+  0%, 12% { opacity: 0; }
+  18%, 83% { opacity: 0.85; }
   100% { opacity: 0.08; }
 }
-.a-term { animation: term-life 2.4s linear both; }
+.a-term { animation: term-life 4.2s linear both; }
 
 /* The scan that ends the footage. */
 .splash-sweep {
@@ -632,6 +632,137 @@
   100% { opacity: 0; }
 }
 
+/* ---- the camera: a rig flying forward through planes of footage ---- */
+.splash-camera {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+/* The world moves toward the lens while it turns a little, so near planes
+   sweep past one side and far ones swing in from the other. */
+@keyframes camera {
+  0% { transform: translateZ(-400px) rotateY(-8deg) rotateX(3deg); }
+  100% { transform: translateZ(1250px) rotateY(5deg) rotateX(-2deg); }
+}
+.a-camera { animation: camera 3.9s cubic-bezier(0.45, 0.05, 0.3, 1) 300ms both; }
+.splash-plane { position: absolute; inset: 0; }
+/* A feed switching on where it already is. */
+@keyframes appear {
+  from { opacity: 0; transform: translate(var(--px), var(--py)) scale(0.82); }
+  to { opacity: 1; transform: translate(var(--px), var(--py)) scale(1); }
+}
+.a-appear {
+  transform: translate(var(--px), var(--py));
+  animation: appear 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+/* Everything in the footage falls back when the scan crosses. */
+@keyframes footage-out { to { opacity: 0.05; } }
+.a-footage { animation: footage-out 0.7s ease-in forwards; }
+
+/* ---- imagery: security-camera framing ---- */
+.splash-cctv { background: rgb(255 255 255 / 0.035); border-color: rgb(255 255 255 / 0.24); }
+.splash-cctv::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.045) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 120% at 50% 50%, transparent 58%, rgb(0 0 0 / 0.55));
+}
+.splash-band {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 18%;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgb(255 255 255 / 0.08), transparent);
+  animation: band 1.7s linear infinite;
+}
+@keyframes band {
+  from { transform: translateY(-120%); }
+  to { transform: translateY(640%); }
+}
+.splash-rec {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-crit);
+  animation: blink 1s steps(1) infinite;
+}
+/* The faint colour fringe of a cheap lens. */
+.splash-aberrate { text-shadow: 0.7px 0 rgb(255 40 80 / 0.55), -0.7px 0 rgb(40 220 255 / 0.55); }
+.splash-led { animation: led 0.8s steps(1) infinite; }
+@keyframes led { 50% { opacity: 0.15; } }
+.splash-spin { animation: spin 7s linear infinite; }
+@keyframes spin {
+  from { transform: translateX(0); }
+  to { transform: translateX(-88px); }
+}
+.splash-arc { animation: arc 1.2s linear infinite; }
+@keyframes arc { to { stroke-dashoffset: -14; } }
+
+/* ---- the search ---- */
+.splash-reticle { position: fixed; left: 0; top: 0; pointer-events: none; }
+.splash-reticle i {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  color: rgb(255 255 255 / 0.9);
+}
+.splash-reticle .tl { left: 0; top: 0; border-left: 1.5px solid; border-top: 1.5px solid; }
+.splash-reticle .tr { right: 0; top: 0; border-right: 1.5px solid; border-top: 1.5px solid; }
+.splash-reticle .bl { left: 0; bottom: 0; border-left: 1.5px solid; border-bottom: 1.5px solid; }
+.splash-reticle .br { right: 0; bottom: 0; border-right: 1.5px solid; border-bottom: 1.5px solid; }
+.splash-reticle-label { position: absolute; left: 0; top: -15px; white-space: nowrap; }
+/* The verdict under a locked feed: "assessing", then the verdict typed over it. */
+.splash-verdict { position: absolute; left: 2px; bottom: -17px; white-space: nowrap; }
+/* Linear, not a step: a step that waits for a progress of exactly 1 can
+   miss it, and "assessing" would never leave. */
+@keyframes assess {
+  0%, 96% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.splash-assessing { animation: assess 0.38s linear forwards; }
+/* A line from a lock back to the centre, drawn and let go. */
+@keyframes ping-line {
+  0% { stroke-dashoffset: var(--len); opacity: 0.9; }
+  55% { stroke-dashoffset: 0; opacity: 0.6; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+.a-ping-line {
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: var(--len);
+  animation: ping-line 0.7s cubic-bezier(0.3, 0.6, 0.2, 1) forwards;
+}
+
+/* ---- the finale ---- */
+/* A pulse running home: a short dash carried from before its path's start
+   to past its end, quickening as it goes — pulled in, not pushed. */
+@keyframes streak {
+  0% { stroke-dashoffset: var(--from); opacity: 0; }
+  10%, 90% { opacity: 1; }
+  100% { stroke-dashoffset: var(--to); opacity: 0; }
+}
+.a-streak { opacity: 0; animation: streak 0.5s cubic-bezier(0.6, 0, 0.9, 0.45) forwards; }
+.splash-glow {
+  filter: drop-shadow(0 0 3px rgb(255 255 255 / 0.9)) drop-shadow(0 0 9px rgb(120 200 255 / 0.45));
+}
+/* The root answering as each wave reaches it. */
+@keyframes ring {
+  from { transform: scale(0.4); opacity: 0.9; }
+  to { transform: scale(3.4); opacity: 0; }
+}
+.a-ring {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ring 0.75s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+/* A letter still decoding carries the lens fringe; it drops when it settles. */
+.splash-unsettled { text-shadow: 3px 0 rgb(255 40 80 / 0.7), -3px 0 rgb(40 220 255 / 0.7); }
+
 /* The name: a flicker as it catches, torn into colour for a moment. */
 .a-flicker { opacity: 0; animation: flicker 0.42s linear forwards; }
 @keyframes flicker {
@@ -686,9 +817,16 @@
   .a-wash { opacity: var(--op, 1); }
   /* Pure flourish on top of a state change that is already drawn. */
   .a-ripple,
+  .a-streak,
+  .a-ring,
   .splash-glitch::before,
   .splash-glitch::after { display: none; }
   /* Settled into place with no tilt or depth: a still frame of the title. */
   .a-scroll,
-  .splash-grain { animation: none; }
+  .splash-grain,
+  .a-camera,
+  .splash-band,
+  .splash-spin,
+  .splash-led,
+  .splash-arc { animation: none; }
 }

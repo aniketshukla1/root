@@ -5,28 +5,56 @@
 // launch — a sequence that reshuffles itself reads as noise rather than as a
 // title. Where the estate has something real to say, it says it: feeds are
 // named after configured connections, the terminal mentions their kinds, and
-// a connection's lock-on takes its health the moment it answers.
+// the machine's verdict on a connection is that connection's actual health.
+
+/** Each upgrade can be switched off, so they can be judged one at a time. */
+export interface SplashFeatures {
+  /** A camera flying forward through planes of footage, rather than a fixed view. */
+  camera: boolean;
+  /** Footage that looks like footage: racks, aisles, a globe, CCTV framing. */
+  imagery: boolean;
+  /** The machine's search: a reticle hunting feed to feed, typing verdicts. */
+  search: boolean;
+  /** Every feed's line converging to draw the mark; the name decoding. */
+  finale: boolean;
+  /** A low swell, data chatter, a hit on the name. */
+  sound: boolean;
+}
+
+export const ALL_FEATURES: SplashFeatures = {
+  camera: true,
+  imagery: true,
+  search: true,
+  finale: true,
+  sound: true,
+};
 
 /** Beats, in milliseconds from the splash mounting. */
 export const ACT = {
   /** A command line types itself in the dark. */
   command: 80,
-  /** Feeds start arriving out of the dark, and the terminals wake. */
-  feeds: 420,
-  /** A scan crosses the screen; feeds and terminals fall back. */
-  sweep: 1640,
-  /** The mark draws itself where everything converged. */
-  mark: 1760,
-  /** The wordmark. */
-  title: 2160,
-  /** The tagline types. */
-  tagline: 2480,
+  /** Footage starts arriving out of the dark, and the terminals wake. */
+  feeds: 520,
+  /** The machine starts hunting. */
+  search: 1350,
+  /** The hunt's last lock. */
+  searchEnd: 3250,
+  /** A scan crosses the screen; the footage falls back. */
+  sweep: 3480,
+  /** Every line runs to the centre. */
+  converge: 3560,
+  /** The mark draws itself from the root, as the first pulses reach it. */
+  mark: 3960,
+  /** The name. */
+  title: 4460,
+  /** The tagline. */
+  tagline: 4920,
   /** What root found. */
-  status: 2920,
+  status: 5380,
 } as const;
 
 /** The whole sequence has landed by here; App's floor is set from it. */
-export const SEQUENCE_MS = 3300;
+export const SEQUENCE_MS = 6000;
 
 export function rng(seed: number): () => number {
   let s = seed >>> 0 || 1;
@@ -34,7 +62,7 @@ export function rng(seed: number): () => number {
 }
 
 const HEX = "0123456789abcdef";
-function hex(r: () => number, n: number): string {
+export function hex(r: () => number, n: number): string {
   let out = "";
   for (let i = 0; i < n; i++) out += HEX[Math.floor(r() * 16)];
   return out;
@@ -107,8 +135,6 @@ export function terminalLines(seed: number, names: string[], kinds: string[], co
       default:
         text = `${ts()} index    ${pick(k)}  ${Math.floor(r() * 64)} fields  ok`;
     }
-    // A few lines stand out, the way a real stream has the odd line worth
-    // reading in it.
     if (roll < 0.018) tone = "warn";
     else if (roll < 0.026) tone = "crit";
     else if (roll < 0.045) tone = "ok";
@@ -120,66 +146,126 @@ export function terminalLines(seed: number, names: string[], kinds: string[], co
 
 // ---------------------------------------------------------------------- feeds
 
-export type FeedArt = "line" | "bars" | "graph" | "log" | "heat" | "pips";
-const ARTS: FeedArt[] = ["line", "bars", "graph", "log", "heat", "pips"];
+/** Instruments: what a monitoring console draws. */
+export type ChartArt = "line" | "bars" | "graph" | "log" | "heat" | "pips";
+/** Footage: what a camera pointed at the estate would see. */
+export type SceneArt = "rack" | "aisle" | "globe";
+export type FeedArt = ChartArt | SceneArt;
+
+const CHARTS: FeedArt[] = ["line", "bars", "graph", "log", "heat", "pips"];
+/** Mostly scenes, with enough instruments left in that it reads as monitoring. */
+const FOOTAGE: FeedArt[] = ["rack", "aisle", "line", "globe", "rack", "pips", "aisle", "log", "rack", "graph"];
+
+/**
+ * Depths of the planes the camera flies through, farthest first, in px from
+ * the screen. The camera starts behind all of them and ends past the nearest
+ * two, so those fly by on either side.
+ */
+export const PLANES = [-2700, -2000, -1400, -880, -380] as const;
 
 export interface FeedPlan {
   key: string;
-  /** Offset from centre, in vw and vh. */
-  x: number;
-  y: number;
-  rotateX: number;
-  rotateY: number;
-  delay: number;
-  duration: number;
-  /** Most feeds fall away; a few rush past instead. */
-  approach: boolean;
   art: FeedArt;
   seed: number;
   /** The connection this feed watches, when it watches a real one. */
   connectionId?: string;
   title: string;
   stamp: string;
-  /** Whether the machine's brackets lock onto it. */
+  camera: string;
+
+  // The camera's version: a fixed place on a plane, revealed as it passes.
+  plane: number;
+  /** Position on the plane as a fraction of the visible half-width, -1…1. */
+  sx: number;
+  sy: number;
+  appear: number;
+
+  // The fixed view's version: each feed carried by its own keyframes.
+  x: number;
+  y: number;
+  rotateX: number;
+  rotateY: number;
+  delay: number;
+  duration: number;
+  approach: boolean;
+  /** Brackets of its own, for when there is no search to lock it. */
   lock: boolean;
 }
 
-const FEEDS = 24;
+const FEEDS = 25;
 
 /**
- * Twenty feeds around the centre, spread by the golden angle so no two crowd
- * the same corner, with the middle left clear for the title. The first few
- * real connections each get one of their own.
+ * Twenty-five feeds. With the camera they sit on five planes of five, spread
+ * by the golden angle so no two crowd one corner, the near planes keeping the
+ * middle clear for the title; real connections go on the middle planes, where
+ * they stay in view longest and the search can find them.
  */
 export function feedPlan(
   connections: { id: string; name: string; kind?: string }[],
   seed: number,
+  imagery: boolean,
 ): FeedPlan[] {
   const r = rng(seed);
-  const real = connections.slice(0, 7);
+  const real = connections.slice(0, 8);
+  const arts = imagery ? FOOTAGE : CHARTS;
+  let nextReal = 0;
+
   return Array.from({ length: FEEDS }, (_, i) => {
-    const angle = i * 2.39996 + r() * 0.3;
-    const radius = 17 + (i % 4) * 7 + r() * 5;
-    const watched = i % 3 === 1 ? real[Math.floor(i / 3)] : undefined;
+    const plane = i % PLANES.length;
+    const slot = Math.floor(i / PLANES.length);
+    const watches = (plane === 2 || plane === 3) && nextReal < real.length;
+    const watched = watches ? real[nextReal++] : undefined;
+
+    const angle = i * 2.39996 + r() * 0.4;
+    // Near planes keep a clear middle; far ones may sit anywhere, small.
+    const inner = plane >= 3 ? 0.42 : plane === 2 ? 0.3 : 0.12;
+    const reach = inner + (1 - inner) * (0.25 + r() * 0.75);
     const minutes = 10 + Math.floor(r() * 49);
     const seconds = Math.floor(r() * 60);
+    const fixedAngle = i * 2.39996 + r() * 0.3;
+    const fixedRadius = 17 + (i % 4) * 7 + r() * 5;
+
     return {
       key: `feed-${i}`,
-      x: Math.cos(angle) * radius * 1.25,
-      y: Math.sin(angle) * radius * 0.95,
-      rotateX: (r() - 0.5) * 16,
-      rotateY: (r() - 0.5) * 26,
-      delay: ACT.feeds + i * 50 + r() * 36,
-      duration: 1350 + r() * 700,
-      approach: r() < 0.22,
-      art: watched ? ARTS[(i + 2) % ARTS.length] : ARTS[i % ARTS.length],
+      art: watched ? arts[(i + 3) % arts.length] : arts[(i + slot) % arts.length],
       seed: seed + i * 977,
       connectionId: watched?.id,
       title: watched
         ? `${watched.kind ?? "node"} · ${watched.name}`
         : `feed ${String(i + 1).padStart(2, "0")} · ${hex(r, 4)}`,
       stamp: `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${hex(r, 3)}`,
+      camera: `cam ${String(1 + Math.floor(r() * 48)).padStart(2, "0")}`,
+
+      plane,
+      sx: Math.cos(angle) * reach,
+      sy: Math.sin(angle) * reach * 0.82,
+      appear: ACT.feeds + slot * 210 + (PLANES.length - 1 - plane) * 36 + r() * 120,
+
+      x: Math.cos(fixedAngle) * fixedRadius * 1.25,
+      y: Math.sin(fixedAngle) * fixedRadius * 0.95,
+      rotateX: (r() - 0.5) * 16,
+      rotateY: (r() - 0.5) * 26,
+      delay: ACT.feeds + i * 50 + r() * 36,
+      duration: 1350 + r() * 700,
+      approach: r() < 0.22,
       lock: Boolean(watched) || r() < 0.35,
     };
   });
 }
+
+// --------------------------------------------------------------------- search
+
+/** When the machine locks, in order. */
+export function lockTimes(): number[] {
+  const count = 9;
+  const span = ACT.searchEnd - ACT.search;
+  return Array.from({ length: count }, (_, i) => ACT.search + (span * i) / (count - 1));
+}
+
+/** What the machine says about a feed it has no connection behind. */
+export const VERDICTS = ["nominal", "indexed", "no anomaly", "watching", "baseline ok", "tracked"];
+
+/** Characters a scrambled letter cycles through before it settles. */
+// No shade blocks: at title size they read as solid tiles, not as a letter
+// being worked out.
+export const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&*+<>/=?";

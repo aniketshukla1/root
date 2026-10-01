@@ -4,8 +4,21 @@
     {
       "name": "vite",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 1420
+    },
+    {
+      "name": "root-server",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd \"$(git rev-parse --show-toplevel)\" && set -a && . ./.root-server.local/env && set +a && exec ./src-tauri/target/debug/root-server"
+      ],
+      "port": 7777,
+      "url": "http://127.0.0.1:7777"
     }
   ]
 }

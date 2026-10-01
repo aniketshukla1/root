@@ -160,7 +160,9 @@ export function IncidentHero({
           </p>
         </div>
 
-        <div className="flex w-full shrink-0 flex-col gap-1.5 @2xl:w-[168px]">
+        {/* Wide enough for "Root Cause Analysis" in the UI face at 13px with
+            its icon — 168px fitted the old 12px mono and wrapped this one. */}
+        <div className="flex w-full shrink-0 flex-col gap-1.5 @2xl:w-[200px]">
           <Button variant="primary" onClick={() => actions.onOpenService(root)}>
             Open {rootService?.snapshot.profileName ?? root}
           </Button>

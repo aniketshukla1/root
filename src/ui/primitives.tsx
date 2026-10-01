@@ -289,7 +289,9 @@ export function Button({
       {...props}
       disabled={props.disabled || loading}
       className={cx(
-        "relative inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border px-3",
+        // One line, always, as ferro's buttons are: a label that wraps spills
+        // out of a fixed-height button and over whatever is under it.
+        "relative inline-flex min-w-0 shrink-0 items-center justify-center gap-1.5 rounded-md border px-3 whitespace-nowrap",
         CONTROL_H[size],
         size === "sm" ? "rounded-sm text-xs font-medium" : "text-[13px] font-medium",
         "transition-colors disabled:pointer-events-none disabled:opacity-40",
@@ -299,7 +301,7 @@ export function Button({
     >
       {/* The label stays in the layout while it is hidden: a button that
           shrinks to the width of a spinner drags every control beside it. */}
-      <span className={cx("inline-flex items-center gap-1.5", loading && "invisible")}>
+      <span className={cx("inline-flex min-w-0 items-center gap-1.5 overflow-hidden", loading && "invisible")}>
         {children}
       </span>
       {loading && <Spinner />}

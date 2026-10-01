@@ -370,7 +370,7 @@ function flightTo(from: HTMLElement | null, reduce: boolean): TargetAndTransitio
   }
   const root = getComputedStyle(document.documentElement);
   const accent = root.getPropertyValue("--color-accent").trim() || "#4cc2ff";
-  const ink = root.getPropertyValue("--color-on-accent").trim() || "#04121c";
+  const ink = root.getPropertyValue("--color-on-accent").trim() || "#0a0a0c";
   return {
     x: b.left + b.width / 2 - (a.left + a.width / 2),
     y: b.top + b.height / 2 - (a.top + a.height / 2),

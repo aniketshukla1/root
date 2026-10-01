@@ -26,39 +26,45 @@
   --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* surfaces, lightest-on-top */
-  --color-page: #0a0e14;
-  --color-panel: #0c1219;
-  --color-sunk: #111a24;
-  --color-raised: #141e29;
-  --color-overlay: #181f28;
+  /* surfaces, lightest-on-top.
+
+     Neutral black, the same family as ferro's graphite and the splash it
+     opens from: no blue in the ground at all. The blue-black this replaced
+     tinted every surface, hairline and grey toward the accent, which made the
+     accent itself — the one thing meant to read as "you can act on this" —
+     louder by contrast than anything else on the screen. */
+  --color-page: #09090b;
+  --color-panel: #0f0f11;
+  --color-sunk: #141416;
+  --color-raised: #18181b;
+  --color-overlay: #1c1c1f;
 
   /* hairlines */
-  --color-line: #1c2530;
-  --color-line-soft: #18222e;
-  --color-line-strong: #2b3846;
+  --color-line: #232327;
+  --color-line-soft: #1c1c20;
+  --color-line-strong: #303036;
 
   /* ink */
-  --color-ink: #f0f5fa;
-  --color-ink-2: #a9b8ca;
-  --color-ink-3: #8d9fb4;
+  --color-ink: #ededf0;
+  --color-ink-2: #b8b8c1;
+  --color-ink-3: #a0a0aa;
   /* The quietest ink still has to clear 4.5:1 on the LIGHTEST surface it is
      ever printed on, not the darkest. At #6f8095 it measured 4.66:1 on panel
      but 4.17:1 on raised and 4.10:1 on overlay — a fail everywhere a dialog,
      a tooltip or a signal card carries small print. */
-  --color-ink-4: #7a8ba0;
+  --color-ink-4: #8a8a94;
 
   /* interaction */
   --color-accent: #4cc2ff;
   --color-accent-dim: #1c8fd6;
-  --color-on-accent: #04121c;
+  --color-on-accent: #0a0a0c;
 
   /* status — reserved, never used for identity */
   --color-ok: #5fc48c;
   --color-warn: #d9a84e;
   --color-serious: #dd8a52;
   --color-crit: #e0705a;
-  --color-unknown: #6f8095;
+  --color-unknown: #74778a;
 
   /* categorical identity — fixed order */
   --color-series-1: #5a9ee0;
@@ -81,9 +87,9 @@
      --color-panel. Quiet is the intent; invisible is a bug, and the first
      value chosen here sat at 1.39:1 and could not be seen at all. */
   --color-lane-ok: #2b4c3b;
-  --color-cell-todo: #131c26;
-  --color-lvl-debug: #2b3846;
-  --color-lvl-info: #6f8095;
+  --color-cell-todo: #141416;
+  --color-lvl-debug: #303036;
+  --color-lvl-info: #74778a;
 
   /* --- type scale ------------------------------------------------------
    *

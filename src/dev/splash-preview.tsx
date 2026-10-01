@@ -102,7 +102,7 @@ function Stage() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = light ? "light" : "dark";
-    document.documentElement.style.background = light ? "#f7f3ec" : "#0a0e14";
+    document.documentElement.style.background = light ? "#f7f3ec" : "#09090b";
   }, [light]);
 
   // Reset in the same event that starts a run. Resetting in the run's own

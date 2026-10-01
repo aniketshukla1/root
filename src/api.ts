@@ -50,6 +50,8 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_judged_incidents: () => fixtures.judgedIncidents(),
   get_scorecard: () => fixtures.scorecard(),
   get_long_history: () => [],
+  explain_window: ({ profileId, from, to }) =>
+    fixtures.explainWindow(profileId as string, from as string, to as string),
   get_alert_history: ({ profileId }) => fixtures.alertHistory(profileId as string),
   get_flapping: () => fixtures.flapping(),
   get_change_history: ({ profileId }) =>
@@ -465,6 +467,13 @@ export const api = {
    * A short reading of one failing component. Cached in the backend by the
    * component's state, so hovering the same broken container twice is one call.
    */
+  /**
+   * What happened on one connection between two moments — the chart's
+   * "✦ Explain this". The answer carries the facts it was read from.
+   */
+  explainWindow: (profileId: string, from: string, to: string) =>
+    invoke<ComponentReading>("explain_window", { profileId, from, to }),
+
   explainComponent: (profileId: string, sectionId: string, rowId: string) =>
     invoke<ComponentReading>("explain_component", { profileId, sectionId, rowId }),
 

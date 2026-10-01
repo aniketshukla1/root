@@ -70,6 +70,18 @@ export const AssistantIcon = (p: IconProps) => (
   </Icon>
 );
 
+/**
+ * The one glyph for the model, as in ferro: wherever ✦ appears, pressing it
+ * asks the model about the thing it sits next to. A four-point star with a
+ * smaller one beside it — the sparkle, drawn on the same grid as the rest.
+ */
+export const SparkleIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10 3.5 11.6 8.4 16.5 10 11.6 11.6 10 16.5 8.4 11.6 3.5 10 8.4 8.4Z" />
+    <path d="M18 14.5 18.8 16.7 21 17.5 18.8 18.3 18 20.5 17.2 18.3 15 17.5 17.2 16.7Z" />
+  </Icon>
+);
+
 export const ScorecardIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 3v18M3 7h18" />

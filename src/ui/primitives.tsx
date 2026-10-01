@@ -504,7 +504,13 @@ export function Tabs<T extends string>({
     <div
       role="tablist"
       onKeyDown={onKeyDown}
-      className="flex items-center gap-4 border-b border-line px-3"
+      // Scrolls on its own when the tabs outgrow the panel, rather than
+      // widening it: a strip that overflows its panel makes the whole panel
+      // scrollable, and the first thing to take focus scrolls it sideways.
+      // The rule under the strip is drawn inside it (an inset shadow) rather
+      // than as a border, so the active tab's underline lies over it without
+      // reaching outside the box a scrolling strip clips to.
+      className="no-scrollbar flex min-w-0 items-center gap-4 overflow-x-auto overflow-y-hidden px-3 shadow-[inset_0_-1px_0_var(--color-line)]"
     >
       {options.map((option) => (
         <button
@@ -515,7 +521,7 @@ export function Tabs<T extends string>({
           tabIndex={option.value === value ? 0 : -1}
           onClick={() => onChange(option.value)}
           className={cx(
-            "-mb-px flex h-8 items-center gap-1.5 border-b-2 text-[13px] font-medium transition-colors",
+            "flex h-8 shrink-0 items-center gap-1.5 border-b-2 text-[13px] font-medium whitespace-nowrap transition-colors",
             option.value === value
               ? "border-accent text-ink"
               : "border-transparent text-ink-4 hover:text-ink-2",

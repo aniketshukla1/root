@@ -2326,6 +2326,261 @@ pub async fn explain_component(
     Ok(reading)
 }
 
+/// What happened on one connection between two moments: the chart's
+/// "✦ Explain this", asked of a window someone dragged across.
+///
+/// Built the way `explain_component` is — the facts root is already holding,
+/// one completion, no tools — because an agent loop would spend its round
+/// trips rediscovering what this process can read straight out of memory.
+/// Cached on the facts rather than the clock: the same window over the same
+/// evidence is one call, however many times it is asked.
+pub async fn explain_window(
+    state: &Arc<AppState>,
+    profile_id: String,
+    from: chrono::DateTime<chrono::Utc>,
+    to: chrono::DateTime<chrono::Utc>,
+) -> Result<crate::state::ComponentReading> {
+    if to <= from {
+        return Err(AppError::Llm("drag across a chart to choose a window first".to_string()));
+    }
+    let grounds = window_grounds(state, &profile_id, from, to).await?;
+    let fingerprint = grounds.join("\n");
+    let key = format!("window:{profile_id}:{}:{}", from.timestamp(), to.timestamp());
+    if let Some(cached) = state.readings.read().await.get(&key) {
+        if cached.fingerprint == fingerprint {
+            return Ok(cached.reading.clone());
+        }
+    }
+
+    let settings = state.config.read().await.llm.clone();
+    let api_key = secrets::get_secret(settings.provider.secret_key()).await?;
+    let provider = build_provider(&settings, api_key)?;
+    let response = provider
+        .complete(crate::llm::CompletionRequest {
+            model: settings.model.clone(),
+            system: WINDOW_READING_SYSTEM.to_string(),
+            messages: vec![ChatMessage::user(grounds.join("\n"))],
+            tools: Vec::new(),
+            max_tokens: 220,
+            temperature: 0.1,
+        })
+        .await?;
+
+    let text = response.text.trim().to_string();
+    if text.is_empty() {
+        return Err(AppError::Llm("the model returned nothing".to_string()));
+    }
+    let reading = crate::state::ComponentReading {
+        text,
+        model: settings.model.clone(),
+        grounds,
+        read_at: chrono::Utc::now(),
+    };
+    state.readings.write().await.insert(
+        key,
+        crate::state::CachedReading { fingerprint, reading: reading.clone() },
+    );
+    Ok(reading)
+}
+
+const WINDOW_READING_SYSTEM: &str = "\
+You are explaining what happened on ONE connection of an infrastructure estate \
+during a window an operator has just selected on a chart.
+
+Answer in one to three short sentences, under 70 words, no preamble, no lists. \
+Lead with the most likely cause and name the facts that support it — a change, \
+an alert, a log message, a metric's movement — with their times. If something \
+elsewhere in the estate moved at the same moment, say whether it looks like \
+cause or consequence.
+
+Use only the facts given. If they do not explain the movement, say so plainly \
+and name the one thing worth checking next: \"nothing recorded explains this\" \
+is a useful answer and a guess is not.";
+
+/// The facts about one window, in the order an operator would read them out:
+/// what the connection is, what its metrics did against the stretch just
+/// before, what fired, what changed, what it logged, and what moved elsewhere.
+async fn window_grounds(
+    state: &Arc<AppState>,
+    profile_id: &str,
+    from: chrono::DateTime<chrono::Utc>,
+    to: chrono::DateTime<chrono::Utc>,
+) -> Result<Vec<String>> {
+    use chrono::Duration;
+    let hm = |t: chrono::DateTime<chrono::Utc>| t.format("%H:%M:%S").to_string();
+    let span = to - from;
+    let baseline_from = from - span;
+    let mut out = Vec::new();
+
+    let snapshot = state
+        .snapshots
+        .read()
+        .await
+        .get(profile_id)
+        .cloned()
+        .ok_or_else(|| AppError::Collector("no snapshot for that connection".into()))?;
+    out.push(format!(
+        "connection: {} — now {}: {}",
+        snapshot.profile_name,
+        snapshot.health.label(),
+        snapshot.summary
+    ));
+    out.push(format!(
+        "window: {} to {} UTC ({} min)",
+        hm(from),
+        hm(to),
+        span.num_minutes().max(1)
+    ));
+
+    // Metrics: the window against the same length of time just before it.
+    let reach = (chrono::Utc::now() - baseline_from).num_minutes() + 1;
+    let series = get_metric_history(state, profile_id.to_string(), Some(reach.max(1))).await?;
+    for s in &series {
+        let inside: Vec<&crate::history::Point> =
+            s.points.iter().filter(|p| p.t >= from && p.t <= to).collect();
+        let (Some(first), Some(last)) = (inside.first(), inside.last()) else {
+            continue;
+        };
+        let peak = inside
+            .iter()
+            .copied()
+            .max_by(|a, b| a.v.partial_cmp(&b.v).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(first);
+        let low = inside.iter().map(|p| p.v).fold(f64::INFINITY, f64::min);
+        let before: Vec<f64> = s
+            .points
+            .iter()
+            .filter(|p| p.t >= baseline_from && p.t < from)
+            .map(|p| p.v)
+            .collect();
+        let baseline = if before.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; the {} min before averaged {}",
+                span.num_minutes().max(1),
+                unit_value(before.iter().sum::<f64>() / before.len() as f64, s.unit)
+            )
+        };
+        out.push(format!(
+            "metric {}: {} → {} (low {}, peak {} at {}){baseline}",
+            s.label,
+            unit_value(first.v, s.unit),
+            unit_value(last.v, s.unit),
+            unit_value(low, s.unit),
+            unit_value(peak.v, s.unit),
+            hm(peak.t),
+        ));
+    }
+
+    // Alerts on this connection that overlapped the window, then anything that
+    // started elsewhere around the same time.
+    let alerts = state.alerts.read().await.all();
+    for a in alerts
+        .iter()
+        .filter(|a| a.profile_id == profile_id && a.first_seen <= to && a.last_seen >= from - Duration::minutes(5))
+        .take(6)
+    {
+        out.push(format!(
+            "alert {} {}: \"{}\"{}",
+            hm(a.first_seen),
+            format!("{:?}", a.severity).to_lowercase(),
+            a.title,
+            if a.active { " — still firing" } else { "" }
+        ));
+    }
+    for a in alerts
+        .iter()
+        .filter(|a| a.profile_id != profile_id && a.first_seen <= to && a.first_seen >= from - Duration::minutes(10))
+        .take(5)
+    {
+        out.push(format!("elsewhere {} {}: \"{}\"", hm(a.first_seen), a.profile_name, a.title));
+    }
+
+    // Changes in the half hour leading in: a deploy just before a spike is the
+    // first thing anyone asks about.
+    let changes = state
+        .changes
+        .read()
+        .await
+        .query(Some(profile_id), Some(from - Duration::minutes(30)), 20);
+    for c in changes.iter().filter(|c| c.at <= to).take(6) {
+        out.push(format!("change {} {}", hm(c.at), c.summary));
+    }
+
+    // Logs at warn and above, counted, with the messages that repeated most.
+    let filter = crate::state::LogFilter {
+        profile_ids: Some(vec![profile_id.to_string()]),
+        min_level: Some(crate::model::LogLevel::Warn),
+        since: Some(from),
+        limit: Some(5000),
+        ..Default::default()
+    };
+    let lines: Vec<crate::model::LogEvent> = state
+        .logs
+        .read()
+        .await
+        .query(&filter)
+        .into_iter()
+        .filter(|e| e.timestamp <= to)
+        .collect();
+    if !lines.is_empty() {
+        let errors = lines
+            .iter()
+            .filter(|e| e.level >= crate::model::LogLevel::Error)
+            .count();
+        out.push(format!(
+            "logs: {} lines at warn or above in the window, {} of them errors",
+            lines.len(),
+            errors
+        ));
+        for (message, count) in repeated(&lines, 3) {
+            out.push(format!("log ×{count}: {message}"));
+        }
+    }
+
+    Ok(out)
+}
+
+/// The messages that repeat most, with numbers and ids folded so that
+/// "timeout after 3001ms" and "timeout after 2987ms" count as one.
+fn repeated(lines: &[crate::model::LogEvent], take: usize) -> Vec<(String, usize)> {
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for line in lines {
+        let folded: String = line
+            .message
+            .chars()
+            .map(|c| if c.is_ascii_digit() { '#' } else { c })
+            .take(110)
+            .collect();
+        *counts.entry(folded).or_default() += 1;
+    }
+    let mut ranked: Vec<(String, usize)> = counts.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    ranked.truncate(take);
+    ranked
+}
+
+/// A value the way the chart labels it, so the model quotes what the operator sees.
+fn unit_value(v: f64, unit: crate::model::MetricUnit) -> String {
+    use crate::model::MetricUnit as U;
+    match unit {
+        U::Percent => format!("{v:.0}%"),
+        U::Millis => format!("{v:.0} ms"),
+        U::Seconds => format!("{v:.1} s"),
+        U::PerSecond => format!("{v:.1}/s"),
+        U::Count => format!("{v:.0}"),
+        U::Bytes => {
+            let gb = v / 1e9;
+            if gb >= 1.0 {
+                format!("{gb:.1} GB")
+            } else {
+                format!("{:.0} MB", v / 1e6)
+            }
+        }
+    }
+}
+
 /// Why one incident happened, by the model, on evidence root already has.
 ///
 /// Deliberately not `send_message`, for the same reason `explain_component` is
@@ -2530,4 +2785,120 @@ pub async fn get_conversation(
 pub async fn clear_conversation(state: &Arc<AppState>, conversation_id: String) -> Result<()> {
     state.conversations.write().await.remove(&conversation_id);
     Ok(())
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+    use crate::model::{
+        Alert, AlertSeverity, ChangeEvent, ChangeKind, ChangeSource, Health, HealthSnapshot,
+        LogEvent, LogLevel, LogStream, Metric, MetricUnit, ServiceKind,
+    };
+    use chrono::{Duration, Utc};
+
+    fn snapshot(cpu: f64, at: chrono::DateTime<Utc>) -> HealthSnapshot {
+        HealthSnapshot {
+            profile_id: "p1".into(),
+            profile_name: "orders-api".into(),
+            kind: ServiceKind::Docker,
+            health: Health::Down,
+            summary: "3 of 8 containers exited".into(),
+            metrics: vec![Metric::new("cpu", "CPU", cpu, MetricUnit::Percent)],
+            sections: Vec::new(),
+            checked_at: at,
+            latency_ms: 40,
+            error: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_window_carries_the_facts_that_would_explain_it() {
+        let state = Arc::new(AppState::new(
+            crate::config::AppConfig::default(),
+            std::path::PathBuf::from("/tmp/root-window-test.json"),
+        ));
+        let now = Utc::now();
+        // The store stamps an alert with the moment it is raised, which is
+        // after `now`; the window runs a few seconds past it so the alert is
+        // inside, as it would be on a chart that is still live.
+        let (from, to) = (now - Duration::minutes(10), now + Duration::seconds(5));
+
+        state.snapshots.write().await.insert("p1".into(), snapshot(94.0, now));
+        {
+            let mut history = state.history.write().await;
+            // A quiet twenty minutes, then a climb through the window.
+            for i in 0..10 {
+                history.record(&snapshot(40.0, now - Duration::minutes(20) + Duration::minutes(i)));
+            }
+            for i in 0..10 {
+                history.record(&snapshot(40.0 + i as f64 * 6.0, from + Duration::seconds(30) + Duration::minutes(i)));
+            }
+        }
+        state.alerts.write().await.reconcile(
+            "p1",
+            vec![Alert {
+                id: "a1".into(),
+                fingerprint: "f1".into(),
+                profile_id: "p1".into(),
+                profile_name: "orders-api".into(),
+                kind: ServiceKind::Docker,
+                severity: AlertSeverity::Critical,
+                title: "3 containers exited with code 137".into(),
+                detail: String::new(),
+                component: Some("worker".into()),
+                first_seen: now - Duration::minutes(6),
+                last_seen: now,
+                active: true,
+                acknowledged: false,
+            }],
+        );
+        state.changes.write().await.record(vec![ChangeEvent {
+            id: "c1".into(),
+            profile_id: "p1".into(),
+            profile_name: "orders-api".into(),
+            kind: ServiceKind::Docker,
+            change: ChangeKind::Deployed,
+            source: ChangeSource::Observed,
+            section: "containers".into(),
+            component: "worker".into(),
+            from: Some("2.14.2".into()),
+            to: "2.14.3".into(),
+            at: from - Duration::minutes(4),
+            summary: "worker 2.14.2 → 2.14.3".into(),
+        }]);
+        state.logs.write().await.push_many((0..5).map(|i| LogEvent {
+            id: format!("l{i}"),
+            profile_id: "p1".into(),
+            profile_name: "orders-api".into(),
+            kind: ServiceKind::Docker,
+            source: "worker".into(),
+            level: LogLevel::Error,
+            message: format!("OOMKilled after {}ms", 3000 + i),
+            timestamp: now - Duration::minutes(5),
+            stream: LogStream::Runtime,
+        }));
+
+        let facts = window_grounds(&state, "p1", from, to).await.unwrap().join("\n");
+
+        assert!(facts.contains("connection: orders-api — now down"), "{facts}");
+        assert!(facts.contains("metric CPU: 40% → 94% (low 40%, peak 94%"), "{facts}");
+        assert!(facts.contains("the 10 min before averaged 40%"), "the window is read against what came before it: {facts}");
+        assert!(facts.contains("alert") && facts.contains("code 137") && facts.contains("still firing"), "{facts}");
+        assert!(facts.contains("change") && facts.contains("2.14.3"), "a deploy in the lead-in is evidence: {facts}");
+        assert!(facts.contains("logs: 5 lines at warn or above in the window, 5 of them errors"), "{facts}");
+        assert!(facts.contains("log ×5: OOMKilled after ####ms"), "numbers fold, so five timeouts are one message: {facts}");
+    }
+
+    #[tokio::test]
+    async fn an_empty_or_backwards_window_is_refused_before_anything_is_asked() {
+        let state = Arc::new(AppState::new(
+            crate::config::AppConfig::default(),
+            std::path::PathBuf::from("/tmp/root-window-test.json"),
+        ));
+        let now = Utc::now();
+        let err = explain_window(&state, "p1".into(), now, now - Duration::minutes(1))
+            .await
+            .expect_err("a backwards window has nothing in it");
+        assert!(err.to_string().contains("drag across a chart"), "{err}");
+    }
 }

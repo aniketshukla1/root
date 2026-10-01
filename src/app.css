@@ -402,6 +402,15 @@
     font-size: var(--mono-size);
   }
 
+  /* A strip that scrolls sideways without a scrollbar — the tab strip,
+     whose overflow is a few pixels of label, not something to drag. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Instrument ruling behind plotted data. */
   .grat {
     background-image: repeating-linear-gradient(
@@ -468,6 +477,22 @@
   to { box-shadow: 0 0 0 7px var(--ripple); opacity: 0; }
 }
 .a-ripple { opacity: 0; animation: ripple 0.6s cubic-bezier(0.22, 0.9, 0.3, 1) forwards; }
+
+/* A line of text still being written: a soft band drawn across a ghost. */
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.ai-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-line) 0%,
+    color-mix(in oklab, var(--color-ink) 16%, transparent) 50%,
+    var(--color-line) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
 
 /* ------------------------------------------------------- the title sequence
  *

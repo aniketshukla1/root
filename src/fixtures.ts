@@ -16,6 +16,7 @@
 import type {
   Alert,
   AlertSeverity,
+  ComponentReading,
   FlappingCondition,
   HistoryStats,
   PastAlert,
@@ -2048,4 +2049,37 @@ export function historyStats(): HistoryStats {
       log_lines: 18_332_104,
     },
   };
+}
+
+// ------------------------------------------------------------------ inline AI
+//
+// No model in the preview. These answers are written from the fixtures the
+// way a model given the same facts would answer, and say so in the model
+// field, so the inline notes can be looked at and judged without a key.
+
+/** The chart's "✦ Explain this", answered from what the fixtures hold. */
+export function explainWindow(profileId: string, from: string, to: string): Promise<ComponentReading> {
+  const name = SNAPSHOTS.find((s) => s.profileId === profileId)?.profileName ?? profileId;
+  const change = CHANGES.find((c) => c.profileId === profileId);
+  const alert = ALERTS.find((a) => a.profileId === profileId);
+  const hm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const text =
+    change && alert
+      ? `The climb starts a few minutes after ${change.component} moved ${change.from ?? "?"} → ${change.to} at ${hm(change.at)}, and "${alert.title}" follows at ${hm(alert.firstSeen)} — the deploy is the likely cause. The errors in the window are one message repeating, which fits a memory regression in ${change.to}; payments-db degrading at the same moment looks like consequence, not cause.`
+      : `Nothing recorded in this window explains the movement on ${name}: no alerts, no changes and no warnings. Check whether traffic shifted upstream.`;
+  const grounds = [
+    `connection: ${name}`,
+    `window: ${hm(from)} to ${hm(to)}`,
+    "metric CPU: 58% → 91% (low 57%, peak 94%); the window before averaged 59%",
+    ...(change ? [`change ${hm(change.at)} ${change.summary}`] : []),
+    ...(alert ? [`alert ${hm(alert.firstSeen)} critical: "${alert.title}" — still firing`] : []),
+    "logs: 41 lines at warn or above in the window, 37 of them errors",
+    "log ×33: OOMKilled: container worker exceeded memory limit ####Mi",
+  ];
+  return new Promise((resolve) =>
+    setTimeout(
+      () => resolve({ text, model: "preview — no model called", grounds, readAt: new Date().toISOString() }),
+      1100,
+    ),
+  );
 }

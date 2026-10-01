@@ -364,6 +364,16 @@ pub async fn explain_component(state: Shared<'_>, profile_id: String, section_id
 }
 
 #[tauri::command]
+pub async fn explain_window(
+    state: Shared<'_>,
+    profile_id: String,
+    from: chrono::DateTime<chrono::Utc>,
+    to: chrono::DateTime<chrono::Utc>,
+) -> Result<crate::state::ComponentReading> {
+    commands::explain_window(&state, profile_id, from, to).await
+}
+
+#[tauri::command]
 pub async fn explain_incident(state: Shared<'_>, incident_id: String, refresh: Option<bool>) -> Result<crate::rca::RootCause> {
     commands::explain_incident(&state, incident_id, refresh).await
 }

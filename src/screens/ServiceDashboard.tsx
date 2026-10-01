@@ -26,6 +26,7 @@ import type {
   PastChange,
 } from "../types";
 import { GLOBAL_STREAMS } from "../types";
+import { AiNote, type AiState } from "../ui/AiNote";
 import { AlertList } from "../ui/AlertList";
 import {
   LogHistogram,
@@ -46,8 +47,9 @@ import {
   Segmented,
   Stat,
   Tag,
+  Kbd,
 } from "../ui/primitives";
-import { ChevronDown, ChevronRight, RefreshIcon, TimelineIcon } from "../ui/icons";
+import { ChevronDown, ChevronRight, RefreshIcon, SparkleIcon, TimelineIcon } from "../ui/icons";
 
 const HISTOGRAM_BUCKETS = 72;
 const AUTO_REFRESH_MS = 15000;
@@ -138,6 +140,40 @@ export function ServiceDashboard({
     return [now - minutes * 60000, now];
   });
   const [zoom, setZoom] = useState<Domain | null>(null);
+
+  // ✦ Explain this: the model's reading of the window someone dragged across.
+  // A different window is a different question, so the answer goes with it.
+  const [explained, setExplained] = useState<AiState>({ status: "idle" });
+  useEffect(() => setExplained({ status: "idle" }), [zoom, profileId]);
+
+  const explainWindow = useCallback(async () => {
+    if (!zoom) return;
+    setExplained({ status: "loading" });
+    try {
+      const reading = await api.explainWindow(
+        profileId,
+        new Date(zoom[0]).toISOString(),
+        new Date(zoom[1]).toISOString(),
+      );
+      setExplained({ status: "done", reading });
+    } catch (e) {
+      setExplained({ status: "error", message: errorMessage(e) });
+    }
+  }, [zoom, profileId]);
+
+  // ⌥K, as in ferro: ask the model about what is selected. By key code, so
+  // Option+K is still K on a Mac rather than the "˚" it types.
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && e.code === "KeyK") {
+        e.preventDefault();
+        void explainWindow();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom, explainWindow]);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
 
   const [open, setOpen] = useState<Record<SectionKey, boolean>>(() => {
@@ -381,9 +417,20 @@ export function ServiceDashboard({
         </span>
 
         {zoom && (
-          <Button variant="ghost" onClick={() => setZoom(null)}>
-            Reset zoom
-          </Button>
+          <>
+            <Button variant="ghost" onClick={() => setZoom(null)}>
+              Reset zoom
+            </Button>
+            <Button
+              onClick={() => void explainWindow()}
+              title="Ask the model what happened in this window (⌥K)"
+              disabled={explained.status === "loading"}
+            >
+              <SparkleIcon size={13} />
+              Explain this
+              <Kbd>⌥K</Kbd>
+            </Button>
+          </>
         )}
 
         <div className="ml-auto flex items-center gap-2">
@@ -444,6 +491,16 @@ export function ServiceDashboard({
           <span className="font-medium text-crit">Could not load history.</span>{" "}
           <span className="num text-ink-2">{error}</span>
         </div>
+      )}
+
+      {zoom && (
+        <AiNote
+          title={`What happened ${formatClock(zoom[0])} – ${formatClock(zoom[1])}`}
+          state={explained}
+          onClose={() => setExplained({ status: "idle" })}
+          onRetry={() => void explainWindow()}
+          onSetup={() => onNavigate({ name: "settings" })}
+        />
       )}
 
       <Section
@@ -1017,3 +1074,8 @@ function Section({
 }
 
 export { healthColor, formatRelative };
+
+/** "14:32" — the window's ends as the axis labels them. */
+function formatClock(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}

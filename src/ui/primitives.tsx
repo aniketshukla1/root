@@ -453,7 +453,9 @@ export function Segmented<T extends string>({
           title={option.title}
           onClick={() => onChange(option.value)}
           className={cx(
-            "h-[22px] rounded-sm px-2.5 text-xs font-medium transition-colors",
+            // One line, as buttons are: "Needs attention" wrapping inside a
+            // 22px option spills out of the control.
+            "h-[22px] rounded-sm px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
             option.value === value
               ? "bg-overlay text-ink shadow-[0_0_0_1px_var(--color-line-strong),0_1px_2px_rgba(0,0,0,0.16)]"
               : "text-ink-3 hover:text-ink",

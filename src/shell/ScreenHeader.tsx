@@ -54,7 +54,11 @@ export function ScreenHeader({
   }, [meta]);
 
   return (
-    <header className="sticky top-0 z-10 flex min-h-[52px] shrink-0 items-start gap-3 border-b border-line bg-page/95 px-4 py-[11px] backdrop-blur">
+    // The header wraps as a whole: when the filters cannot sit beside the
+    // title, they drop to a row of their own rather than squeezing in under
+    // it. Squeezed, a right-aligned group that cannot fit overflows to its
+    // left — over the title, and past the edge of the header.
+    <header className="sticky top-0 z-10 flex min-h-[52px] shrink-0 flex-wrap items-start gap-x-3 gap-y-2 border-b border-line bg-page/95 px-4 py-[11px] backdrop-blur">
       <h1 className="shrink-0 text-3xl leading-[30px] font-bold tracking-[-.03em] text-ink">
         {title}
       </h1>
@@ -68,53 +72,56 @@ export function ScreenHeader({
         </div>
       )}
 
-      {/* The screen's own filters wrap; the controls every screen shares do
-          not. Both used to sit in one row that refused to shrink, so on
-          Alerts — a search, three segmented controls — the row was 88px wider
-          than a 1440px window, and at 1100px group-by and Ask were cut off the
-          edge entirely. Wrapping inside this group grows the band downward
+      {/* The screen's own filters and the controls every screen shares wrap
+          as one right-aligned group. They used to sit in one row that refused
+          to shrink, so on Alerts — a search, three segmented controls — the
+          row was 88px wider than a 1440px window, and at 1100px group-by and
+          Ask were cut off the edge entirely. Wrapping grows the band downward
           and only when the width is genuinely short, so at a given window
-          size the header still holds still. */}
-      {children && (
-        <div className="ml-auto flex min-h-[30px] min-w-0 flex-wrap items-center justify-end gap-2">
-          {children}
-        </div>
-      )}
+          size the header still holds still.
 
-      <div className={cx("flex min-h-[30px] shrink-0 items-center gap-2", !children && "ml-auto")}>
-        {onAsk && (
-          <Button onClick={onAsk} title="Ask the assistant  ⌘J" className="gap-1.5">
-            <span className="flex text-accent">
-              <AssistantIcon size={13} />
-            </span>
-            Ask
-            <Kbd>⌘J</Kbd>
-          </Button>
-        )}
-        {syncedAt && (
-          <span className="flex items-center gap-1.5 text-xs text-ink-4">
-            {live && (
-              <span className="relative flex h-1.5 w-1.5" title="Receiving live updates">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-60" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-ok" />
+          The shared controls are one item inside this group, not a sibling of
+          it: as a sibling they wrapped onto a header row of their own and sat
+          at its left edge, stranded under the title. */}
+      {/* No `min-w-0`: the group must not shrink below its widest control, or
+          the header never wraps and the controls overflow instead. */}
+      <div className="ml-auto flex min-h-[30px] max-w-full flex-wrap items-center justify-end gap-2">
+        {children}
+        <div className={cx("flex min-h-[30px] shrink-0 items-center gap-2", children != null && "ml-1")}>
+          {onAsk && (
+            <Button onClick={onAsk} title="Ask the assistant  ⌘J" className="gap-1.5">
+              <span className="flex text-accent">
+                <AssistantIcon size={13} />
               </span>
-            )}
-            {/* Width reserved, not measured. This label sits at the right-hand
-                end of a group anchored to the right edge, so any change in its
-                width moves everything to its left — the filter, both segmented
-                controls and Ask. It alternates between "just now" and "6s ago"
-                on nearly every fetch, which slid the whole cluster 13px back
-                and forth every few seconds. The face is monospace, so 8ch is
-                exactly "just now", the widest thing formatRelative returns
-                short of a hundred days. */}
-            <span className="num inline-block min-w-[8ch]">{formatRelative(syncedAt)}</span>
-          </span>
-        )}
-        {onRefresh && (
-          <Button variant="ghost" onClick={onRefresh} title="Refresh now" className="px-1.5">
-            <RefreshIcon size={14} />
-          </Button>
-        )}
+              Ask
+              <Kbd>⌘J</Kbd>
+            </Button>
+          )}
+          {syncedAt && (
+            <span className="flex items-center gap-1.5 text-xs text-ink-4">
+              {live && (
+                <span className="relative flex h-1.5 w-1.5" title="Receiving live updates">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-60" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-ok" />
+                </span>
+              )}
+              {/* Width reserved, not measured. This label sits at the right-hand
+                  end of a group anchored to the right edge, so any change in its
+                  width moves everything to its left — the filter, both segmented
+                  controls and Ask. It alternates between "just now" and "6s ago"
+                  on nearly every fetch, which slid the whole cluster 13px back
+                  and forth every few seconds. 8ch is a little wider than "just
+                  now", the widest thing formatRelative returns short of a
+                  hundred days. */}
+              <span className="num inline-block min-w-[8ch]">{formatRelative(syncedAt)}</span>
+            </span>
+          )}
+          {onRefresh && (
+            <Button variant="ghost" onClick={onRefresh} title="Refresh now" className="px-1.5">
+              <RefreshIcon size={14} />
+            </Button>
+          )}
+        </div>
       </div>
     </header>
   );

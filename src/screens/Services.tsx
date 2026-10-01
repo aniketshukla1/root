@@ -175,27 +175,38 @@ export function Services({
         ) : (
           /* One table for every group rather than one per group: a single
              column model is what keeps the numbers aligned down the whole
-             page, and the header only has to be read once. */
-          <div className="panel overflow-hidden">
+             page, and the header only has to be read once.
+
+             Columns come and go with the width this screen has — not the
+             window's, which counts the sidebar and the assistant dock as room
+             the table does not get. Whatever still does not fit scrolls:
+             clipped, Trend and Checked were simply gone below 1280px. */
+          <div className="panel overflow-x-auto">
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-[1] bg-panel">
                 <tr className="border-b border-line">
                   <th className="w-px" />
                   <th className="label cell-pad-x py-1.5 text-left font-semibold">Connection</th>
                   <th className="label cell-pad-x py-1.5 text-left font-semibold">Status</th>
-                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold xl:table-cell">
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold @6xl:table-cell">
                     Type
                   </th>
-                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold lg:table-cell">
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold @5xl:table-cell">
                     Owner
                   </th>
-                  <th className="label cell-pad-x py-1.5 text-right font-semibold">Components</th>
+                  <th className="label hidden cell-pad-x py-1.5 text-right font-semibold @lg:table-cell">
+                    Components
+                  </th>
                   <th className="label cell-pad-x py-1.5 text-right font-semibold">Open</th>
-                  <th className="label hidden cell-pad-x py-1.5 text-right font-semibold md:table-cell">
+                  <th className="label hidden cell-pad-x py-1.5 text-right font-semibold @2xl:table-cell">
                     Key metric
                   </th>
-                  <th className="label cell-pad-x py-1.5 text-right font-semibold">Trend</th>
-                  <th className="label cell-pad-x py-1.5 text-right font-semibold">Checked</th>
+                  <th className="label hidden cell-pad-x py-1.5 text-right font-semibold @3xl:table-cell">
+                    Trend
+                  </th>
+                  <th className="label hidden cell-pad-x py-1.5 text-right font-semibold @4xl:table-cell">
+                    Checked
+                  </th>
                 </tr>
               </thead>
 
@@ -329,7 +340,7 @@ function ServiceRow({
               </Tag>
             )}
             <span
-              className="hidden max-w-64 truncate text-2xs text-ink-4 2xl:inline"
+              className="hidden max-w-64 truncate text-2xs text-ink-4 @7xl:inline"
               title={snapshot.error ?? snapshot.summary}
             >
               {snapshot.error ?? snapshot.summary}
@@ -337,9 +348,9 @@ function ServiceRow({
           </div>
         </td>
 
-        <td className="hidden cell-pad-x text-xs text-ink-3 xl:table-cell">{descriptor.label}</td>
+        <td className="hidden cell-pad-x text-xs text-ink-3 @6xl:table-cell">{descriptor.label}</td>
 
-        <td className="hidden max-w-48 cell-pad-x lg:table-cell">
+        <td className="hidden max-w-48 cell-pad-x @5xl:table-cell">
           <div className="flex items-center gap-1.5">
             <span
               className={cx("truncate text-xs", ownership.assigned ? "text-ink-3" : "text-ink-4 italic")}
@@ -360,7 +371,9 @@ function ServiceRow({
           </div>
         </td>
 
-        <td className="num cell-pad-x text-right text-ink-3">{service.entities.length}</td>
+        <td className="num hidden cell-pad-x text-right text-ink-3 @lg:table-cell">
+          {service.entities.length}
+        </td>
 
         <td className="cell-pad-x text-right">
           {service.issues.length > 0 ? (
@@ -370,7 +383,7 @@ function ServiceRow({
           )}
         </td>
 
-        <td className="hidden cell-pad-x text-right md:table-cell">
+        <td className="hidden cell-pad-x text-right @2xl:table-cell">
           {primary ? (
             <span className="whitespace-nowrap" title={primary.label}>
               <span className={cx("num", isBreaching(primary) && "text-warn")}>
@@ -383,7 +396,7 @@ function ServiceRow({
           )}
         </td>
 
-        <td className="cell-pad-x">
+        <td className="hidden cell-pad-x @3xl:table-cell">
           <div className="flex justify-end">
             {trend ? (
               <Sparkline
@@ -399,7 +412,7 @@ function ServiceRow({
           </div>
         </td>
 
-        <td className="num cell-pad-x text-right whitespace-nowrap text-ink-4">
+        <td className="num hidden cell-pad-x text-right whitespace-nowrap text-ink-4 @4xl:table-cell">
           {formatRelative(snapshot.checkedAt)}
         </td>
       </tr>

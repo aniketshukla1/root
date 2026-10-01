@@ -424,25 +424,30 @@ export function Alerts({
           </Panel>
         ) : (
           /* One table across every group so the columns stay aligned down the
-             whole page and the header is read once. */
-          <div className="panel overflow-hidden">
+             whole page and the header is read once. Columns that do not fit
+             scroll rather than clip: clipped, they were simply unreachable. */
+          <div className="panel overflow-x-auto">
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-[1] bg-panel">
                 <tr className="border-b border-line">
                   <th className="label cell-pad-x py-1.5 text-left font-semibold">Severity</th>
                   <th className="label cell-pad-x py-1.5 text-left font-semibold">Alert</th>
-                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold lg:table-cell">
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold @5xl:table-cell">
                     Component
                   </th>
                   {groupBy !== "connection" && (
                     <th className="label cell-pad-x py-1.5 text-left font-semibold">Connection</th>
                   )}
-                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold xl:table-cell">
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold @6xl:table-cell">
                     Owner
                   </th>
-                  <th className="label cell-pad-x py-1.5 text-right font-semibold">First seen</th>
-                  <th className="label cell-pad-x py-1.5 text-right font-semibold">Last seen</th>
-                  <th className="w-px" />
+                  <th className="label hidden cell-pad-x py-1.5 text-right font-semibold whitespace-nowrap @3xl:table-cell">
+                    First seen
+                  </th>
+                  <th className="label cell-pad-x py-1.5 text-right font-semibold whitespace-nowrap">
+                    Last seen
+                  </th>
+                  <th className="w-0 p-0" />
                 </tr>
               </thead>
 
@@ -577,13 +582,18 @@ export function Alerts({
                         style={{ height: "var(--row-h)" }}
                       >
                         <td className="cell-pad-x whitespace-nowrap">
-                          <span className="flex items-center gap-1.5">
+                          <span className="flex items-center gap-1.5" title={severityMeta.label}>
                             <span
                               className="h-1.5 w-1.5 shrink-0 rounded-full"
                               style={{ background: severityMeta.color }}
                               aria-hidden
                             />
-                            <span className="text-xs" style={{ color: severityMeta.color }}>
+                            {/* Narrow, the dot carries it: the word goes
+                                before the alert's own title does. */}
+                            <span
+                              className="sr-only text-xs @2xl:not-sr-only"
+                              style={{ color: severityMeta.color }}
+                            >
                               {severityMeta.label}
                             </span>
                           </span>
@@ -615,7 +625,7 @@ export function Alerts({
                             collector called the thing. A Redis slow command
                             arrives 170 characters long and used to paint
                             straight across the four columns to its right. */}
-                        <td className="hidden max-w-44 cell-pad-x lg:table-cell">
+                        <td className="hidden max-w-44 cell-pad-x @5xl:table-cell">
                           {alert.component ? (
                             <div className="num truncate text-xs text-ink-3" title={alert.component}>
                               {alert.component}
@@ -647,7 +657,7 @@ export function Alerts({
                           </td>
                         )}
 
-                        <td className="hidden max-w-40 cell-pad-x xl:table-cell">
+                        <td className="hidden max-w-40 cell-pad-x @6xl:table-cell">
                           <div
                             className={cx(
                               "truncate text-xs",
@@ -661,7 +671,7 @@ export function Alerts({
                         </td>
 
                         <td
-                          className="num cell-pad-x text-right whitespace-nowrap text-ink-4"
+                          className="num hidden cell-pad-x text-right whitespace-nowrap text-ink-4 @3xl:table-cell"
                           title={formatDateTime(alert.firstSeen)}
                         >
                           {formatRelative(alert.firstSeen)}
@@ -673,9 +683,16 @@ export function Alerts({
                           {formatRelative(alert.lastSeen)}
                         </td>
 
-                        <td className="cell-pad-x">
-                          <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        {/* The actions float over the end of the row rather
+                            than holding a column. As a column they reserved
+                            208px on every row for buttons that only show on
+                            hover, and pushed the table past its panel at
+                            every window width up to 1440px — clipping Ack,
+                            the one action an on-call needs. */}
+                        <td className="relative w-0 p-0">
+                          <div className="pointer-events-none absolute top-1/2 right-2 z-[1] flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-line-strong bg-raised p-0.5 opacity-0 shadow-[0_6px_16px_rgba(0,0,0,0.28)] transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
                             <Button
+                              size="sm"
                               variant="ghost"
                               onClick={() => void explainOne(alert)}
                               title="Write the likely cause into this row"
@@ -686,6 +703,7 @@ export function Alerts({
                               Explain
                             </Button>
                             <Button
+                              size="sm"
                               variant="ghost"
                               onClick={() => onExplain(alert)}
                               title="Ask the assistant about this alert"
@@ -696,6 +714,7 @@ export function Alerts({
                             </Button>
                             {alert.active && !alert.acknowledged && (
                               <Button
+                                size="sm"
                                 variant="ghost"
                                 onClick={() => onAcknowledge(alert.id)}
                                 title="Acknowledgement is not resolution — the alert stays listed until the collector reports recovery."

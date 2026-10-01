@@ -51,6 +51,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_scorecard: () => fixtures.scorecard(),
   get_long_history: () => [],
   explain_lines: ({ lines }) => fixtures.explainLines(lines as LogEvent[]),
+  explain_alert: ({ alertId }) => fixtures.explainAlert(alertId as string),
   explain_window: ({ profileId, from, to }) =>
     fixtures.explainWindow(profileId as string, from as string, to as string),
   get_alert_history: ({ profileId }) => fixtures.alertHistory(profileId as string),
@@ -477,6 +478,9 @@ export const api = {
 
   /** What a handful of selected log lines mean — "✦ Explain these lines". */
   explainLines: (lines: LogEvent[]) => invoke<ComponentReading>("explain_lines", { lines }),
+
+  /** One alert's likely root cause, in a sentence, for its own row. */
+  explainAlert: (alertId: string) => invoke<ComponentReading>("explain_alert", { alertId }),
 
   explainComponent: (profileId: string, sectionId: string, rowId: string) =>
     invoke<ComponentReading>("explain_component", { profileId, sectionId, rowId }),

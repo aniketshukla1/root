@@ -382,6 +382,11 @@ pub async fn explain_lines(
 }
 
 #[tauri::command]
+pub async fn explain_alert(state: Shared<'_>, alert_id: String) -> Result<crate::state::ComponentReading> {
+    commands::explain_alert(&state, alert_id).await
+}
+
+#[tauri::command]
 pub async fn explain_incident(state: Shared<'_>, incident_id: String, refresh: Option<bool>) -> Result<crate::rca::RootCause> {
     commands::explain_incident(&state, incident_id, refresh).await
 }

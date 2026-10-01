@@ -2108,3 +2108,32 @@ export function explainLines(lines: LogEvent[]): Promise<ComponentReading> {
     ),
   );
 }
+
+/** "✦ Explain" on an alert row, answered from what the fixtures hold. */
+export function explainAlert(alertId: string): Promise<ComponentReading> {
+  const alert = ALERTS.find((a) => a.id === alertId);
+  const title = alert?.title.toLowerCase() ?? "";
+  const text = title.includes("137") || title.includes("exited")
+    ? "The worker image deployed at 15:19 (2.14.2 → 2.14.3) is being OOM-killed at its 512Mi limit — containers began exiting four minutes after the deploy."
+    : title.includes("lag") || title.includes("replication")
+      ? "Consequence, not cause: orders-api's restarts at 15:23 doubled write retries, and the lag rose with them."
+      : title.includes("unreachable") || title.includes("down")
+        ? "The host stopped answering at the same minute its certificate rotated; nothing else on the estate moved, so check the new certificate first."
+        : title.includes("shard") || title.includes("unassigned")
+          ? "Disk watermark: es-node-4 crossed 90% at 15:12 and its shards could not be placed; free disk on es-node-4 first."
+          : "No cause in the evidence — check the collector's last successful poll first.";
+  const grounds = [
+    `the alert: ${alert?.severity ?? "warning"} "${alert?.title ?? alertId}" on ${alert?.profileName ?? "?"}`,
+    ...(alert?.detail ? [`detail: ${alert.detail}`] : []),
+    `connection: ${alert?.profileName ?? "?"}`,
+    "change 15:19 worker 2.14.2 → 2.14.3",
+    "metric memory: 6.2 GB → 7.9 GB (low 6.1 GB, peak 7.9 GB); the 15 min before averaged 6.3 GB",
+    "logs: 41 lines at warn or above in the window, 37 of them errors",
+  ];
+  return new Promise((resolve) =>
+    setTimeout(
+      () => resolve({ text, model: "preview — no model called", grounds, readAt: new Date().toISOString() }),
+      650 + Math.round(Math.random() * 600),
+    ),
+  );
+}

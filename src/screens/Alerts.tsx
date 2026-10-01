@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import type { Catalog } from "../catalog";
 import { markColor } from "../catalog";
 import { formatDateTime, formatRelative } from "../format";
-import { api } from "../api";
+import { api, errorMessage } from "../api";
 import { useHistoryStats } from "../history";
 import { confidenceMeaning } from "../incident";
 import type { EstateModel } from "../model";
@@ -22,7 +22,8 @@ import {
   ServiceMark,
   Tag,
 } from "../ui/primitives";
-import { AssistantIcon, SearchIcon } from "../ui/icons";
+import { AssistantIcon, SearchIcon, SparkleIcon } from "../ui/icons";
+import { AiInline, type AiState } from "../ui/AiNote";
 
 type StateFilter = "open" | "acknowledged" | "resolved" | "all";
 
@@ -139,6 +140,53 @@ export function Alerts({
       })
       .sort(compareAlerts);
   }, [alerts, state, severity, query]);
+
+  // ✦ notes, written into the rows: the model's one-line reading of each
+  // alert's likely cause, kept for as long as the screen is open.
+  const [notes, setNotes] = useState<Map<string, AiState>>(new Map());
+  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+  const setNote = useCallback(
+    (id: string, state: AiState) => setNotes((current) => new Map(current).set(id, state)),
+    [],
+  );
+
+  /** Returns false when there is no provider, so a batch can stop at once. */
+  const explainOne = useCallback(
+    async (alert: Alert): Promise<boolean> => {
+      setNote(alert.id, { status: "loading" });
+      try {
+        setNote(alert.id, { status: "done", reading: await api.explainAlert(alert.id) });
+        return true;
+      } catch (e) {
+        const message = errorMessage(e);
+        setNote(alert.id, { status: "error", message });
+        return !/api key|provider|not configured/i.test(message);
+      }
+    },
+    [setNote],
+  );
+
+  // Every alert in view, three at a time — ferro's "Explain" over a whole
+  // diff. No provider stops the batch at the first alert instead of failing
+  // all of them the same way.
+  const explainAll = useCallback(async () => {
+    const queue = visible.filter((a) => notes.get(a.id)?.status !== "done");
+    const total = queue.length;
+    if (total === 0) return;
+    let done = 0;
+    let stopped = false;
+    setBulk({ done, total });
+    const worker = async () => {
+      while (queue.length > 0 && !stopped) {
+        const next = queue.shift()!;
+        if (!(await explainOne(next))) stopped = true;
+        done += 1;
+        setBulk({ done, total });
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    setBulk(null);
+  }, [visible, notes, explainOne]);
 
   const groups = useMemo<AlertGroup[]>(() => {
     if (groupBy === "none") {
@@ -285,6 +333,14 @@ export function Alerts({
             title: key === "none" ? "No grouping" : `Group by ${GROUP_LABELS[key].toLowerCase()}`,
           }))}
         />
+        <Button
+          onClick={() => void explainAll()}
+          disabled={bulk !== null || visible.length === 0}
+          title="Write the likely cause into every alert in view"
+        >
+          <SparkleIcon size={13} />
+          {bulk ? `Explaining ${bulk.done} of ${bulk.total}…` : "Explain all"}
+        </Button>
       </ScreenHeader>
 
       <Screen className="flex flex-col gap-3">
@@ -505,11 +561,17 @@ export function Alerts({
                     const severityMeta = SEVERITY[alert.severity];
                     const owner = teamOf.get(alert.profileId);
 
+                    const note = notes.get(alert.id);
+                    const noted = note !== undefined && note.status !== "idle";
+
                     return (
+                      <Fragment key={alert.id}>
                       <tr
-                        key={alert.id}
                         className={cx(
-                          "group border-b border-line/50 row-hover",
+                          "group row-hover",
+                          // The rule moves under the note when there is one,
+                          // so the note reads as part of its alert.
+                          !noted && "border-b border-line/50",
                           !alert.active && "opacity-55",
                         )}
                         style={{ height: "var(--row-h)" }}
@@ -615,12 +677,22 @@ export function Alerts({
                           <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                             <Button
                               variant="ghost"
+                              onClick={() => void explainOne(alert)}
+                              title="Write the likely cause into this row"
+                              className="gap-1.5"
+                              disabled={note?.status === "loading"}
+                            >
+                              <SparkleIcon size={12} />
+                              Explain
+                            </Button>
+                            <Button
+                              variant="ghost"
                               onClick={() => onExplain(alert)}
-                              title="Explain this alert"
-                              className="gap-1.5 text-accent"
+                              title="Ask the assistant about this alert"
+                              aria-label="Ask the assistant about this alert"
+                              className="px-1.5"
                             >
                               <AssistantIcon size={12} />
-                              Explain
                             </Button>
                             {alert.active && !alert.acknowledged && (
                               <Button
@@ -634,6 +706,20 @@ export function Alerts({
                           </div>
                         </td>
                       </tr>
+                      {noted && (
+                        <tr className={cx("border-b border-line/50", !alert.active && "opacity-55")}>
+                          <td />
+                          <td colSpan={99} className="cell-pad-x pb-2">
+                            <AiInline
+                              state={note}
+                              onClose={() => setNote(alert.id, { status: "idle" })}
+                              onRetry={() => void explainOne(alert)}
+                              onSetup={() => onNavigate({ name: "settings" })}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>

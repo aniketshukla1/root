@@ -2791,6 +2791,104 @@ async fn lines_grounds(state: &Arc<AppState>, lines: &[crate::model::LogEvent]) 
     out
 }
 
+/// One alert's likely root cause, in a sentence — the note "✦ Explain" writes
+/// into the alert's own row.
+///
+/// The facts are the alert itself and the window around its onset: the ten
+/// minutes before it fired, when a cause shows up, and the first few minutes
+/// after, when its consequences do — read exactly the way a chart window is,
+/// so a note and an "Explain this" over the same stretch agree.
+pub async fn explain_alert(
+    state: &Arc<AppState>,
+    alert_id: String,
+) -> Result<crate::state::ComponentReading> {
+    let alert = state
+        .alerts
+        .read()
+        .await
+        .all()
+        .into_iter()
+        .find(|a| a.id == alert_id)
+        .ok_or_else(|| AppError::Llm("that alert is no longer tracked".to_string()))?;
+    let grounds = alert_grounds(state, &alert).await?;
+    let fingerprint = grounds.join("\n");
+    let key = format!("alert:{}:{}", alert.fingerprint, alert.first_seen.timestamp());
+    if let Some(cached) = state.readings.read().await.get(&key) {
+        if cached.fingerprint == fingerprint {
+            return Ok(cached.reading.clone());
+        }
+    }
+
+    let settings = state.config.read().await.llm.clone();
+    let api_key = secrets::get_secret(settings.provider.secret_key()).await?;
+    let provider = build_provider(&settings, api_key)?;
+    let response = provider
+        .complete(crate::llm::CompletionRequest {
+            model: settings.model.clone(),
+            system: ALERT_NOTE_SYSTEM.to_string(),
+            messages: vec![ChatMessage::user(grounds.join("\n"))],
+            tools: Vec::new(),
+            max_tokens: 120,
+            temperature: 0.1,
+        })
+        .await?;
+
+    let text = response.text.trim().to_string();
+    if text.is_empty() {
+        return Err(AppError::Llm("the model returned nothing".to_string()));
+    }
+    let reading = crate::state::ComponentReading {
+        text,
+        model: settings.model.clone(),
+        grounds,
+        read_at: chrono::Utc::now(),
+    };
+    state.readings.write().await.insert(
+        key,
+        crate::state::CachedReading { fingerprint, reading: reading.clone() },
+    );
+    Ok(reading)
+}
+
+const ALERT_NOTE_SYSTEM: &str = "\
+You are writing a one-line note into an alert's row in an infrastructure \
+monitoring tool, for an operator scanning a list of alerts.
+
+One sentence, under 30 words, no preamble. Name the most likely root cause and \
+the single fact that points to it — a change, a dependency, a log message, a \
+metric's movement — with its time. Do not restate the alert's title. If the \
+facts do not point to a cause, write \"No cause in the evidence\" and name the \
+one thing to check first.";
+
+/// The alert, then the window around its onset.
+async fn alert_grounds(
+    state: &Arc<AppState>,
+    alert: &crate::model::Alert,
+) -> Result<Vec<String>> {
+    use chrono::Duration;
+    let hm = |t: chrono::DateTime<chrono::Utc>| t.format("%H:%M:%S").to_string();
+    let mut out = vec![format!(
+        "the alert: {} \"{}\" on {}{} — first seen {}, {}",
+        format!("{:?}", alert.severity).to_lowercase(),
+        alert.title,
+        alert.profile_name,
+        alert
+            .component
+            .as_deref()
+            .map(|c| format!(" / {c}"))
+            .unwrap_or_default(),
+        hm(alert.first_seen),
+        if alert.active { "still firing" } else { "resolved" }
+    )];
+    if !alert.detail.trim().is_empty() {
+        out.push(format!("detail: {}", alert.detail.trim()));
+    }
+    let to = (alert.first_seen + Duration::minutes(5)).min(chrono::Utc::now());
+    let from = alert.first_seen - Duration::minutes(10);
+    out.extend(window_grounds(state, &alert.profile_id, from, to.max(from + Duration::minutes(1))).await?);
+    Ok(out)
+}
+
 /// Why one incident happened, by the model, on evidence root already has.
 ///
 /// Deliberately not `send_message`, for the same reason `explain_component` is
@@ -3154,5 +3252,64 @@ mod window_tests {
             "a selected line is counted against the hour before it, numbers folded: {facts}"
         );
         assert!(facts.contains("elsewhere") && facts.contains("payments-db") && facts.contains("replication lag"), "{facts}");
+    }
+
+    #[tokio::test]
+    async fn an_alert_note_is_read_from_the_alert_and_the_minutes_before_it() {
+        let state = Arc::new(AppState::new(
+            crate::config::AppConfig::default(),
+            std::path::PathBuf::from("/tmp/root-alert-test.json"),
+        ));
+        let now = Utc::now();
+        state.snapshots.write().await.insert("p1".into(), snapshot(94.0, now));
+        let raised = state.alerts.write().await.reconcile(
+            "p1",
+            vec![Alert {
+                id: "a1".into(),
+                fingerprint: "f1".into(),
+                profile_id: "p1".into(),
+                profile_name: "orders-api".into(),
+                kind: ServiceKind::Docker,
+                severity: AlertSeverity::Critical,
+                title: "3 containers exited with code 137".into(),
+                detail: "worker-3 OOMKilled".into(),
+                component: Some("worker".into()),
+                first_seen: now,
+                last_seen: now,
+                active: true,
+                acknowledged: false,
+            }],
+        );
+        let alert = raised.into_iter().next().expect("raised");
+        state.changes.write().await.record(vec![ChangeEvent {
+            id: "c1".into(),
+            profile_id: "p1".into(),
+            profile_name: "orders-api".into(),
+            kind: ServiceKind::Docker,
+            change: ChangeKind::Deployed,
+            source: ChangeSource::Observed,
+            section: "containers".into(),
+            component: "worker".into(),
+            from: Some("2.14.2".into()),
+            to: "2.14.3".into(),
+            at: alert.first_seen - Duration::minutes(4),
+            summary: "worker 2.14.2 → 2.14.3".into(),
+        }]);
+
+        let facts = alert_grounds(&state, &alert).await.unwrap();
+
+        assert!(facts[0].starts_with("the alert: critical \"3 containers exited with code 137\" on orders-api / worker"), "the alert leads: {facts:?}");
+        assert!(facts.iter().any(|f| f == "detail: worker-3 OOMKilled"), "{facts:?}");
+        assert!(facts.iter().any(|f| f.starts_with("change ") && f.contains("2.14.3")), "the deploy four minutes before is in the window: {facts:?}");
+    }
+
+    #[tokio::test]
+    async fn an_alert_that_has_gone_is_said_to_have_gone() {
+        let state = Arc::new(AppState::new(
+            crate::config::AppConfig::default(),
+            std::path::PathBuf::from("/tmp/root-alert-test.json"),
+        ));
+        let err = explain_alert(&state, "nope".into()).await.expect_err("unknown alert");
+        assert!(err.to_string().contains("no longer tracked"), "{err}");
     }
 }

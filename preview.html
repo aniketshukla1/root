@@ -657,6 +657,26 @@
           // offer the day-scale windows and render its History section at all,
           // so the preview is the only place that surface can be looked at
           // without a Postgres running.
+          // Inline AI. No model in the harness: answers written from the
+          // fixtures, said to be so, after the pause a model would take.
+          explain_window: () => new Promise((resolve) => setTimeout(() => resolve({
+            text: "The climb starts a few minutes after the worker deploy, and the container exits follow — the deploy is the likely cause.",
+            model: "preview — no model called",
+            grounds: ["connection: prod-docker", "change worker 2.14.2 → 2.14.3", "alert critical: \"container exited\" — still firing"],
+            readAt: new Date().toISOString(),
+          }), 900)),
+          explain_lines: (args) => new Promise((resolve) => setTimeout(() => resolve({
+            text: `These ${(args.lines || []).length} lines are one failure repeating: the connection is reset mid-request and the client retries.`,
+            model: "preview — no model called",
+            grounds: (args.lines || []).slice(0, 5).map((l) => `line ${l.level} [${l.profileName}] ${l.message}`),
+            readAt: new Date().toISOString(),
+          }), 900)),
+          explain_alert: () => new Promise((resolve) => setTimeout(() => resolve({
+            text: "No cause in the evidence — check the collector's last successful poll first.",
+            model: "preview — no model called",
+            grounds: ["the alert", "connection state", "the ten minutes before it fired"],
+            readAt: new Date().toISOString(),
+          }), 700)),
           get_history_stats: () => ({
             configured: true,
             timescale: true,

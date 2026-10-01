@@ -124,7 +124,7 @@ export function ProfileDetail({
             <Button variant="ghost" onClick={onBack} title="Back">
               <ChevronLeft />
             </Button>
-            <span className="num text-2xs tracking-[.18em] text-ink-3 uppercase">
+            <span className="num text-2xs font-semibold tracking-[.06em] text-ink-3 uppercase">
               {profileName}
             </span>
             {profile.spy && (

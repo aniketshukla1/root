@@ -161,7 +161,7 @@ function TraceBody({
             <Button variant="ghost" onClick={onBack} title="Back">
               <ChevronLeft />
             </Button>
-            <span className="num text-2xs tracking-[.18em] text-ink-3 uppercase">
+            <span className="num text-2xs font-semibold tracking-[.06em] text-ink-3 uppercase">
               {trace.rootService || "unknown"}
             </span>
             <Sep />
@@ -190,7 +190,7 @@ function TraceBody({
           // that looks oddly wide: some parents never arrived, so the shape
           // below is a fragment and the timings inside it may not nest.
           <p className="mb-3 border border-warn/30 bg-warn/5 px-3 py-2 text-xs text-ink-2">
-            <span className="num tracking-[.18em] text-warn uppercase">Partial</span>{" "}
+            <span className="num font-semibold tracking-[.06em] text-warn uppercase">Partial</span>{" "}
             {trace.orphanCount} span{trace.orphanCount === 1 ? "" : "s"} name a parent that
             is not in this trace, so {trace.orphanCount === 1 ? "it hangs" : "they hang"} at
             the root. Sampling or a dropped export is the usual cause.
@@ -248,13 +248,13 @@ function TraceBody({
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-line">
-                    <th className="cell-pad-x py-1.5 text-left num text-2xs tracking-[.18em] text-ink-4 uppercase">
+                    <th className="cell-pad-x py-1.5 text-left num text-2xs font-semibold tracking-[.06em] text-ink-4 uppercase">
                       Span
                     </th>
-                    <th className="w-[45%] cell-pad-x py-1.5 text-left num text-2xs tracking-[.18em] text-ink-4 uppercase">
+                    <th className="w-[45%] cell-pad-x py-1.5 text-left num text-2xs font-semibold tracking-[.06em] text-ink-4 uppercase">
                       {formatDuration(total)}
                     </th>
-                    <th className="cell-pad-x py-1.5 text-right num text-2xs tracking-[.18em] text-ink-4 uppercase">
+                    <th className="cell-pad-x py-1.5 text-right num text-2xs font-semibold tracking-[.06em] text-ink-4 uppercase">
                       Self
                     </th>
                   </tr>
@@ -349,7 +349,7 @@ function SpanRow({
             </span>
             {node.orphaned && (
               <span
-                className="num shrink-0 text-2xs tracking-[.18em] text-warn uppercase"
+                className="num shrink-0 text-2xs font-semibold tracking-[.06em] text-warn uppercase"
                 title="This span's parent is not in the trace"
               >
                 orphan
@@ -382,7 +382,7 @@ function SpanRow({
           <td colSpan={3} className="cell-pad-x py-2">
             <div className="flex flex-col gap-2" style={{ paddingLeft: `${node.depth * 12}px` }}>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="num text-2xs tracking-[.18em] text-ink-4 uppercase">
+                <span className="num text-2xs font-semibold tracking-[.06em] text-ink-4 uppercase">
                   {node.span.service}
                 </span>
                 <span className="num text-2xs text-ink-4">{node.span.spanId}</span>

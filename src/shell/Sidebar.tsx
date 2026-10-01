@@ -155,7 +155,7 @@ export function Sidebar({
             >
               <RootMark size={16} />
             </span>
-            <span className="font-mono text-xs tracking-[.18em] text-ink uppercase">root</span>
+            <span className="text-[14px] font-semibold tracking-[-.01em] text-ink">root</span>
             <span
               className="ml-auto h-1.5 w-1.5 shrink-0"
               style={{ background: healthColor(model.health) }}

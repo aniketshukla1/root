@@ -102,7 +102,7 @@ export function ServerSignIn({
       <div className="panel flex w-full max-w-[420px] flex-col gap-4 p-6">
         <div className="flex items-center gap-2.5">
           <RootMark size={22} />
-          <span className="num text-2xs tracking-[.18em] text-ink-3 uppercase">root</span>
+          <span className="text-[14px] font-semibold tracking-[-.01em] text-ink">root</span>
         </div>
 
         <div>

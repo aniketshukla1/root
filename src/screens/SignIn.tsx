@@ -86,7 +86,7 @@ export function SignIn({
           <span className="grid h-8 w-8 place-items-center rounded-md bg-accent text-on-accent">
             <RootMark size={20} />
           </span>
-          <span className="font-mono text-xs tracking-[.18em] text-ink uppercase">root</span>
+          <span className="text-[14px] font-semibold tracking-[-.01em] text-ink">root</span>
         </div>
 
         <div className="relative z-10">

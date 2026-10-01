@@ -127,7 +127,7 @@ export function IncidentHero({
             <span className="flex items-center gap-2">
               <Dot health={incident.health} size={11} />
               <span
-                className="font-mono text-2xs tracking-[.16em] uppercase"
+                className="text-2xs font-semibold tracking-[.06em] uppercase"
                 style={{ color: severityColor(incident) }}
               >
                 Incident
@@ -780,7 +780,7 @@ export function StormBanner({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2.5">
           <span
-            className="font-mono text-2xs tracking-[.16em] uppercase"
+            className="text-2xs font-semibold tracking-[.06em] uppercase"
             style={{ color: "var(--color-serious)" }}
           >
             Possible single event

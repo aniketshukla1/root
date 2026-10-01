@@ -178,7 +178,7 @@ export function PanelHeader({
           clicked once they are off the edge. */}
       <h2 className="label min-w-0 truncate whitespace-nowrap">{title}</h2>
       {subtitle && (
-        <span className="min-w-0 truncate font-mono text-2xs text-ink-4">{subtitle}</span>
+        <span className="min-w-0 truncate text-2xs text-ink-4">{subtitle}</span>
       )}
       {actions && <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div>}
     </header>
@@ -274,13 +274,13 @@ export function Button({
 }) {
   const styles: Record<ButtonVariant, string> = {
     default:
-      "border-line bg-panel text-ink-2 hover:border-accent hover:text-accent",
+      "border-line-strong bg-raised text-ink hover:bg-overlay hover:border-ink-4/50",
     primary:
       "border-accent bg-accent text-on-accent hover:bg-accent-dim hover:border-accent-dim",
     danger:
       "border-crit/45 bg-crit/10 text-crit hover:border-crit",
     ghost:
-      "border-transparent text-ink-4 hover:text-ink",
+      "border-transparent text-ink-3 hover:bg-wash hover:text-ink",
   };
   return (
     <button
@@ -289,9 +289,9 @@ export function Button({
       {...props}
       disabled={props.disabled || loading}
       className={cx(
-        "relative inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5",
+        "relative inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border px-3",
         CONTROL_H[size],
-        "font-mono text-xs tracking-[.04em]",
+        size === "sm" ? "rounded-sm text-xs font-medium" : "text-[13px] font-medium",
         "transition-colors disabled:pointer-events-none disabled:opacity-40",
         styles[variant],
         className,
@@ -337,10 +337,12 @@ export function Input({
       {...props}
       aria-invalid={invalid || undefined}
       className={cx(
-        "min-w-0 rounded-md border bg-sunk px-2 font-mono text-xs text-ink",
+        "min-w-0 rounded-md border bg-sunk px-2.5 text-[13px] text-ink",
         CONTROL_H[size],
-        "placeholder:text-ink-4 focus:outline-none",
-        invalid ? "border-crit focus:border-crit" : "border-line focus:border-accent",
+        "placeholder:text-ink-4 focus:outline-none transition-[border-color,box-shadow]",
+        invalid
+          ? "border-crit focus:border-crit"
+          : "border-line-strong hover:border-ink-4/60 focus:border-ink/45 focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-ink)_9%,transparent)]",
         "disabled:cursor-not-allowed disabled:opacity-40",
         className,
       )}
@@ -435,7 +437,7 @@ export function Segmented<T extends string>({
       className={cx(
         // `w-fit` so it hugs its options in a column layout too, where the
         // default cross-axis stretch would otherwise pull it full-width.
-        "inline-flex h-7 w-fit shrink-0 items-center gap-0.5 rounded-md border border-line bg-panel p-[3px]",
+        "inline-flex h-7 w-fit shrink-0 items-center gap-[2px] rounded-md border border-line bg-sunk p-[2px]",
         className,
       )}
     >
@@ -450,9 +452,9 @@ export function Segmented<T extends string>({
           title={option.title}
           onClick={() => onChange(option.value)}
           className={cx(
-            "h-[21px] rounded-sm px-2.5 font-mono text-2xs tracking-[.06em] transition-colors",
+            "h-[22px] rounded-sm px-2.5 text-xs font-medium transition-colors",
             option.value === value
-              ? "bg-accent text-on-accent"
+              ? "bg-overlay text-ink shadow-[0_0_0_1px_var(--color-line-strong),0_1px_2px_rgba(0,0,0,0.16)]"
               : "text-ink-3 hover:text-ink",
           )}
         >
@@ -513,7 +515,7 @@ export function Tabs<T extends string>({
           tabIndex={option.value === value ? 0 : -1}
           onClick={() => onChange(option.value)}
           className={cx(
-            "-mb-px flex h-8 items-center gap-1.5 border-b-2 font-mono text-2xs uppercase tracking-[.1em] transition-colors",
+            "-mb-px flex h-8 items-center gap-1.5 border-b-2 text-[13px] font-medium transition-colors",
             option.value === value
               ? "border-accent text-ink"
               : "border-transparent text-ink-4 hover:text-ink-2",
@@ -548,7 +550,7 @@ export function Tag({
     <span
       title={title}
       className={cx(
-        "inline-flex h-[18px] shrink-0 items-center rounded-sm border bg-panel px-1.5 font-mono text-2xs tracking-[.05em] whitespace-nowrap",
+        "inline-flex h-[18px] shrink-0 items-center rounded-sm border bg-panel px-1.5 text-2xs font-medium whitespace-nowrap",
         className,
       )}
       style={
@@ -689,7 +691,7 @@ export function Stat({
 
 export function Kbd({ children }: { children: ReactNode }) {
   return (
-    <kbd className="inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-md border border-line-strong bg-page px-1 text-2xs text-ink-4">
+    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] border border-line-strong bg-overlay px-1 font-sans text-[10.5px] font-medium text-ink-3">
       {children}
     </kbd>
   );

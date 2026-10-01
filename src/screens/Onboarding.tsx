@@ -65,7 +65,7 @@ export function Onboarding({
         <span className="grid h-[26px] w-[26px] place-items-center rounded-sm bg-accent text-on-accent">
           <RootMark size={16} />
         </span>
-        <span className="font-mono text-xs tracking-[.18em] text-ink uppercase">root</span>
+        <span className="text-[14px] font-semibold tracking-[-.01em] text-ink">root</span>
 
         <div className="ml-auto flex items-center gap-5">
           <Step done label="Workspace" />

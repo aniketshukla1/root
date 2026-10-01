@@ -302,7 +302,7 @@ function draw(art: FeedArt, seed: number): React.ReactNode {
     }
     case "log":
       return (
-        <g fontFamily="IBM Plex Mono, monospace" fontSize={7.2}>
+        <g fontFamily="ui-monospace, SF Mono, Menlo, monospace" fontSize={7.2}>
           {Array.from({ length: 8 }, (_, i) => {
             const level = r();
             const tag = level < 0.1 ? "ERROR" : level < 0.22 ? "WARN " : "INFO ";
@@ -394,7 +394,7 @@ function Rack({ r }: { r: () => number }) {
       {rack(-38, 64, 0.45)}
       {rack(70, 76, 1)}
       {rack(190, 64, 0.45)}
-      <text x={72} y={-1} fill="rgba(255,255,255,0.5)" fontFamily="IBM Plex Mono, monospace" fontSize={6}>
+      <text x={72} y={-1} fill="rgba(255,255,255,0.5)" fontFamily="ui-monospace, SF Mono, Menlo, monospace" fontSize={6}>
         {`B${String(1 + Math.floor(r() * 30)).padStart(2, "0")}`}
       </text>
     </>
@@ -505,7 +505,7 @@ function Globe({ r }: { r: () => number }) {
           />
         );
       })}
-      <text x={4} y={96} fill="rgba(255,255,255,0.45)" fontFamily="IBM Plex Mono, monospace" fontSize={6}>
+      <text x={4} y={96} fill="rgba(255,255,255,0.45)" fontFamily="ui-monospace, SF Mono, Menlo, monospace" fontSize={6}>
         {`${(r() * 90).toFixed(4)}N ${(r() * 180).toFixed(4)}W`}
       </text>
     </>

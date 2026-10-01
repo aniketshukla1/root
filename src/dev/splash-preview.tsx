@@ -10,10 +10,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import ReactDOM from "react-dom/client";
 import { AnimatePresence, MotionConfig } from "motion/react";
 
-import "@fontsource-variable/ibm-plex-sans";
-import "@fontsource/ibm-plex-mono/400.css";
-import "@fontsource/ibm-plex-mono/500.css";
-import "@fontsource/ibm-plex-mono/600.css";
 import "../app.css";
 
 import { Splash } from "../shell/Splash";

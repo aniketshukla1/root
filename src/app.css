@@ -23,8 +23,12 @@
  * as a mistake and on paper it reads as printed.
  */
 @theme {
-  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* The platform's own faces, as ferro uses them: SF Pro and SF Mono on a Mac,
+     Segoe on Windows. A monitoring tool is read for hours next to every other
+     native app on the machine, and a face of its own makes it the one window
+     that looks foreign. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace;
 
   /* surfaces, lightest-on-top.
 
@@ -55,9 +59,16 @@
   --color-ink-4: #8a8a94;
 
   /* interaction */
-  --color-accent: #4cc2ff;
-  --color-accent-dim: #1c8fd6;
-  --color-on-accent: #0a0a0c;
+  /* White, as ferro does it: the accent is the brightest neutral rather than
+     a hue, so the only colour left on screen is status — and a button that
+     wants pressing reads as the lightest thing in its row, not the bluest.
+     `accent-dim` is the hover, which for white means brighter, not dimmer. */
+  --color-accent: #ededf0;
+  --color-accent-dim: #ffffff;
+  --color-on-accent: #0f0f11;
+  /* Selected text keeps one cool tint — the only place a hue marks an
+     interaction rather than a state. */
+  --color-select: #8ea4d2;
 
   /* status — reserved, never used for identity */
   --color-ok: #5fc48c;
@@ -121,13 +132,13 @@
   --text-5xl: 34px;
   --text-6xl: 44px;
 
-  /* Corners: a hairline radius on a mark, the house 3px on everything else.
-     `--radius-lg` is deliberately the same 3px — the field-guide surface has
-     exactly one corner, and a "large" radius would be a different product. */
-  --radius-xs: 1px;
-  --radius-sm: 2px;
-  --radius-md: 3px;
-  --radius-lg: 3px;
+  /* Corners, ferro's scale: 2px on a mark, 5px on small controls, 7px on
+     buttons and inputs, 10px on panels and cards. */
+  --radius-xs: 2px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
 
   /* The hover and press washes. Both were inline #ffffff0a literals, which is
      the one kind of colour that cannot follow the theme. */
@@ -180,9 +191,10 @@
      ones: #8c8375 measured 3.62:1 on panel and failed outright. */
   --color-ink-4: #6f6759;
 
-  --color-accent: #1d6a9c;
-  --color-accent-dim: #17567e;
+  --color-accent: #2a2622;
+  --color-accent-dim: #000000;
   --color-on-accent: #f9f6f0;
+  --color-select: #4a72c4;
 
   --color-ok: #4a7a3f;
   --color-warn: #96661a;
@@ -293,13 +305,13 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 1px;
-    border-radius: 2px;
+    outline: 2px solid color-mix(in oklab, var(--color-ink) 58%, transparent);
+    outline-offset: -2px;
+    border-radius: var(--radius-sm);
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--color-accent) 35%, transparent);
+    background: color-mix(in oklab, var(--color-select) 32%, transparent);
   }
 
   ::-webkit-scrollbar {
@@ -312,14 +324,14 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--color-line-strong);
+    background: color-mix(in oklab, var(--color-ink) 13%, transparent);
     border: 3px solid transparent;
     background-clip: content-box;
-    border-radius: 6px;
+    border-radius: 10px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-ink-4);
+    background: color-mix(in oklab, var(--color-ink) 24%, transparent);
     background-clip: content-box;
   }
 }
@@ -352,14 +364,16 @@
     gap: calc(var(--gutter) * 0.75);
   }
 
-  /* Mono is the chrome typeface. Column headers and micro-labels are the only
-     uppercase in the product — it reads as tabular chrome, not editorial voice. */
+  /* Column headers and section labels: small, heavy, lightly tracked capitals
+     in the UI face — ferro's section label. They are the only uppercase in the
+     product, so they read as furniture rather than as voice. */
   .label {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: var(--text-2xs);
-    letter-spacing: 0.18em;
+    font-weight: 600;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--color-ink-3);
+    color: var(--color-ink-4);
   }
 
   /* The floating layer: dialogs, tooltips, toasts, the palette. */
@@ -370,7 +384,7 @@
   .panel {
     background: var(--color-panel);
     border: 1px solid var(--color-line);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
   }
 
   /* Rows are the densest surface in the app; the hover wash has to be
@@ -379,8 +393,11 @@
     background: var(--color-wash);
   }
 
+  /* Figures align because they are tabular, not because they are mono —
+     ferro keeps numbers in the UI face. Same size as before, so no column
+     anywhere reflows. */
   .num {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-variant-numeric: tabular-nums;
     font-size: var(--mono-size);
   }

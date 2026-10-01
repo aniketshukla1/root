@@ -53,10 +53,7 @@ export function HealthBadge({ health, className }: { health: Health; className?:
   return (
     <span className={cx("inline-flex items-center gap-1.5 whitespace-nowrap", className)}>
       <Dot health={health} />
-      <span
-        className="font-mono text-2xs tracking-[.05em]"
-        style={{ color: healthColor(health) }}
-      >
+      <span className="text-2xs font-medium" style={{ color: healthColor(health) }}>
         {healthLabel(health)}
       </span>
     </span>
@@ -275,8 +272,10 @@ export function Button({
   const styles: Record<ButtonVariant, string> = {
     default:
       "border-line-strong bg-raised text-ink hover:bg-overlay hover:border-ink-4/50",
+    // The focus ring is the button's own ink: the default ring is a light
+    // grey drawn just inside the edge, which on a white button is invisible.
     primary:
-      "border-accent bg-accent text-on-accent hover:bg-accent-dim hover:border-accent-dim",
+      "border-accent bg-accent text-on-accent hover:bg-accent-dim hover:border-accent-dim focus-visible:[outline-color:var(--color-on-accent)]",
     danger:
       "border-crit/45 bg-crit/10 text-crit hover:border-crit",
     ghost:

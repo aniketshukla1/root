@@ -69,7 +69,13 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   correlate: ({ at, windowSecs }) =>
     fixtures.correlation((at as string) ?? new Date().toISOString(), (windowSecs as number) ?? 120),
   pending_confirmations: () => [],
-  get_ingest_settings: () => ({ enabled: false, port: 7717, hasToken: false }),
+  get_ingest_settings: () => ({
+    enabled: false,
+    port: 7717,
+    hasToken: false,
+    url: "http://127.0.0.1:7717/v1/deploys",
+    keychainAvailable: true,
+  }),
   get_prediction_settings: () => ({ enabled: false, intervalMinutes: 30, assistantReady: true }),
   preview_prediction_evidence: () => [
     "CONNECTIONS",

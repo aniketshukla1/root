@@ -75,7 +75,10 @@
   --color-warn: #d9a84e;
   --color-serious: #dd8a52;
   --color-crit: #e0705a;
-  --color-unknown: #74778a;
+  /* Read as a word as often as seen as a swatch ("Unknown", the INFO
+     level), so it clears 4.5:1 on every surface: #74778a fell to 3.84:1 on
+     overlay. */
+  --color-unknown: #80839a;
 
   /* categorical identity — fixed order */
   --color-series-1: #5a9ee0;
@@ -100,7 +103,7 @@
   --color-lane-ok: #2b4c3b;
   --color-cell-todo: #141416;
   --color-lvl-debug: #303036;
-  --color-lvl-info: #74778a;
+  --color-lvl-info: #80839a;
 
   /* --- type scale ------------------------------------------------------
    *
@@ -196,11 +199,15 @@
   --color-on-accent: #f9f6f0;
   --color-select: #4a72c4;
 
-  --color-ok: #4a7a3f;
-  --color-warn: #96661a;
-  --color-serious: #b35f24;
+  /* Status words are read as text on every paper surface, the shaded ones
+     included: at 4.09–4.44:1 on raised and sunk, ok, warn and serious were
+     each deepened along their own hue until all four surfaces clear 4.5:1. */
+  --color-ok: #43703a;
+  --color-warn: #86591a;
+  --color-serious: #9a511c;
   --color-crit: #a8443a;
-  --color-unknown: #8c8375;
+  /* Was #8c8375 at 3.07–3.62:1 on paper — a status word nobody could read. */
+  --color-unknown: #6e6659;
 
   --color-series-1: #2f6fae;
   --color-series-2: #b0602f;
@@ -216,7 +223,7 @@
   --color-lane-ok: #b9cdab;
   --color-cell-todo: #ece4d6;
   --color-lvl-debug: #cabda7;
-  --color-lvl-info: #9a9081;
+  --color-lvl-info: #6e6659;
 
   --grat: rgba(60, 46, 28, 0.1);
   --overlay-shadow: 0 8px 24px rgba(60, 46, 28, 0.18);

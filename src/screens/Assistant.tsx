@@ -240,7 +240,7 @@ function Message({ entry }: { entry: ChatEntry }) {
         </p>
       )}
       {entry.usage && (
-        <p className="num text-2xs text-ink-4/70">
+        <p className="num text-2xs text-ink-4">
           {entry.usage.inputTokens} in · {entry.usage.outputTokens} out
         </p>
       )}

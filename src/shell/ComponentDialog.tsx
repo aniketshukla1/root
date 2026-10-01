@@ -67,7 +67,7 @@ export function ComponentDialog({
           <span className="flex shrink-0 items-center gap-1.5">
             <Dot health={entity.health} />
             <span
-              className="font-mono text-2xs tracking-[.05em]"
+              className="text-2xs font-medium"
               style={{ color: healthColor(entity.health) }}
             >
               {healthLabel(entity.health)}

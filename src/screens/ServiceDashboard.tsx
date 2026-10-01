@@ -1064,7 +1064,7 @@ function Section({
         </button>
         {subtitle && <span className="truncate text-xs text-ink-4">{subtitle}</span>}
         {hint && open && (
-          <span className="hidden truncate text-2xs text-ink-4/70 xl:inline">{hint}</span>
+          <span className="hidden truncate text-2xs text-ink-4 xl:inline">{hint}</span>
         )}
         {action && <div className="ml-auto">{action}</div>}
       </header>

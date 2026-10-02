@@ -418,8 +418,13 @@ function Tile({
   note: ReactNode;
   bar?: { value: number; color: string }[];
 }) {
+  // Lit only by a colour that means something: a verdict, not "no data yet".
+  const lit = !tone.includes("ink");
   return (
-    <div className="panel flex flex-col gap-2 p-3">
+    <div
+      className={cx("panel flex flex-col gap-2 p-3", lit && "hue")}
+      style={{ "--hue": lit ? tone : undefined } as React.CSSProperties}
+    >
       <div className="flex items-center gap-1.5">
         <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tone }} />
         <span className="label">{label}</span>

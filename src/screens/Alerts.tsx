@@ -822,8 +822,19 @@ function ResponseStrip({
     )
     .sort((a, b) => a.at.localeCompare(b.at))[0];
 
+  // Lit in the worst open severity: the strip is about what is waiting.
+  const worst =
+    counts.critical > 0
+      ? "var(--color-crit)"
+      : counts.warning > 0
+        ? "var(--color-warn)"
+        : undefined;
+
   return (
-    <div className="panel flex flex-wrap items-center gap-x-5 gap-y-2 px-3 py-2.5">
+    <div
+      className={cx("panel flex flex-wrap items-center gap-x-5 gap-y-2 px-3 py-2.5", worst && "hue")}
+      style={{ "--hue": worst } as React.CSSProperties}
+    >
       {open.length > 0 && (
         <div className="flex items-baseline gap-4">
           {(["critical", "warning", "info"] as const)

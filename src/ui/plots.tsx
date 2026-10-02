@@ -66,6 +66,7 @@ export function Lanes({
   labelWidth = 142,
   rowHeight = 13,
   deployAt,
+  runUp,
   scrubAt,
   scrubLabel,
   footer,
@@ -75,6 +76,8 @@ export function Lanes({
   rowHeight?: number;
   /** Fraction of the window where a deploy landed. */
   deployAt?: number;
+  /** A stretch to light as the run-up to a failure, as fractions of the window. */
+  runUp?: { from: number; to: number; color: string };
   /** Fraction of the window the scrub line sits at. */
   scrubAt?: number;
   scrubLabel?: string;
@@ -84,11 +87,23 @@ export function Lanes({
     <div className="relative flex min-w-0 flex-col gap-1">
       {/* The overlay spans exactly the strip column, so the deploy marker and
           the scrub line land on the same axis the lanes use. */}
-      {(deployAt !== undefined || scrubAt !== undefined) && (
+      {(deployAt !== undefined || scrubAt !== undefined || runUp) && (
         <div
           className="pointer-events-none absolute top-0 right-0 z-10"
           style={{ left: labelWidth + 10, bottom: footer ? 22 : 0 }}
         >
+          {runUp && (
+            <div
+              className="hue-run-up absolute top-0 bottom-0"
+              style={
+                {
+                  left: `${runUp.from * 100}%`,
+                  width: `${(runUp.to - runUp.from) * 100}%`,
+                  "--hue": runUp.color,
+                } as React.CSSProperties
+              }
+            />
+          )}
           {deployAt !== undefined && (
             <div
               className="absolute top-0 bottom-0 border-l border-dashed border-accent opacity-60"
@@ -251,13 +266,35 @@ export function Bullet({
           : "var(--color-warn)"
         : "var(--color-series-3)";
 
+  // Within a fifth of the limit and still under it: the fill turns toward
+  // the warning colour at its tip, and the tip glows. Green right up to the
+  // threshold said "fine" about the row that is closest to not being.
+  const near = warnAbove !== undefined && value < warnAbove && value >= warnAbove * 0.8;
+  const over = warnAbove !== undefined && value >= warnAbove;
+  const fill = near ? "linear-gradient(to right, var(--color-series-3), var(--color-warn))" : tone;
+  const glow = near ? "var(--color-warn)" : over ? tone : undefined;
+
   return (
     <span className="relative block overflow-hidden rounded-sm bg-sunk" style={{ height }}>
+      {/* Past the threshold, the track itself is tinted: the zone the bar
+          must not reach, drawn as a place rather than as a tick alone. */}
+      {warnAbove !== undefined && warnAbove < max && (
+        <span
+          className="absolute inset-y-0 right-0"
+          style={{
+            left: `${(warnAbove / max) * 100}%`,
+            background:
+              "linear-gradient(to right, color-mix(in srgb, var(--color-crit) 9%, transparent), color-mix(in srgb, var(--color-crit) 22%, transparent))",
+          }}
+        />
+      )}
       <motion.span
         variants={reachBar}
         {...enter}
-        className="absolute inset-y-0 left-0 origin-left rounded-sm"
-        style={{ width: `${pct * 100}%`, background: tone }}
+        className={cx("absolute inset-y-0 left-0 origin-left rounded-sm", glow && "hue-tip")}
+        style={
+          { width: `${pct * 100}%`, background: fill, "--hue": glow } as React.CSSProperties
+        }
       />
       {warnAbove !== undefined && warnAbove < max && (
         <span

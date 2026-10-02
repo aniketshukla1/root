@@ -237,7 +237,15 @@ export function WhoKnows({
         rows.map((n) => {
           const d = describe(n);
           return (
-            <div key={n.channelId} className="flex min-w-0 items-center gap-2.5">
+            <div
+              key={n.channelId}
+              className={cx(
+                "-mx-1.5 flex min-w-0 items-center gap-2.5 rounded-md px-1.5 py-1",
+                // The row an acknowledgement would change, lit as such.
+                n.status === "due" && n.delayMinutes > 0 && "hue",
+              )}
+              style={{ "--hue": "var(--color-warn)" } as React.CSSProperties}
+            >
               <ChannelMark
                 kind={n.kind}
                 size={22}

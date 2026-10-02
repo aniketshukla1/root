@@ -394,6 +394,46 @@
     border-radius: var(--radius-lg);
   }
 
+  /* The hue: a status colour falling across a surface that is about that
+     status. First drawn behind Evidence's run-up — the red that deepens
+     toward the first alert — and held to the same rule everywhere it goes:
+     only where the colour already means something (a failure, a limit, an
+     escalation, all clear), never as decoration. Set `--hue` on the element. */
+  .hue {
+    position: relative;
+    isolation: isolate;
+  }
+  .hue::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(
+      120% 95% at 0% 0%,
+      color-mix(in srgb, var(--hue) 13%, transparent),
+      transparent 62%
+    );
+  }
+
+  /* The run-up: deepens toward its right edge, and rises off its baseline
+     rather than sitting on the chart as a box. */
+  .hue-run-up {
+    background: linear-gradient(
+      to right,
+      transparent,
+      color-mix(in srgb, var(--hue, var(--color-crit)) 17%, transparent)
+    );
+    -webkit-mask-image: linear-gradient(to top, black, transparent);
+    mask-image: linear-gradient(to top, black, transparent);
+  }
+
+  /* A measure's end, lit in its colour: the tip of a bar near its limit. */
+  .hue-tip {
+    box-shadow: 0 0 10px 1px color-mix(in srgb, var(--hue) 55%, transparent);
+  }
+
   /* Rows are the densest surface in the app; the hover wash has to be
      perceptible without becoming a stripe pattern at 29px. */
   .row-hover:hover {

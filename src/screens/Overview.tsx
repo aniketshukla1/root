@@ -539,7 +539,12 @@ function QuietState({
 
   return (
     <>
-      <section className="panel flex shrink-0 flex-col items-start gap-4 px-4 py-4 @2xl:flex-row">
+      <section
+        className="panel hue flex shrink-0 flex-col items-start gap-4 px-4 py-4 @2xl:flex-row"
+        style={
+          { "--hue": expected > 0 ? "var(--color-warn)" : "var(--color-ok)" } as React.CSSProperties
+        }
+      >
         {/* "Nothing is wrong" is a claim about now, and it stays true while
             something is expected to break later — but saying only that, on a
             screen that also carries a forecast, reads as reassurance the

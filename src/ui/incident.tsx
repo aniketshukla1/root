@@ -119,8 +119,13 @@ export function IncidentHero({
 
   return (
     <section
-      className="panel flex shrink-0 flex-col overflow-hidden"
-      style={{ borderLeft: `2px solid ${severityColor(incident)}` }}
+      className="panel hue flex shrink-0 flex-col overflow-hidden"
+      style={
+        {
+          borderLeft: `2px solid ${severityColor(incident)}`,
+          "--hue": severityColor(incident),
+        } as React.CSSProperties
+      }
     >
       <div className="flex flex-col items-start gap-3.5 px-4 pt-3.5 pb-3 @2xl:flex-row">
         <div className="min-w-0 flex-1">
@@ -512,6 +517,14 @@ export function PropagationPanel({
   const deployAt = deploy ? clamp((Date.parse(deploy.at) - start) / windowMs) : undefined;
 
   const ordered = rows.filter((r) => r.turnedAt);
+  // The same run-up Evidence draws: from the change to the first failure,
+  // deepening toward the moment it broke.
+  const firstTurn = ordered[0]?.turnedAt;
+  const turnAt = firstTurn ? clamp((Date.parse(firstTurn) - start) / windowMs) : undefined;
+  const runUp =
+    deployAt !== undefined && turnAt !== undefined && turnAt > deployAt
+      ? { from: deployAt, to: turnAt, color: severityColor(incident) }
+      : undefined;
 
   return (
     <section className="panel flex min-h-0 flex-col overflow-hidden">
@@ -534,6 +547,7 @@ export function PropagationPanel({
             lanes={lanes}
             labelWidth={124}
             deployAt={deployAt}
+            runUp={runUp}
             footer={
               <>
                 <Ticks count={60} />
@@ -1298,16 +1312,19 @@ export function IncidentQueue({
             onClick={() => onSelect(incident)}
             className={cx(
               "row-hover flex w-full items-start gap-2.5 rounded-sm border px-2.5 py-2 text-left",
-              active ? "border-line-strong bg-sunk" : "border-line",
+              active ? "hue border-line-strong bg-sunk" : "border-line",
               incident.acknowledged && "opacity-60",
             )}
-            style={{
-              borderLeft: `2px solid ${
-                active
-                  ? severityColor(incident)
-                  : `color-mix(in srgb, ${severityColor(incident)} 45%, transparent)`
-              }`,
-            }}
+            style={
+              {
+                borderLeft: `2px solid ${
+                  active
+                    ? severityColor(incident)
+                    : `color-mix(in srgb, ${severityColor(incident)} 45%, transparent)`
+                }`,
+                "--hue": severityColor(incident),
+              } as React.CSSProperties
+            }
           >
             <span className="mt-1">
               <Dot health={incident.health} size={9} />

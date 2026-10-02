@@ -217,12 +217,16 @@ export function ServiceDetail({
           <button
             type="button"
             onClick={() => onNavigate({ name: "overview" })}
-            className="row-hover flex items-center gap-2.5 rounded-md border border-line bg-panel px-3 py-2 text-left"
-            style={{
-              borderLeftWidth: 2,
-              borderLeftColor:
-                incident.severity === "critical" ? "var(--color-crit)" : "var(--color-warn)",
-            }}
+            className="hue row-hover flex items-center gap-2.5 rounded-md border border-line bg-panel px-3 py-2 text-left"
+            style={
+              {
+                borderLeftWidth: 2,
+                borderLeftColor:
+                  incident.severity === "critical" ? "var(--color-crit)" : "var(--color-warn)",
+                "--hue":
+                  incident.severity === "critical" ? "var(--color-crit)" : "var(--color-warn)",
+              } as React.CSSProperties
+            }
           >
             <Dot health={incident.health} size={9} />
             <span className="label shrink-0">Part of an incident</span>

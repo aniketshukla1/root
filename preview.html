@@ -680,6 +680,24 @@
             notify.deliveries.unshift(delivery);
             return delivery;
           },
+          // Who each alert has reached: the backend's rules cut down to the two
+          // channels above — severity floor, escalation delay, held once
+          // acknowledged. Without it the screens that ask got null.
+          get_alert_notices: () => {
+            const rank = { info: 0, warning: 1, critical: 2 };
+            const out = {};
+            for (const a of alerts.filter((x) => x.active)) {
+              out[a.id] = notify.channels
+                .filter((c) => c.enabled && rank[a.severity] >= rank[c.minSeverity])
+                .map((c) => {
+                  const at = Date.parse(a.firstSeen) + 30_000 + c.delayMinutes * 60_000;
+                  const status = at <= Date.now() ? "sent" : a.acknowledged ? "held" : "due";
+                  return { channelId: c.id, channelName: c.name, kind: c.kind, status,
+                    at: new Date(at).toISOString(), delayMinutes: c.delayMinutes };
+                });
+            }
+            return out;
+          },
           get_dashboard: () => ({
             snapshots, alerts, predictions, overallHealth: "down",
             servicesTotal: snapshots.length,

@@ -28,7 +28,9 @@ export function useNotices(alerts: Alert[]) {
     const load = () =>
       api
         .getAlertNotices()
-        .then((next) => live && setNotices(next))
+        // `?? {}`: a server from before notifications answers null, and one
+        // missing map must not take the screen down with it.
+        .then((next) => live && setNotices(next ?? {}))
         .catch(() => {});
     void load();
     const timer = setInterval(load, 10_000);

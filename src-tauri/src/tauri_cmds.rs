@@ -108,6 +108,36 @@ pub async fn save_ingest_settings(state: Shared<'_>, enabled: bool, port: u16) -
 }
 
 #[tauri::command]
+pub async fn get_notifications(state: Shared<'_>) -> Result<crate::notify::NotificationsView> {
+    commands::get_notifications(&state).await
+}
+
+#[tauri::command]
+pub async fn save_notification_channel(
+    state: Shared<'_>,
+    channel: crate::notify::NotifyChannel,
+    target: Option<String>,
+) -> Result<crate::notify::NotificationsView> {
+    commands::save_notification_channel(&state, channel, target).await
+}
+
+#[tauri::command]
+pub async fn delete_notification_channel(
+    state: Shared<'_>,
+    channel_id: String,
+) -> Result<crate::notify::NotificationsView> {
+    commands::delete_notification_channel(&state, channel_id).await
+}
+
+#[tauri::command]
+pub async fn test_notification_channel(
+    state: Shared<'_>,
+    channel_id: String,
+) -> Result<crate::notify::Delivery> {
+    commands::test_notification_channel(&state, channel_id).await
+}
+
+#[tauri::command]
 pub async fn rotate_ingest_token(state: Shared<'_>) -> Result<String> {
     commands::rotate_ingest_token(&state).await
 }

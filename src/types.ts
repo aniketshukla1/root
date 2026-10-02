@@ -1287,3 +1287,53 @@ export interface Profile {
   name: string;
   spy?: string;
 }
+
+// ------------------------------------------------------------ notifications
+
+export type ChannelKind = "slack" | "teams" | "discord" | "pagerduty" | "webhook";
+
+/** One place root can tell, and the rules for what it hears. See `notify.rs`. */
+export interface NotifyChannel {
+  /** Empty for a channel being created. */
+  id: string;
+  name: string;
+  kind: ChannelKind;
+  enabled: boolean;
+  /** The least severe alert it hears about. */
+  minSeverity: AlertSeverity;
+  /** Empty means every environment. */
+  environments: Environment[];
+  /** Empty means every team. */
+  teams: string[];
+  /** Minutes an alert must stay unacknowledged first. 0 is at once. */
+  delayMinutes: number;
+  sendResolved: boolean;
+  /** Host and last four characters of the stored URL or key. */
+  targetHint?: string | null;
+}
+
+export type DeliveryEvent = "firing" | "resolved" | "acknowledged" | "test";
+
+export interface Delivery {
+  id: string;
+  channelId: string;
+  channelName: string;
+  kind: ChannelKind;
+  event: DeliveryEvent;
+  alerts: number;
+  summary: string;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+  attempts: number;
+  latencyMs: number;
+  at: string;
+}
+
+export interface NotificationsView {
+  channels: NotifyChannel[];
+  deliveries: Delivery[];
+  keychainAvailable: boolean;
+  /** Teams named in ownership metadata. */
+  teams: string[];
+}

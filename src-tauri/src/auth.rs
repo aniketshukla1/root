@@ -115,12 +115,21 @@ pub const MUTATING: &[&str] = &[
     "send_message",
     "explain_component",
     "explain_incident",
+    // Each of these is a model call, which costs money a viewer should not be
+    // able to spend.
+    "explain_window",
+    "explain_lines",
+    "explain_alert",
     "resolve_confirmation",
     "record_verdict",
     "record_recall",
     "run_backtest",
     "run_scenarios",
     "test_snapshot_write",
+    // A channel's URL is a credential, and a test posts to it.
+    "save_notification_channel",
+    "delete_notification_channel",
+    "test_notification_channel",
 ];
 
 /// Whether a role may run a command.

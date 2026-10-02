@@ -488,6 +488,9 @@ pub struct AppState {
     pub ingest: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The MCP listener, held for the same reason.
     pub mcp: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// What each notification channel has been told, and the delivery log.
+    /// See [`crate::notify`].
+    pub notifier: Mutex<crate::notify::Notifier>,
     /// The judgement record — the one thing here that outlives the process.
     ///
     /// `None` when the store could not be opened. A journal that will not open
@@ -523,6 +526,7 @@ impl AppState {
             pollers: Mutex::new(HashMap::new()),
             ingest: Mutex::new(None),
             mcp: Mutex::new(None),
+            notifier: Mutex::new(crate::notify::Notifier::default()),
             journal: RwLock::new(None),
             journal_error: RwLock::new(None),
         }

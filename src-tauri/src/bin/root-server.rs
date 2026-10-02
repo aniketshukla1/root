@@ -164,6 +164,10 @@ async fn run() -> Result<(), String> {
         tracing::warn!("single sign-on needs a database for the accounts it creates");
     }
 
+    // The server is where notifications matter most: it is the copy of root
+    // that is running at three in the morning.
+    inframonitoring_lib::notify::spawn(Arc::clone(&state));
+
     supervisor::reload_all(Arc::clone(&state)).await;
 
     let web_root = std::env::var("ROOT_WEB_ROOT").ok().map(PathBuf::from);

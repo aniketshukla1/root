@@ -722,6 +722,34 @@ pub async fn save_ingest_settings(
     get_ingest_settings(state).await
 }
 
+// ------------------------------------------------------------ notifications
+
+pub async fn get_notifications(state: &Arc<AppState>) -> Result<crate::notify::NotificationsView> {
+    Ok(crate::notify::view(state).await)
+}
+
+pub async fn save_notification_channel(
+    state: &Arc<AppState>,
+    channel: crate::notify::NotifyChannel,
+    target: Option<String>,
+) -> Result<crate::notify::NotificationsView> {
+    crate::notify::save(state, channel, target).await
+}
+
+pub async fn delete_notification_channel(
+    state: &Arc<AppState>,
+    channel_id: String,
+) -> Result<crate::notify::NotificationsView> {
+    crate::notify::delete(state, &channel_id).await
+}
+
+pub async fn test_notification_channel(
+    state: &Arc<AppState>,
+    channel_id: String,
+) -> Result<crate::notify::Delivery> {
+    crate::notify::test(state, &channel_id).await
+}
+
 /// Mint a new token and return it once. Any pipeline using the old one stops
 /// working immediately, which is the point.
 pub async fn rotate_ingest_token(state: &Arc<AppState>) -> Result<String> {

@@ -17,6 +17,9 @@ import type {
   Alert,
   AlertSeverity,
   ComponentReading,
+  Delivery,
+  NotificationsView,
+  NotifyChannel,
   FlappingCondition,
   HistoryStats,
   PastAlert,
@@ -2135,5 +2138,169 @@ export function explainAlert(alertId: string): Promise<ComponentReading> {
       () => resolve({ text, model: "preview — no model called", grounds, readAt: new Date().toISOString() }),
       650 + Math.round(Math.random() * 600),
     ),
+  );
+}
+
+// ------------------------------------------------------------ notifications
+//
+// Three channels set up the way a small team would: chat for everything in
+// production, PagerDuty after five minutes for the payments tier, and a
+// platform channel in Teams. Saves and tests behave as the backend does, so
+// the Settings tab can be exercised end to end in a browser.
+
+let notifyChannels: NotifyChannel[] = [
+  {
+    id: "n-slack",
+    name: "#prod-alerts",
+    kind: "slack",
+    enabled: true,
+    minSeverity: "warning",
+    environments: ["production"],
+    teams: [],
+    delayMinutes: 0,
+    sendResolved: true,
+    targetHint: "hooks.slack.com/…a9Fq",
+  },
+  {
+    id: "n-pd",
+    name: "Payments on-call",
+    kind: "pagerduty",
+    enabled: true,
+    minSeverity: "critical",
+    environments: ["production"],
+    teams: ["payments"],
+    delayMinutes: 5,
+    sendResolved: true,
+    targetHint: "••••7c2e",
+  },
+  {
+    id: "n-teams",
+    name: "Platform",
+    kind: "teams",
+    enabled: true,
+    minSeverity: "warning",
+    environments: [],
+    teams: ["platform"],
+    delayMinutes: 0,
+    sendResolved: false,
+    targetHint: "prod-11.westus.logic.azure.com/…x8Qe",
+  },
+];
+
+const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+
+let deliveries: Delivery[] = [
+  {
+    id: "d1", channelId: "n-slack", channelName: "#prod-alerts", kind: "slack", event: "firing",
+    alerts: 2, summary: "2 alerts firing", ok: true, status: 200, error: null, attempts: 1,
+    latencyMs: 212, at: minutesAgo(18),
+  },
+  {
+    id: "d2", channelId: "n-pd", channelName: "Payments on-call", kind: "pagerduty",
+    event: "firing", alerts: 1, summary: "orders-api / worker — 3 containers exited with code 137",
+    ok: true, status: 202, error: null, attempts: 1, latencyMs: 388, at: minutesAgo(13),
+  },
+  {
+    id: "d3", channelId: "n-teams", channelName: "Platform", kind: "teams", event: "firing",
+    alerts: 1, summary: "edge-proxy — upstream latency above 800ms", ok: false, status: 404,
+    error: "404 Not Found: the workflow was deleted or turned off", attempts: 1, latencyMs: 164,
+    at: minutesAgo(41),
+  },
+  {
+    id: "d4", channelId: "n-slack", channelName: "#prod-alerts", kind: "slack", event: "resolved",
+    alerts: 1, summary: "Resolved: payments-db — replication lag 42s exceeds 30s threshold",
+    ok: true, status: 200, error: null, attempts: 1, latencyMs: 190, at: minutesAgo(52),
+  },
+].sort((a, b) => b.at.localeCompare(a.at)) as Delivery[];
+
+function notificationTeams(): string[] {
+  const teams = CONFIG.profiles
+    .map((p) => (p.metadata?.operations as { team?: string } | undefined)?.team)
+    .filter((t): t is string => Boolean(t));
+  return [...new Set(teams)].sort();
+}
+
+export function notifications(): NotificationsView {
+  return {
+    channels: notifyChannels.map((c) => ({ ...c })),
+    deliveries: deliveries.slice(0, 50),
+    keychainAvailable: true,
+    teams: notificationTeams(),
+  };
+}
+
+export function saveNotificationChannel(
+  channel: NotifyChannel,
+  target: string | null,
+): Promise<NotificationsView> {
+  return new Promise((resolve, reject) =>
+    setTimeout(() => {
+      const name = channel.name.trim();
+      if (!name) return reject("give the channel a name");
+      const existing = notifyChannels.find((c) => c.id === channel.id);
+      if (!existing && !target) {
+        return reject(
+          channel.kind === "pagerduty"
+            ? "paste the service's Events API v2 integration key"
+            : "paste the webhook URL",
+        );
+      }
+      if (target && channel.kind !== "pagerduty" && !/^https?:\/\//.test(target)) {
+        return reject("that does not look like a webhook URL");
+      }
+      if (target && channel.kind === "pagerduty" && !/^[a-z0-9]{32}$/i.test(target)) {
+        return reject(
+          "a PagerDuty integration key is 32 letters and digits — the Events API v2 key from the service's Integrations tab, not an API token",
+        );
+      }
+      const hint = target
+        ? channel.kind === "pagerduty"
+          ? `••••${target.slice(-4)}`
+          : `${new URL(target).host}/…${target.slice(-4)}`
+        : existing?.targetHint;
+      const saved: NotifyChannel = {
+        ...channel,
+        name,
+        id: channel.id || `n-${Math.random().toString(36).slice(2, 8)}`,
+        targetHint: hint,
+      };
+      notifyChannels = existing
+        ? notifyChannels.map((c) => (c.id === saved.id ? saved : c))
+        : [...notifyChannels, saved];
+      resolve(notifications());
+    }, 250),
+  );
+}
+
+export function deleteNotificationChannel(channelId: string): NotificationsView {
+  notifyChannels = notifyChannels.filter((c) => c.id !== channelId);
+  return notifications();
+}
+
+export function testNotificationChannel(channelId: string): Promise<Delivery> {
+  const channel = notifyChannels.find((c) => c.id === channelId);
+  return new Promise((resolve, reject) =>
+    setTimeout(() => {
+      if (!channel) return reject("that channel no longer exists");
+      // The Teams channel is the broken one, so the failure path can be seen.
+      const ok = channel.kind !== "teams";
+      const delivery: Delivery = {
+        id: `t-${Date.now()}`,
+        channelId: channel.id,
+        channelName: channel.name,
+        kind: channel.kind,
+        event: "test",
+        alerts: 0,
+        summary: "root test notification",
+        ok,
+        status: ok ? (channel.kind === "pagerduty" ? 202 : 200) : 404,
+        error: ok ? null : "404 Not Found: the workflow was deleted or turned off",
+        attempts: 1,
+        latencyMs: 140 + Math.round(Math.random() * 260),
+        at: new Date().toISOString(),
+      };
+      deliveries = [delivery, ...deliveries];
+      resolve(delivery);
+    }, 600),
   );
 }

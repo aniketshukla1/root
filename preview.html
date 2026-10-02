@@ -636,7 +636,50 @@
           ],
         };
 
+        // Notification channels, kept in memory so the Settings tab can be
+        // used here the way it is used in the app.
+        const notify = {
+          channels: [
+            { id: "n1", name: "#prod-alerts", kind: "slack", enabled: true, minSeverity: "warning",
+              environments: ["production"], teams: [], delayMinutes: 0, sendResolved: true,
+              targetHint: "hooks.slack.com/…a9Fq" },
+            { id: "n2", name: "On-call", kind: "pagerduty", enabled: true, minSeverity: "critical",
+              environments: ["production"], teams: [], delayMinutes: 5, sendResolved: true,
+              targetHint: "••••7c2e" },
+          ],
+          deliveries: [],
+        };
+        const notifyView = () => ({
+          channels: notify.channels.map((c) => ({ ...c })),
+          deliveries: notify.deliveries.slice(0, 50),
+          keychainAvailable: true,
+          teams: [],
+        });
+
         const handlers = {
+          get_notifications: () => notifyView(),
+          save_notification_channel: ({ channel, target }) => {
+            const id = channel.id || "n" + Date.now();
+            const existing = notify.channels.find((c) => c.id === id);
+            const saved = { ...channel, id,
+              targetHint: target ? "…" + target.slice(-4) : existing && existing.targetHint };
+            notify.channels = existing
+              ? notify.channels.map((c) => (c.id === id ? saved : c))
+              : [...notify.channels, saved];
+            return notifyView();
+          },
+          delete_notification_channel: ({ channelId }) => {
+            notify.channels = notify.channels.filter((c) => c.id !== channelId);
+            return notifyView();
+          },
+          test_notification_channel: ({ channelId }) => {
+            const c = notify.channels.find((x) => x.id === channelId);
+            const delivery = { id: "t" + Date.now(), channelId, channelName: c.name, kind: c.kind,
+              event: "test", alerts: 0, summary: "root test notification", ok: true, status: 200,
+              error: null, attempts: 1, latencyMs: 180, at: new Date().toISOString() };
+            notify.deliveries.unshift(delivery);
+            return delivery;
+          },
           get_dashboard: () => ({
             snapshots, alerts, predictions, overallHealth: "down",
             servicesTotal: snapshots.length,

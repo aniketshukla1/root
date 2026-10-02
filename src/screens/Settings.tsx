@@ -25,6 +25,7 @@ import type {
   SnapshotSink,
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
+import { NotificationSettings } from "./NotificationSettings";
 import { TeamSettings } from "./TeamSettings";
 import {
   Button,
@@ -42,7 +43,7 @@ import {
 } from "../ui/primitives";
 import { CloseIcon, PlusIcon, TrashIcon } from "../ui/icons";
 
-type Tab = "connections" | "team" | "assistant" | "ingest" | "mcp" | "display";
+type Tab = "connections" | "notifications" | "team" | "assistant" | "ingest" | "mcp" | "display";
 
 export function Settings({
   config,
@@ -69,6 +70,7 @@ export function Settings({
           onChange={setTab}
           options={[
             { value: "connections", label: "Connections", count: config?.profiles.length },
+            { value: "notifications", label: "Notifications" },
             { value: "team", label: "Workspace" },
             { value: "assistant", label: "Assistant" },
             { value: "ingest", label: "Deploy ingest" },
@@ -85,6 +87,7 @@ export function Settings({
               onConfigChange={onConfigChange}
             />
           )}
+          {tab === "notifications" && <NotificationSettings />}
           {tab === "team" && <TeamSettings />}
           {tab === "assistant" && (
             <AssistantSettings config={config} onConfigChange={onConfigChange} />

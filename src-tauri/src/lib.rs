@@ -34,6 +34,7 @@ pub mod llm;
 pub mod local_listener;
 pub mod mcp;
 pub mod model;
+pub mod notify;
 pub mod oidc;
 pub mod patterns;
 pub mod predict;
@@ -185,6 +186,10 @@ pub fn run() {
                     }
                 }
 
+                // Before the pollers, so the first alert of the session is
+                // already being watched for. Idle until a channel exists.
+                notify::spawn(Arc::clone(&state));
+
                 supervisor::reload_all(state).await;
             });
 
@@ -237,6 +242,10 @@ pub fn run() {
             tauri_cmds::list_scenarios,
             tauri_cmds::get_ingest_settings,
             tauri_cmds::save_ingest_settings,
+            tauri_cmds::get_notifications,
+            tauri_cmds::save_notification_channel,
+            tauri_cmds::delete_notification_channel,
+            tauri_cmds::test_notification_channel,
             tauri_cmds::rotate_ingest_token,
             tauri_cmds::get_mcp_settings,
             tauri_cmds::save_mcp_settings,

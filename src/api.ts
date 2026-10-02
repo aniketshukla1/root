@@ -69,6 +69,13 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   correlate: ({ at, windowSecs }) =>
     fixtures.correlation((at as string) ?? new Date().toISOString(), (windowSecs as number) ?? 120),
   pending_confirmations: () => [],
+  get_notifications: () => fixtures.notifications(),
+  save_notification_channel: ({ channel, target }) =>
+    fixtures.saveNotificationChannel(channel as NotifyChannel, target as string | null),
+  delete_notification_channel: ({ channelId }) =>
+    fixtures.deleteNotificationChannel(channelId as string),
+  test_notification_channel: ({ channelId }) =>
+    fixtures.testNotificationChannel(channelId as string),
   get_ingest_settings: () => ({
     enabled: false,
     port: 7717,
@@ -178,8 +185,11 @@ import type {
   HealthSnapshot,
   HistogramBucket,
   Incident,
+  Delivery,
   IngestStatus,
   McpStatus,
+  NotificationsView,
+  NotifyChannel,
   PredictionReport,
   PredictionStatus,
   LlmSettings,
@@ -364,6 +374,17 @@ export const api = {
       limit: limit ?? null,
     }),
 
+  getNotifications: () => invoke<NotificationsView>("get_notifications"),
+  /** `target` is the webhook URL or key; omit it to keep the stored one. */
+  saveNotificationChannel: (channel: NotifyChannel, target?: string) =>
+    invoke<NotificationsView>("save_notification_channel", {
+      channel,
+      target: target?.trim() ? target.trim() : null,
+    }),
+  deleteNotificationChannel: (channelId: string) =>
+    invoke<NotificationsView>("delete_notification_channel", { channelId }),
+  testNotificationChannel: (channelId: string) =>
+    invoke<Delivery>("test_notification_channel", { channelId }),
   getIngestSettings: () => invoke<IngestStatus>("get_ingest_settings"),
 
   saveIngestSettings: (enabled: boolean, port: number) =>

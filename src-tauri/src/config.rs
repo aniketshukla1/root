@@ -312,6 +312,9 @@ pub struct AppConfig {
     pub team: TeamSettings,
     #[serde(default)]
     pub storage: StorageSettings,
+    /// Where alerts are sent. See [`crate::notify`].
+    #[serde(default)]
+    pub notifications: crate::notify::NotificationSettings,
     /// The identity provider, when the server has one. Ignored by the desktop
     /// app, which has nobody to authenticate to.
     #[serde(default)]

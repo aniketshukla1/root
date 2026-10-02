@@ -43,6 +43,7 @@ import {
 import { Bullet } from "../ui/plots";
 import { Heatmap } from "../ui/Heatmap";
 import { Button, Chip, cx, Dot, Empty, Panel, ServiceMark, Tag } from "../ui/primitives";
+import { useNotices, WhoKnows } from "../ui/notices";
 import { CheckIcon, ChevronRight } from "../ui/icons";
 
 /**
@@ -123,6 +124,7 @@ export function Overview({
 }) {
   const [selectedId, setSelectedId] = useState<string>();
   const [split, setSplit] = useState<string[]>([]);
+  const { notices, channelCount } = useNotices(model.alerts);
 
   // Splitting a storm is an override, not a setting: it lasts until the
   // grouping that prompted it stops existing.
@@ -284,19 +286,33 @@ export function Overview({
 
             {state === "triage" && shown.length > 1 && (
               <div className="grid gap-3 @5xl:grid-cols-[340px_1fr]">
-                <Panel
-                  title={`${shown.length} incidents`}
-                  subtitle={queueSubtitle(shown)}
-                  bodyClassName="overflow-y-auto"
-                  className="max-h-[280px]"
-                >
-                  <IncidentQueue
-                    incidents={shown}
-                    selected={selected?.id}
-                    context={context}
-                    onSelect={(incident) => setSelectedId(incident.id)}
-                  />
-                </Panel>
+                <div className="flex min-w-0 flex-col gap-3">
+                  <Panel
+                    title={`${shown.length} incidents`}
+                    subtitle={queueSubtitle(shown)}
+                    bodyClassName="overflow-y-auto"
+                    className="max-h-[280px]"
+                  >
+                    <IncidentQueue
+                      incidents={shown}
+                      selected={selected?.id}
+                      context={context}
+                      onSelect={(incident) => setSelectedId(incident.id)}
+                    />
+                  </Panel>
+                  {/* Under the queue, about the selected one: has anybody
+                      been told, and is somebody about to be paged. */}
+                  {selected && (
+                    <Panel title="Who knows" subtitle="about the selected incident">
+                      <WhoKnows
+                        incident={selected}
+                        notices={notices}
+                        channelCount={channelCount}
+                        onSetUp={() => onNavigate({ name: "settings", tab: "notifications" })}
+                      />
+                    </Panel>
+                  )}
+                </div>
                 {selected && (
                   <IncidentHero
                     incident={selected}
@@ -315,6 +331,16 @@ export function Overview({
                 context={context}
                 actions={actions}
                 footer={recall(selected)}
+              />
+            )}
+
+            {state !== "triage" && selected && (
+              <WhoKnows
+                incident={selected}
+                notices={notices}
+                channelCount={channelCount}
+                layout="strip"
+                onSetUp={() => onNavigate({ name: "settings", tab: "notifications" })}
               />
             )}
 
@@ -348,6 +374,7 @@ export function Overview({
 
             <RestOfEstate
               model={model}
+              catalog={catalog}
               incident={selected}
               onNavigate={onNavigate}
             />
@@ -731,16 +758,19 @@ function QuietState({
  */
 function RestOfEstate({
   model,
+  catalog,
   incident,
   onNavigate,
 }: {
   model: EstateModel;
+  catalog: Catalog;
   incident?: Incident;
   onNavigate: (view: View) => void;
 }) {
   const members = new Set(incident?.profileIds ?? []);
   const others = model.services.filter((s) => !members.has(s.snapshot.profileId));
-  const nominal = others.filter((s) => s.health === "healthy").length;
+  const healthy = others.filter((s) => s.health === "healthy");
+  const nominal = healthy.length;
   const affected = model.issues.filter((i) => members.has(i.profileId)).length;
 
   return (
@@ -750,6 +780,29 @@ function RestOfEstate({
       </span>
       <span className="num text-xs text-ink-2">
         {nominal} other connection{nominal === 1 ? "" : "s"} nominal
+      </span>
+      {/* Which ones, at a glance: "six nominal" is a count, the marks are
+          the estate. Each opens its connection. */}
+      <span className="flex items-center gap-1">
+        {healthy.slice(0, 10).map((service) => (
+          <button
+            key={service.snapshot.profileId}
+            type="button"
+            title={`${service.snapshot.profileName} — healthy`}
+            onClick={() => onNavigate({ name: "service", profileId: service.snapshot.profileId })}
+            className="relative rounded-sm transition-transform hover:-translate-y-px"
+          >
+            <ServiceMark descriptor={catalog.get(service.snapshot.kind)} size={18} />
+            <span
+              aria-hidden
+              className="absolute -right-0.5 -bottom-0.5 h-[6px] w-[6px] rounded-full ring-2 ring-panel"
+              style={{ background: "var(--color-ok)" }}
+            />
+          </button>
+        ))}
+        {healthy.length > 10 && (
+          <span className="num text-2xs text-ink-4">+{healthy.length - 10}</span>
+        )}
       </span>
       <span className="num text-2xs text-ink-4">
         {model.counts.entities - affected} of {model.counts.entities} components healthy

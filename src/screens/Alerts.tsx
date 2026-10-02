@@ -25,7 +25,7 @@ import {
 import { AssistantIcon, SearchIcon, SparkleIcon } from "../ui/icons";
 import { AiInline, type AiState } from "../ui/AiNote";
 import { ChannelMark } from "../ui/ChannelMark";
-import { useTick } from "../ui/charts";
+import { minutesUntil, NoticeMarks, useNotices } from "../ui/notices";
 
 type StateFilter = "open" | "acknowledged" | "resolved" | "all";
 
@@ -103,40 +103,11 @@ export function Alerts({
   }, [retained]);
 
   /**
-   * Who each alert has reached, and who it will reach next.
-   *
-   * Polled rather than read once: the answer changes with the clock as well
-   * as with the alerts — an escalation comes due while nothing else moves —
-   * and the countdown on this screen is the one place the person who can stop
-   * a page finds out it is coming.
+   * Who each alert has reached, and who it will reach next. Polled, because
+   * the answer changes with the clock as well as with the alerts — an
+   * escalation comes due while nothing else moves.
    */
-  const [notices, setNotices] = useState<Record<string, Notice[]>>({});
-  const [channelCount, setChannelCount] = useState<number | null>(null);
-  useTick(15_000);
-  useEffect(() => {
-    let live = true;
-    const load = () =>
-      api
-        .getAlertNotices()
-        .then((next) => live && setNotices(next))
-        .catch(() => {});
-    void load();
-    const timer = setInterval(load, 10_000);
-    return () => {
-      live = false;
-      clearInterval(timer);
-    };
-  }, [alerts]);
-  useEffect(() => {
-    let live = true;
-    api
-      .getNotifications()
-      .then((view) => live && setChannelCount(view.channels.filter((c) => c.enabled).length))
-      .catch(() => live && setChannelCount(null));
-    return () => {
-      live = false;
-    };
-  }, []);
+  const { notices, channelCount } = useNotices(alerts);
 
   const [state, setState] = useState<StateFilter>("open");
   const [severity, setSeverity] = useState<AlertSeverity | "any">("any");
@@ -815,7 +786,6 @@ export function Alerts({
 
 const tint = (color: string, pct: number) => `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 
-const minutesUntil = (iso: string) => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 60_000));
 
 /**
  * What is open, how long the oldest has waited, and what happens next if
@@ -930,64 +900,5 @@ function ResponseStrip({
         </Button>
       )}
     </div>
-  );
-}
-
-/** One alert's channels: told, coming, failing, or held back by an acknowledgement. */
-function NoticeMarks({ notices }: { notices?: Notice[] }) {
-  if (!notices?.length) return <span className="text-ink-4/60">—</span>;
-  return (
-    <div className="flex items-center gap-2">
-      {notices.slice(0, 4).map((notice) => (
-        <NoticeMark key={notice.channelId} notice={notice} />
-      ))}
-      {notices.length > 4 && (
-        <span className="num text-2xs text-ink-4">+{notices.length - 4}</span>
-      )}
-    </div>
-  );
-}
-
-function NoticeMark({ notice }: { notice: Notice }) {
-  const pager = notice.kind === "pagerduty";
-  const mins = minutesUntil(notice.at);
-  const clock = new Date(notice.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const title = {
-    sent: `${notice.channelName} was told ${formatRelative(notice.at)}`,
-    due:
-      notice.delayMinutes > 0
-        ? `${notice.channelName} ${pager ? "pages" : "is told"} in ${mins} min unless someone acknowledges`
-        : `${notice.channelName} is told in a moment`,
-    retrying: `Delivery to ${notice.channelName} failed — trying again at ${clock}`,
-    held: `Acknowledged in time — ${notice.channelName} was not ${pager ? "paged" : "told"}`,
-  }[notice.status];
-
-  return (
-    <span className="relative inline-flex items-center gap-1" title={title}>
-      <ChannelMark
-        kind={notice.kind}
-        size={16}
-        title={title}
-        className={cx(
-          notice.status === "due" && "opacity-50",
-          notice.status === "held" && "opacity-30 grayscale",
-        )}
-      />
-      {(notice.status === "sent" || notice.status === "retrying") && (
-        <span
-          aria-hidden
-          className="absolute top-[11px] left-[11px] h-[7px] w-[7px] rounded-full ring-2 ring-panel"
-          style={{
-            background: notice.status === "sent" ? "var(--color-ok)" : "var(--color-crit)",
-          }}
-        />
-      )}
-      {notice.status === "due" && notice.delayMinutes > 0 && (
-        <span className="num text-2xs font-semibold" style={{ color: "var(--color-warn)" }}>
-          {mins}m
-        </span>
-      )}
-      {notice.status === "held" && <span className="text-2xs text-ink-4">held</span>}
-    </span>
   );
 }

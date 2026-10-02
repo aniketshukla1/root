@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import { motion } from "motion/react";
 import type { Variants } from "motion/react";
 
-import { healthColor } from "../catalog";
+import { healthColor, healthLabel } from "../catalog";
 import type { Catalog } from "../catalog";
 import { formatMetricValue, formatRelative } from "../format";
 import {
@@ -24,7 +24,7 @@ import {
   groupingSentence,
   propagation,
 } from "../incident";
-import type { BlindSpot, Evidence } from "../incident";
+import type { BlindSpot, Evidence, PropagationRow } from "../incident";
 import type { EstateModel } from "../model";
 import { SEVERITY } from "./AlertList";
 import { levelTextColor } from "./charts";
@@ -42,7 +42,7 @@ import type {
 } from "../types";
 import { Lanes, Ticks } from "./plots";
 import type { Lane } from "./plots";
-import { Button, Chip, cx, Dot, PanelHeader, ServiceMark, Stat, Tag } from "./primitives";
+import { Button, cx, Dot, PanelHeader, ServiceMark, Stat, Tag } from "./primitives";
 import { AssistantIcon, ChevronRight, ExternalIcon } from "./icons";
 
 export interface IncidentContext {
@@ -546,37 +546,200 @@ export function PropagationPanel({
           />
         </div>
 
-        {ordered.length > 0 && (
-          <p className="num mt-3.5 text-xs leading-relaxed text-ink-3">
-            {ordered
-              .map((row, i) =>
-                i === 0
-                  ? `${row.profileName} turned first at ${clock(row.turnedAt!)}`
-                  : `${row.profileName} ${gapFrom(ordered[i - 1].turnedAt!, row.turnedAt!)}`,
-              )
-              .join(", then ")}
-            .
-            {deploy && ` Nothing turned before the ${deploy.change === "deployed" ? "deploy" : "change"} at ${clock(deploy.at)}.`}
-          </p>
-        )}
-
-        {rows.length > 1 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {rows.map((row) => (
-              <Chip
-                key={row.profileId}
-                onClick={() => onOpenService(row.profileId)}
-                className="num text-ink-2"
-              >
-                <Dot health={row.health} size={7} />
-                {row.profileName}
-                <ChevronRight size={11} style={{ color: "var(--color-ink-4)" }} />
-              </Chip>
-            ))}
-          </div>
+        {(ordered.length > 0 || deploy) && (
+          <SpreadChain
+            rows={rows}
+            incident={incident}
+            context={context}
+            deploy={deploy}
+            onOpenService={onOpenService}
+          />
         )}
       </div>
     </section>
+  );
+}
+
+interface ChainStep {
+  key: string;
+  at?: string;
+  /** What links this step to an earlier one, said plainly. */
+  link?: { text: string; declared: boolean };
+  change?: ChangeEvent;
+  row?: PropagationRow;
+}
+
+/**
+ * The lanes say when; this says why each step is on the list.
+ *
+ * The same order — the change, what turned first, what followed — with the
+ * reason each step is linked to the one before it: a declared dependency,
+ * pressure read backwards along one, or nothing but timing. The last is said
+ * as such and drawn dashed, rather than drawn like a link it is not.
+ */
+function SpreadChain({
+  rows,
+  incident,
+  context,
+  deploy,
+  onOpenService,
+}: {
+  rows: PropagationRow[];
+  incident: Incident;
+  context: IncidentContext;
+  deploy?: ChangeEvent;
+  onOpenService: (profileId: string) => void;
+}) {
+  const kindOf = new Map(
+    context.model.services.map((s) => [s.snapshot.profileId, s.snapshot.kind]),
+  );
+
+  const linkFor = (row: PropagationRow, earlier: Set<string>) => {
+    for (const reason of incident.grouping) {
+      if (reason.kind === "dependencyFailedFirst" && reason.dependent === row.profileId && earlier.has(reason.root)) {
+        return { text: `depends on ${reason.root}`, declared: true };
+      }
+      if (reason.kind === "dependentPressuredIt" && reason.pressured === row.profileId && earlier.has(reason.origin)) {
+        return { text: `pressure from ${reason.origin}, which depends on it`, declared: true };
+      }
+    }
+    const upstream = (context.topology.dependsOn[row.profileId] ?? []).find((id) => earlier.has(id));
+    if (upstream) return { text: `depends on ${upstream}`, declared: true };
+    const downstream = (context.topology.dependents[row.profileId] ?? []).find((id) => earlier.has(id));
+    if (downstream) return { text: `${downstream} depends on it`, declared: true };
+    return { text: "timing only — no declared link", declared: false };
+  };
+
+  // In time order, the change included: a deploy after onset is not a
+  // trigger, and placing it where it happened says so without a sentence.
+  const timed: ChainStep[] = [
+    ...(deploy ? [{ key: `change:${deploy.id}`, at: deploy.at, change: deploy }] : []),
+    ...rows.map((row) => ({ key: row.profileId, at: row.turnedAt, row })),
+  ].sort((a, b) => {
+    if (a.at && b.at) return Date.parse(a.at) - Date.parse(b.at);
+    return a.at ? -1 : b.at ? 1 : 0;
+  });
+
+  const seen = new Set<string>();
+  const steps = timed.map((step, i) => {
+    if (step.change) {
+      // Its connection counts as "already in the story" for what follows.
+      seen.add(step.change.profileId);
+      return step;
+    }
+    const row = step.row!;
+    const previous = timed[i - 1];
+    const link =
+      i === 0
+        ? undefined
+        : previous?.change && previous.change.profileId === row.profileId
+          ? { text: "after its own deploy", declared: true }
+          : linkFor(row, seen);
+    seen.add(row.profileId);
+    return { ...step, link };
+  });
+  const firstTurned = steps.find((s) => s.row?.turnedAt)?.key;
+
+  return (
+    <ol className="mt-4 flex flex-col">
+      {steps.map((step, i) => {
+        const previous = steps[i - 1];
+        const gap =
+          i === 0
+            ? undefined
+            : step.at && previous?.at
+              ? gapFrom(previous.at, step.at)
+              : "in the incident, no change in this window";
+        const color = step.change
+          ? "var(--color-accent)"
+          : healthColor(step.row!.health);
+        // A change links to what follows only by time; between connections
+        // the link is whatever the dependency map or the grouping says.
+        const declared = step.link ? step.link.declared : !previous?.change;
+
+        return (
+          <li key={step.key} className="flex flex-col">
+            {gap && (
+              <div className="flex min-h-7 items-stretch gap-3">
+                <span className="flex w-6 shrink-0 justify-center">
+                  <span
+                    className="w-px"
+                    style={{
+                      borderLeft: `1px ${declared ? "solid" : "dashed"} var(--color-line-strong)`,
+                    }}
+                  />
+                </span>
+                <span className="num self-center py-1 text-2xs text-ink-4">
+                  {gap}
+                  {step.link && (
+                    <>
+                      {" · "}
+                      <span className={step.link.declared ? "text-ink-3" : "italic"}>
+                        {step.link.text}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </div>
+            )}
+
+            {step.change ? (
+              <div className="flex items-center gap-3">
+                <span
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-md border"
+                  style={{ background: tint(color, 12), borderColor: tint(color, 34) }}
+                >
+                  <span className="block h-[7px] w-[7px] rotate-45 rounded-[1px]" style={{ background: color }} />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs">
+                  <span className="font-medium text-ink">{step.change.component}</span>{" "}
+                  {step.change.from && (
+                    <>
+                      <span className="num text-ink-4">{step.change.from}</span>
+                      <span className="text-ink-4"> → </span>
+                    </>
+                  )}
+                  <span className="num text-ink">{step.change.to}</span>
+                  <span className="text-ink-4"> on {step.change.profileName}</span>
+                </span>
+                <span className="num shrink-0 text-2xs text-ink-4">
+                  {step.change.change === "deployed" ? "deployed" : "changed"} {clock(step.change.at)}
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onOpenService(step.row!.profileId)}
+                className="group flex items-center gap-3 rounded-md text-left"
+              >
+                <span
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-md border"
+                  style={{ background: tint(color, 12), borderColor: tint(color, 40) }}
+                >
+                  {kindOf.get(step.row!.profileId) ? (
+                    <ServiceMark descriptor={context.catalog.get(kindOf.get(step.row!.profileId)!)} size={14} />
+                  ) : (
+                    <Dot health={step.row!.health} size={7} />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink transition-colors group-hover:text-accent">
+                  {step.row!.profileName}
+                </span>
+                {step.key === firstTurned && (
+                  <Tag color="var(--color-crit)">turned first</Tag>
+                )}
+                <span className="num shrink-0 text-2xs" style={{ color }}>
+                  {healthLabel(step.row!.health)}
+                </span>
+                <span className="num w-10 shrink-0 text-right text-2xs text-ink-4">
+                  {step.row!.turnedAt ? clock(step.row!.turnedAt) : "—"}
+                </span>
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -1138,7 +1301,13 @@ export function IncidentQueue({
               active ? "border-line-strong bg-sunk" : "border-line",
               incident.acknowledged && "opacity-60",
             )}
-            style={active ? { borderLeft: `2px solid ${severityColor(incident)}` } : undefined}
+            style={{
+              borderLeft: `2px solid ${
+                active
+                  ? severityColor(incident)
+                  : `color-mix(in srgb, ${severityColor(incident)} 45%, transparent)`
+              }`,
+            }}
           >
             <span className="mt-1">
               <Dot health={incident.health} size={9} />
@@ -1148,6 +1317,20 @@ export function IncidentQueue({
                 {incident.title}
               </span>
               <span className="num mt-1 flex flex-wrap items-center gap-2 text-2xs text-ink-4">
+                {/* Whose incident it is, by mark: the queue is read for "is
+                    this the payments thing or the search thing" before any
+                    number on it is. */}
+                <span className="flex items-center -space-x-1">
+                  {incident.profileIds.slice(0, 4).map((id) => {
+                    const kind = context.model.services.find((s) => s.snapshot.profileId === id)
+                      ?.snapshot.kind;
+                    return kind ? (
+                      <span key={id} title={id} className="rounded-sm ring-2 ring-panel">
+                        <ServiceMark descriptor={context.catalog.get(kind)} size={14} />
+                      </span>
+                    ) : null;
+                  })}
+                </span>
                 <span>{formatRelative(incident.started)}</span>
                 <span className="text-ink-4/50">·</span>
                 <span>

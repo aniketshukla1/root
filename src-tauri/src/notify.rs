@@ -86,6 +86,10 @@ pub enum ChannelKind {
     PagerDuty,
     #[serde(rename = "webhook")]
     Webhook,
+    /// A banner on the machine running the desktop app. No URL, no key: the
+    /// system's notification centre is the target.
+    #[serde(rename = "desktop")]
+    Desktop,
 }
 
 impl ChannelKind {
@@ -96,7 +100,13 @@ impl ChannelKind {
             ChannelKind::Discord => "Discord",
             ChannelKind::PagerDuty => "PagerDuty",
             ChannelKind::Webhook => "Webhook",
+            ChannelKind::Desktop => "Desktop",
         }
+    }
+
+    /// Whether this kind is reached through a URL or key kept in the keychain.
+    pub fn needs_target(self) -> bool {
+        self != ChannelKind::Desktop
     }
 
     /// PagerDuty opens an incident on a trigger and keeps it open until told
@@ -110,6 +120,9 @@ impl ChannelKind {
     /// rather than at three in the morning when the first alert tries it.
     pub fn validate(self, target: &str) -> Result<()> {
         let target = target.trim();
+        if self == ChannelKind::Desktop {
+            return Ok(());
+        }
         if self == ChannelKind::PagerDuty {
             return if target.len() == 32 && target.chars().all(|c| c.is_ascii_alphanumeric()) {
                 Ok(())
@@ -588,6 +601,8 @@ fn render(
     let title = headline(event, alerts);
 
     match channel.kind {
+        // Shown through the notification centre by `deliver_desktop`.
+        ChannelKind::Desktop => Vec::new(),
         ChannelKind::Slack => {
             let emoji = |a: &Alert| match (event, a.severity) {
                 (DeliveryEvent::Resolved, _) => ":large_green_circle:",
@@ -889,12 +904,16 @@ async fn post(
 /// Send one event to one channel. Returns the log record and, per alert, whether it got there.
 async fn deliver(
     client: &reqwest::Client,
+    desktop: Option<&tauri::AppHandle>,
     channel: &NotifyChannel,
     target: &str,
     event: DeliveryEvent,
     alerts: &[Alert],
     meta: &HashMap<String, Meta>,
 ) -> (Delivery, Vec<bool>) {
+    if channel.kind == ChannelKind::Desktop {
+        return deliver_desktop(desktop, channel, event, alerts, meta);
+    }
     let now = Utc::now();
     let started = Instant::now();
     let requests = render(channel, target, event, alerts, meta, now);
@@ -945,6 +964,99 @@ async fn deliver(
     (delivery, delivered)
 }
 
+/// What a desktop banner says: a title and at most a few lines.
+///
+/// The notification centre shows a line of title and two or three of body,
+/// and truncates the rest without a word — so this decides what survives
+/// rather than leaving it to the cut.
+fn banner(
+    event: DeliveryEvent,
+    alerts: &[Alert],
+    meta: &HashMap<String, Meta>,
+    now: DateTime<Utc>,
+) -> (String, String) {
+    let title: String = headline(event, alerts).chars().take(120).collect();
+    let body = match (event, alerts) {
+        (DeliveryEvent::Test, _) => TEST_TEXT.to_string(),
+        (_, [one]) => {
+            let detail: String = one.detail.chars().take(160).collect();
+            let context = context_line(one, meta.get(&one.profile_id), event, now);
+            if detail.is_empty() {
+                context
+            } else {
+                format!("{detail}\n{context}")
+            }
+        }
+        (_, many) => {
+            let mut lines: Vec<String> = many
+                .iter()
+                .take(4)
+                .map(|a| format!("{} — {}", subject(a), a.title))
+                .collect();
+            if many.len() > 4 {
+                lines.push(format!("and {} more", many.len() - 4));
+            }
+            lines.join("\n")
+        }
+    };
+    (title, body)
+}
+
+/// A banner, through the system's notification centre. Only the desktop app
+/// has one; anywhere else this says so in the delivery log instead.
+fn deliver_desktop(
+    app: Option<&tauri::AppHandle>,
+    channel: &NotifyChannel,
+    event: DeliveryEvent,
+    alerts: &[Alert],
+    meta: &HashMap<String, Meta>,
+) -> (Delivery, Vec<bool>) {
+    let now = Utc::now();
+    let started = Instant::now();
+    let (title, body) = banner(event, alerts, meta, now);
+    let result = match app {
+        Some(app) => {
+            use tauri_plugin_notification::NotificationExt;
+            app.notification()
+                .builder()
+                .title(&title)
+                .body(&body)
+                .show()
+                .map_err(|e| e.to_string())
+        }
+        None => Err("desktop banners only show in the root desktop app".to_string()),
+    };
+    let ok = result.is_ok();
+    let delivery = Delivery {
+        id: uuid::Uuid::new_v4().to_string(),
+        channel_id: channel.id.clone(),
+        channel_name: channel.name.clone(),
+        kind: channel.kind,
+        event,
+        alerts: if event == DeliveryEvent::Test {
+            0
+        } else {
+            alerts.len()
+        },
+        summary: headline(event, alerts),
+        ok,
+        status: None,
+        error: result.err(),
+        attempts: 1,
+        latency_ms: started.elapsed().as_millis() as u64,
+        at: now,
+    };
+    (delivery, vec![ok; alerts.len().max(1)])
+}
+
+/// The desktop app's handle, when this process is the desktop app.
+async fn desktop(state: &Arc<AppState>) -> Option<tauri::AppHandle> {
+    match &*state.events.read().await {
+        crate::events::Events::Tauri(handle) => Some(handle.clone()),
+        _ => None,
+    }
+}
+
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -974,6 +1086,9 @@ pub async fn sweep(state: &Arc<AppState>, client: &reqwest::Client) {
     }
     let mut targets = HashMap::new();
     for (channel, _) in &plans {
+        if !channel.kind.needs_target() {
+            continue;
+        }
         if let Ok(Some(target)) = crate::secrets::get_secret(&channel.secret_key()).await {
             targets.insert(channel.id.clone(), target);
         }
@@ -1050,9 +1165,16 @@ async fn send(
     targets: &HashMap<String, String>,
     meta: &HashMap<String, Meta>,
 ) {
+    let handle = desktop(state).await;
     for (channel, plan) in plans {
         let now = Utc::now();
-        let Some(target) = targets.get(&channel.id) else {
+        let none = String::new();
+        let found = if channel.kind.needs_target() {
+            targets.get(&channel.id)
+        } else {
+            Some(&none)
+        };
+        let Some(target) = found else {
             let mut notifier = state.notifier.lock().await;
             notifier.failed(&channel.id, now);
             notifier.record(Delivery {
@@ -1089,8 +1211,16 @@ async fn send(
             if alerts.is_empty() {
                 continue;
             }
-            let (delivery, delivered) =
-                deliver(client, &channel, target, event, &alerts, meta).await;
+            let (delivery, delivered) = deliver(
+                client,
+                handle.as_ref(),
+                &channel,
+                target,
+                event,
+                &alerts,
+                meta,
+            )
+            .await;
             let mut notifier = state.notifier.lock().await;
             for (alert, ok) in alerts.iter().zip(delivered) {
                 if !ok {
@@ -1315,7 +1445,17 @@ pub async fn save(
     let target = target
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty());
+    if !channel.kind.needs_target() {
+        if desktop(state).await.is_none() {
+            return Err(AppError::Rejected(
+                "desktop banners only show in the root desktop app — this copy of root is a server"
+                    .into(),
+            ));
+        }
+        channel.target_hint = None;
+    }
     match &target {
+        _ if !channel.kind.needs_target() => {}
         Some(target) => {
             channel.kind.validate(target)?;
             crate::secrets::set_secret(&channel.secret_key(), target).await?;
@@ -1348,7 +1488,8 @@ pub async fn save(
         let channels = &mut config.notifications.channels;
         match channels.iter_mut().find(|c| c.id == channel.id) {
             Some(existing) => {
-                if existing.kind != channel.kind && target.is_none() {
+                if existing.kind != channel.kind && target.is_none() && channel.kind.needs_target()
+                {
                     return Err(AppError::Rejected(
                         "a different kind of channel needs its own URL or key".into(),
                     ));
@@ -1389,11 +1530,16 @@ pub async fn test(state: &Arc<AppState>, channel_id: &str) -> Result<Delivery> {
         .find(|c| c.id == channel_id)
         .cloned()
         .ok_or_else(|| AppError::Rejected("that channel no longer exists".into()))?;
-    let target = crate::secrets::get_secret(&channel.secret_key())
-        .await?
-        .ok_or_else(|| {
-            AppError::Rejected("no webhook URL or key is stored for this channel".into())
-        })?;
+    let target = if channel.kind.needs_target() {
+        crate::secrets::get_secret(&channel.secret_key())
+            .await?
+            .ok_or_else(|| {
+                AppError::Rejected("no webhook URL or key is stored for this channel".into())
+            })?
+    } else {
+        String::new()
+    };
+    let handle = desktop(state).await;
 
     let now = Utc::now();
     let probe = Alert {
@@ -1420,6 +1566,7 @@ pub async fn test(state: &Arc<AppState>, channel_id: &str) -> Result<Delivery> {
     };
     let (delivery, _) = deliver(
         &client,
+        handle.as_ref(),
         &channel,
         &target,
         DeliveryEvent::Test,
@@ -1432,6 +1579,7 @@ pub async fn test(state: &Arc<AppState>, channel_id: &str) -> Result<Delivery> {
         cleared.active = false;
         let _ = deliver(
             &client,
+            handle.as_ref(),
             &channel,
             &target,
             DeliveryEvent::Resolved,
@@ -1523,6 +1671,63 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn a_banner_says_what_fits() {
+        let now = Utc::now();
+        let one = alert("down", "p1", AlertSeverity::Critical, 60, now);
+        let meta = meta(&[("p1", "production", Some("payments"))]);
+        let (title, body) = banner(
+            DeliveryEvent::Firing,
+            std::slice::from_ref(&one),
+            &meta,
+            now,
+        );
+        assert_eq!(title, "p1-name / worker — down title");
+        assert!(
+            body.starts_with("down detail\ncritical · team payments · production"),
+            "{body}"
+        );
+
+        let many: Vec<Alert> = (0..6)
+            .map(|i| alert(&format!("f{i}"), "p1", AlertSeverity::Warning, 60, now))
+            .collect();
+        let (title, body) = banner(DeliveryEvent::Firing, &many, &meta, now);
+        assert_eq!(title, "6 alerts firing");
+        assert_eq!(
+            body.lines().count(),
+            5,
+            "four alerts and how many more: {body}"
+        );
+        assert!(body.ends_with("and 2 more"));
+    }
+
+    #[tokio::test]
+    async fn a_desktop_channel_outside_the_app_says_so_in_the_log() {
+        let mut desk = channel(ChannelKind::Desktop);
+        desk.id = "desk".into();
+        let state = estate(desk);
+        state.alerts.write().await.reconcile(
+            "p1",
+            vec![alert("down", "p1", AlertSeverity::Critical, 0, Utc::now())],
+        );
+        let later = Utc::now() + ChronoDuration::seconds(45);
+        let (owed, meta) = plans(&state, later).await;
+        assert_eq!(owed.len(), 1, "a desktop channel is planned like any other");
+        send(&state, &client(), owed, &HashMap::new(), &meta).await;
+        let log = state.notifier.lock().await.deliveries(5);
+        assert!(!log[0].ok, "{log:?}");
+        assert!(
+            log[0]
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("desktop app"),
+            "{log:?}"
+        );
+        assert!(ChannelKind::Desktop.validate("").is_ok(), "no URL to check");
+        assert!(!ChannelKind::Desktop.needs_target());
     }
 
     #[test]

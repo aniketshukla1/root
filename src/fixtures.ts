@@ -2239,7 +2239,7 @@ export function saveNotificationChannel(
       const name = channel.name.trim();
       if (!name) return reject("give the channel a name");
       const existing = notifyChannels.find((c) => c.id === channel.id);
-      if (!existing && !target) {
+      if (!existing && !target && channel.kind !== "desktop") {
         return reject(
           channel.kind === "pagerduty"
             ? "paste the service's Events API v2 integration key"
@@ -2254,7 +2254,9 @@ export function saveNotificationChannel(
           "a PagerDuty integration key is 32 letters and digits — the Events API v2 key from the service's Integrations tab, not an API token",
         );
       }
-      const hint = target
+      const hint = channel.kind === "desktop"
+        ? null
+        : target
         ? channel.kind === "pagerduty"
           ? `••••${target.slice(-4)}`
           : `${new URL(target).host}/…${target.slice(-4)}`

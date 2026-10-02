@@ -11,6 +11,18 @@ import { cx } from "./primitives";
  * webhook has no brand, so it is the one neutral tile.
  */
 export const CHANNEL_BRAND: Record<ChannelKind, { label: string; color: string; glyph: ReactNode }> = {
+  desktop: {
+    label: "Desktop",
+    // The system's own notification blue: a banner is the OS speaking.
+    color: "#0a84ff",
+    glyph: (
+      <>
+        <rect x="3.5" y="4.5" width="17" height="11.5" rx="2" fill="none" stroke="currentColor" strokeWidth="2.2" />
+        <path d="M9 20h6M12 16v4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+        <circle cx="17.5" cy="7.5" r="2.6" fill="currentColor" />
+      </>
+    ),
+  },
   slack: {
     label: "Slack",
     color: "#611f69",

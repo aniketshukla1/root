@@ -13,6 +13,7 @@ import type {
   NotifyChannel,
 } from "../types";
 import { Button, Chip, cx, Empty, Field, Input, Panel, Segmented, Tag } from "../ui/primitives";
+import { serverUrl } from "../remote";
 import { CHANNEL_BRAND, ChannelMark } from "../ui/ChannelMark";
 import { CheckIcon, CloseIcon, PlusIcon, TrashIcon } from "../ui/icons";
 
@@ -28,6 +29,13 @@ interface KindInfo {
 }
 
 const KINDS: Record<ChannelKind, KindInfo> = {
+  desktop: {
+    pitch: "A banner on this computer, even with root in the background.",
+    namePlaceholder: "This Mac",
+    targetLabel: "",
+    targetPlaceholder: "",
+    targetHelp: null,
+  },
   slack: {
     pitch: "A channel, through an incoming webhook.",
     namePlaceholder: "#prod-alerts",
@@ -91,7 +99,13 @@ const KINDS: Record<ChannelKind, KindInfo> = {
   },
 };
 
-const KIND_ORDER: ChannelKind[] = ["slack", "teams", "pagerduty", "discord", "webhook"];
+const KIND_ORDER: ChannelKind[] = ["desktop", "slack", "teams", "pagerduty", "discord", "webhook"];
+
+/**
+ * A desktop banner needs the desktop app: talking to a server, there is no
+ * notification centre on this side to show one in, so the kind is not offered.
+ */
+const offered = (kind: ChannelKind) => kind !== "desktop" || !serverUrl();
 
 // ------------------------------------------------------------------- rules
 
@@ -288,7 +302,7 @@ export function NotificationSettings() {
 function KindPicker({ onPick }: { onPick: (kind: ChannelKind) => void }) {
   return (
     <div className="grid gap-2 border-b border-line-soft p-3 @2xl:grid-cols-2 @4xl:grid-cols-3">
-      {KIND_ORDER.map((kind) => (
+      {KIND_ORDER.filter(offered).map((kind) => (
         <button
           key={kind}
           type="button"
@@ -614,6 +628,17 @@ function ChannelEditor({
               onChange={(e) => set("name", e.target.value)}
             />
           </Field>
+          {channel.kind === "desktop" ? (
+            <Field
+              label="Where"
+              help="The notification centre of the machine running root. macOS may ask once whether root may show notifications."
+            >
+              <div className="flex h-7 items-center gap-2 text-xs text-ink-2">
+                <ChannelMark kind="desktop" size={18} />
+                This computer — no URL or key needed
+              </div>
+            </Field>
+          ) : (
           <Field
             label={info.targetLabel}
             required={creating}
@@ -632,6 +657,7 @@ function ChannelEditor({
               onChange={(e) => setTarget(e.target.value)}
             />
           </Field>
+          )}
         </div>
 
         <div className="grid gap-4 @3xl:grid-cols-2">
@@ -752,9 +778,11 @@ function ChannelEditor({
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          <span className="ml-auto text-2xs text-ink-4">
-            The URL or key is kept in the system keychain, never in root's config file.
-          </span>
+          {channel.kind !== "desktop" && (
+            <span className="ml-auto text-2xs text-ink-4">
+              The URL or key is kept in the system keychain, never in root's config file.
+            </span>
+          )}
         </div>
       </form>
     </Panel>

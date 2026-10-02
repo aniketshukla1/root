@@ -1290,7 +1290,7 @@ export interface Profile {
 
 // ------------------------------------------------------------ notifications
 
-export type ChannelKind = "slack" | "teams" | "discord" | "pagerduty" | "webhook";
+export type ChannelKind = "desktop" | "slack" | "teams" | "discord" | "pagerduty" | "webhook";
 
 /** One place root can tell, and the rules for what it hears. See `notify.rs`. */
 export interface NotifyChannel {

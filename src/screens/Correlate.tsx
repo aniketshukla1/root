@@ -22,6 +22,14 @@ const WINDOWS = [
  * to be relevant — errors first, then volume — so the thing that moved at the
  * same time is near the top rather than buried in alphabetical order.
  */
+function severityTone(severity: string): string {
+  return severity === "critical"
+    ? "var(--color-crit)"
+    : severity === "warning"
+      ? "var(--color-warn)"
+      : "var(--color-ink-3)";
+}
+
 export function Correlate({
   at,
   catalog,
@@ -33,6 +41,13 @@ export function Correlate({
 }) {
   const [windowSecs, setWindowSecs] = useState("120");
   const [data, setData] = useState<Correlation | null>(null);
+  /** A lane with an alert in the window is lit in its worst severity. */
+  const worstFor = (profileId: string): string | undefined => {
+    const mine = (data?.alerts ?? []).filter((a) => a.profileId === profileId);
+    if (mine.some((a) => a.severity === "critical")) return "var(--color-crit)";
+    if (mine.some((a) => a.severity === "warning")) return "var(--color-warn)";
+    return undefined;
+  };
   const [changes, setChanges] = useState<ChangeEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -156,16 +171,22 @@ export function Correlate({
           <Panel title="Alerts in this window" flush>
             <ul className="divide-y divide-line">
               {data.alerts.map((alert) => (
-                <li key={alert.id} className="flex items-center gap-2 px-3 py-1.5">
+                <li
+                  key={alert.id}
+                  className={cx(
+                    "flex items-center gap-2 px-3 py-1.5",
+                    alert.severity === "critical" && "hue",
+                  )}
+                  style={{ "--hue": "var(--color-crit)" } as React.CSSProperties}
+                >
                   <span
                     className="h-1.5 w-1.5 shrink-0 rounded-full"
                     style={{
-                      background:
-                        alert.severity === "critical"
-                          ? "var(--color-crit)"
-                          : alert.severity === "warning"
-                            ? "var(--color-warn)"
-                            : "var(--color-ink-3)",
+                      background: severityTone(alert.severity),
+                      boxShadow:
+                        alert.severity === "info"
+                          ? undefined
+                          : `0 0 6px 1px color-mix(in srgb, ${severityTone(alert.severity)} 60%, transparent)`,
                     }}
                     aria-hidden
                   />
@@ -199,6 +220,8 @@ export function Correlate({
             {lanes.map((lane) => (
               <Panel
                 key={lane.profileId}
+                className={worstFor(lane.profileId) ? "hue" : undefined}
+                style={{ "--hue": worstFor(lane.profileId) } as React.CSSProperties}
                 title={
                   <span className="flex items-center gap-2">
                     <ServiceMark descriptor={catalog.get(lane.kind)} size={16} />
@@ -238,6 +261,11 @@ export function Correlate({
                             </span>
                             <span
                               className={cx("num text-2xs", notable ? "text-warn" : "text-ink-4")}
+                              style={{
+                                textShadow: notable
+                                  ? `0 0 9px color-mix(in srgb, var(--color-warn) ${Math.abs(movement.changePct) >= 50 ? 60 : 35}%, transparent)`
+                                  : undefined,
+                              }}
                             >
                               {rising ? "+" : ""}
                               {movement.changePct.toFixed(1)}%

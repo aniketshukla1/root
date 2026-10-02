@@ -347,8 +347,13 @@ function EscalationPath({ channels }: { channels: NotifyChannel[] }) {
                 }}
               />
               <span
-                className="relative block h-[7px] w-[7px] rounded-full ring-4 ring-panel"
-                style={{ background: tone }}
+                className="relative block h-[7px] w-[7px] rounded-full"
+                style={{
+                  background: tone,
+                  // The panel ring and the glow in one shadow: an escalation
+                  // stop is lit amber, "at once" only faintly.
+                  boxShadow: `0 0 0 4px var(--color-panel), 0 0 10px 3px color-mix(in srgb, ${tone} ${delay === 0 ? 25 : 55}%, transparent)`,
+                }}
               />
               <span
                 className="mt-2 block text-2xs font-semibold tracking-[.06em] uppercase"
@@ -531,7 +536,10 @@ function Outcome({ ok, text }: { ok: boolean; text: string }) {
     <p
       role={ok ? "status" : "alert"}
       className="flex items-start gap-1.5 text-2xs leading-snug"
-      style={{ color: ok ? "var(--color-ok)" : "var(--color-crit)" }}
+      style={{
+        color: ok ? "var(--color-ok)" : "var(--color-crit)",
+        textShadow: `0 0 10px color-mix(in srgb, ${ok ? "var(--color-ok)" : "var(--color-crit)"} 40%, transparent)`,
+      }}
     >
       <span className="mt-px shrink-0">{ok ? <CheckIcon size={11} /> : <CloseIcon size={11} />}</span>
       <span className="min-w-0">{text}</span>
@@ -788,12 +796,19 @@ function DeliveryLog({ deliveries }: { deliveries: Delivery[] }) {
             return (
               <li
                 key={d.id}
-                className="flex flex-col gap-1 border-b border-line-soft px-3 py-2 last:border-0"
+                className={cx(
+                  "flex flex-col gap-1 border-b border-line-soft px-3 py-2 last:border-0",
+                  !d.ok && "hue",
+                )}
+                style={{ "--hue": "var(--color-crit)" } as React.CSSProperties}
               >
                 <div className="flex min-w-0 items-center gap-2">
                   <span
                     className="h-1.5 w-1.5 shrink-0 rounded-full"
-                    style={{ background: d.ok ? "var(--color-ok)" : "var(--color-crit)" }}
+                    style={{
+                      background: d.ok ? "var(--color-ok)" : "var(--color-crit)",
+                      boxShadow: `0 0 6px 1px color-mix(in srgb, ${d.ok ? "var(--color-ok)" : "var(--color-crit)"} ${d.ok ? 35 : 65}%, transparent)`,
+                    }}
                     title={d.ok ? "Delivered" : "Not delivered"}
                   />
                   <ChannelMark kind={d.kind} size={16} />

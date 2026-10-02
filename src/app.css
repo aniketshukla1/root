@@ -429,6 +429,22 @@
     mask-image: linear-gradient(to top, black, transparent);
   }
 
+  /* A chart line's glow: the same line, wide and faint, beneath it. On the
+     light ground the same strength reads as a smudge rather than light, so
+     it is halved there. */
+  .chart-glow {
+    stroke-opacity: 0.14;
+  }
+  .chart-glow-strong {
+    stroke-opacity: 0.28;
+  }
+  [data-theme="light"] .chart-glow {
+    stroke-opacity: 0.06;
+  }
+  [data-theme="light"] .chart-glow-strong {
+    stroke-opacity: 0.14;
+  }
+
   /* A measure's end, lit in its colour: the tip of a bar near its limit. */
   .hue-tip {
     box-shadow: 0 0 10px 1px color-mix(in srgb, var(--hue) 55%, transparent);

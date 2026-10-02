@@ -151,7 +151,7 @@ export function Sparkline({
         fill="none"
         stroke={stroke}
         strokeWidth="4.5"
-        strokeOpacity={breaching ? 0.3 : 0.16}
+        className={breaching ? "chart-glow-strong" : "chart-glow"}
         strokeLinejoin="round"
         strokeLinecap="round"
       />
@@ -450,7 +450,7 @@ export function TimeSeries({
                 <g key={s.key}>
                   {single && <path d={area} fill={`url(#${uid}-area)`} />}
                   {/* The glow: the same line, wide and faint, under it. */}
-                  <path d={path} {...stroke} stroke={s.color} strokeWidth="6" strokeOpacity="0.14" />
+                  <path d={path} {...stroke} stroke={s.color} strokeWidth="6" className="chart-glow" />
                   <path d={path} {...stroke} stroke={s.color} strokeWidth="2" />
                   {/* Above its limit the line itself turns, and glows harder:
                       the stretch that broke the threshold, not the whole
@@ -462,7 +462,7 @@ export function TimeSeries({
                         {...stroke}
                         stroke="var(--color-warn)"
                         strokeWidth="7"
-                        strokeOpacity="0.28"
+                        className="chart-glow-strong"
                       />
                       <path d={path} {...stroke} stroke="var(--color-warn)" strokeWidth="2" />
                     </g>

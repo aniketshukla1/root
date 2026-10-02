@@ -199,6 +199,7 @@ export function Panel({
   className,
   bodyClassName,
   flush,
+  style,
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
@@ -208,9 +209,11 @@ export function Panel({
   bodyClassName?: string;
   /** Table panels manage their own padding so rows can bleed to the edge. */
   flush?: boolean;
+  /** For a `--hue` on a panel that is about a status. */
+  style?: React.CSSProperties;
 }) {
   return (
-    <section className={cx("panel flex min-w-0 flex-col overflow-hidden", className)}>
+    <section className={cx("panel flex min-w-0 flex-col overflow-hidden", className)} style={style}>
       {(title || actions) && (
         <PanelHeader title={title} subtitle={subtitle} actions={actions} />
       )}

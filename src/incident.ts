@@ -14,6 +14,7 @@
 
 import type {
   Alert,
+  AlertSeverity,
   ChangeEvent,
   Correlation,
   GroupingReason,
@@ -21,7 +22,10 @@ import type {
   HealthRun,
   Incident,
   LogEvent,
+  LogLevel,
+  MetricMovement,
   MetricSeries,
+  ServiceKind,
   TopologyView,
 } from "./types";
 import type { EstateModel } from "./model";
@@ -132,6 +136,25 @@ export interface Evidence {
     | { to: "logs"; profileId: string }
     | { to: "service"; profileId: string }
     | { to: "correlate"; at: string };
+
+  // The same claim as parts, so the panel can draw it rather than print it:
+  // a connection's mark, a severity's colour, a version's before and after.
+  // `headline` and `provenance` stay the sentence a screen reader hears.
+
+  /** The connection it came from. */
+  connection: { profileId: string; name: string; kind: ServiceKind };
+  /** An alert's severity. */
+  severity?: AlertSeverity;
+  /** A log line's level — the worst of the identical lines folded into it. */
+  level?: LogLevel;
+  /** A change's before and after. */
+  change?: { component: string; from?: string; to: string; source: string };
+  /** A metric's movement around onset. */
+  movement?: MetricMovement;
+  /** How many identical log lines this one stands for. */
+  count?: number;
+  /** What follows the connection: an alert's component, a log line's source. */
+  detail?: string;
 }
 
 /**
@@ -169,6 +192,17 @@ export function evidenceFor(
       provenance: `change · ${change.source} · ${minutesBefore(at, started)} the first alert`,
       at: change.at,
       target: { to: "service", profileId: change.profileId },
+      connection: {
+        profileId: change.profileId,
+        name: change.profileName,
+        kind: change.kind,
+      },
+      change: {
+        component: change.component,
+        from: change.from,
+        to: change.to,
+        source: change.source,
+      },
     });
   }
 
@@ -181,6 +215,13 @@ export function evidenceFor(
       provenance: `alert · ${alert.profileName}${alert.component ? ` · ${alert.component}` : ""}`,
       at: alert.firstSeen,
       target: { to: "alerts" },
+      connection: {
+        profileId: alert.profileId,
+        name: alert.profileName,
+        kind: alert.kind,
+      },
+      severity: alert.severity,
+      detail: alert.component,
     });
   }
 
@@ -197,6 +238,12 @@ export function evidenceFor(
         provenance: `metric · ${lane.profileName}/${movement.key} · around onset`,
         at: incident.started,
         target: { to: "correlate", at: incident.started },
+        connection: {
+          profileId: lane.profileId,
+          name: lane.profileName,
+          kind: lane.kind,
+        },
+        movement,
       });
     }
   }
@@ -212,6 +259,14 @@ export function evidenceFor(
       provenance: `log · ${group[0].source || group[0].profileName} · ${group.length} occurrence${group.length === 1 ? "" : "s"}`,
       at: group[0].timestamp,
       target: { to: "logs", profileId: group[0].profileId },
+      connection: {
+        profileId: group[0].profileId,
+        name: group[0].profileName,
+        kind: group[0].kind,
+      },
+      level: group.some((l) => l.level === "fatal") ? "fatal" : "error",
+      count: group.length,
+      detail: group[0].source || undefined,
     });
   }
 

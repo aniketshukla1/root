@@ -7,13 +7,15 @@
  * model, and the screen is complete with no model configured at all.
  */
 
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { motion } from "motion/react";
+import type { Variants } from "motion/react";
 
 import { healthColor } from "../catalog";
 import type { Catalog } from "../catalog";
-import { formatRelative } from "../format";
+import { formatMetricValue, formatRelative } from "../format";
 import {
   blastRadius,
   blindSpots,
@@ -24,7 +26,9 @@ import {
 } from "../incident";
 import type { BlindSpot, Evidence } from "../incident";
 import type { EstateModel } from "../model";
-import { enter, stagger } from "./motion";
+import { SEVERITY } from "./AlertList";
+import { levelTextColor } from "./charts";
+import { EASE_OUT, enter, popIn, stagger } from "./motion";
 import type {
   Alert,
   ChangeEvent,
@@ -585,6 +589,72 @@ function gapFrom(previous: string, current: string): string {
 // --------------------------------------------------------------- evidence
 
 /**
+ * The colour a piece of evidence already has everywhere else in root, so the
+ * panel needs no legend of its own: a change is the accent, as the deploy
+ * markers on every chart are; an alert is its severity; a metric is data
+ * ink; a log line is its level.
+ */
+function evidenceTone(item: Evidence): string {
+  switch (item.kind) {
+    case "change":
+      return "var(--color-accent)";
+    case "alert":
+      return SEVERITY[item.severity ?? "warning"].color;
+    case "metric":
+      return "var(--color-data)";
+    case "log":
+      return levelTextColor(item.level ?? "error");
+  }
+}
+
+/** A tone at a strength, for the ground and rule behind it — as `Tag` mixes. */
+const tint = (color: string, pct: number) => `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+
+/**
+ * One shape per kind, and they are the shapes the charts already draw: a
+ * diamond for a change, a dot for an alert. A metric points the way it
+ * moved; a log line is a block, as in the Logs activity strip.
+ */
+function EvidenceGlyph({ item, size = 8 }: { item: Evidence; size?: number }) {
+  const color = evidenceTone(item);
+  if (item.kind === "metric") {
+    const up = (item.movement?.changePct ?? 0) >= 0;
+    return (
+      <svg width={size + 2} height={size + 2} viewBox="0 0 10 10" aria-hidden className="block">
+        <path d={up ? "M5 0.8 9.4 8.8H0.6Z" : "M5 9.2 9.4 1.2H0.6Z"} style={{ fill: color }} />
+      </svg>
+    );
+  }
+  const side = item.kind === "change" ? size * 0.8 : item.kind === "log" ? size * 0.85 : size;
+  return (
+    <span
+      aria-hidden
+      className={cx(
+        "block",
+        item.kind === "change" && "rotate-45 rounded-[1px]",
+        item.kind === "alert" && "rounded-full",
+        item.kind === "log" && "rounded-[2px]",
+      )}
+      style={{ width: side, height: side, background: color }}
+    />
+  );
+}
+
+/** "4m before", "1h 18m before", "at onset", "2m after". */
+function fromOnset(at: string, onset: string): string {
+  const mins = Math.round((Date.parse(at) - Date.parse(onset)) / 60_000);
+  if (mins === 0) return "at onset";
+  return `${span(Math.abs(mins))} ${mins < 0 ? "before" : "after"}`;
+}
+
+function span(mins: number): string {
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours >= 48) return `${Math.round(hours / 24)}d`;
+  return mins % 60 ? `${hours}h ${mins % 60}m` : `${hours}h`;
+}
+
+/**
  * Every claim above, traced to a line that opens where it came from.
  *
  * This is the panel that makes the rest of the screen arguable. A summary
@@ -605,6 +675,9 @@ export function EvidencePanel({
     logs: context.logs,
     correlation: context.correlation,
   });
+  // One hover, shared by the strip and the list: point at either and its
+  // twin lights up, which is what ties a mark on the line to its claim.
+  const [hovered, setHovered] = useState<string>();
 
   const open = (item: Evidence) => {
     switch (item.target.to) {
@@ -619,6 +692,13 @@ export function EvidencePanel({
     }
   };
 
+  // The most recent change before the first alert: the line `evidenceFor`
+  // ranks first for a reason, marked so it is not just the first of eight.
+  const onset = Date.parse(incident.started);
+  const lastChange = evidence
+    .filter((item) => item.kind === "change" && Date.parse(item.at) <= onset)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0]?.id;
+
   return (
     <section className="panel flex min-h-0 flex-col overflow-hidden">
       <PanelHeader
@@ -626,29 +706,28 @@ export function EvidencePanel({
         subtitle={`${evidence.length} source${evidence.length === 1 ? "" : "s"} · each opens where it came from`}
       />
 
-      <motion.div
-        variants={stagger(0.04)}
-        {...enter}
-        className="min-h-0 flex-1 overflow-y-auto py-1"
-      >
-        {evidence.map((item, i) => (
-          <button
+      {evidence.length > 0 && (
+        <LeadUp
+          evidence={evidence}
+          onset={incident.started}
+          hovered={hovered}
+          onHover={setHovered}
+          onOpen={open}
+        />
+      )}
+
+      <motion.div variants={stagger(0.04)} {...enter} className="min-h-0 flex-1 overflow-y-auto">
+        {evidence.map((item) => (
+          <EvidenceRow
             key={item.id}
-            type="button"
-            onClick={() => open(item)}
-            className="row-hover flex w-full items-start gap-2.5 border-b border-line-soft px-3 py-2 text-left last:border-0"
-          >
-            <span className="num w-4 shrink-0 pt-px text-2xs" style={{ color: "var(--color-accent)" }}>
-              {String(i + 1).padStart(2, "0")}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="num block truncate text-xs text-ink-2" title={item.headline}>
-                {item.headline}
-              </span>
-              <span className="num mt-1 block truncate text-2xs text-ink-4">{item.provenance}</span>
-            </span>
-            <ExternalIcon size={11} style={{ color: "var(--color-ink-4)" }} />
-          </button>
+            item={item}
+            onset={incident.started}
+            catalog={context.catalog}
+            last={item.id === lastChange}
+            hovered={hovered === item.id}
+            onHover={setHovered}
+            onOpen={open}
+          />
         ))}
 
         {evidence.length === 0 && (
@@ -675,6 +754,354 @@ export function EvidencePanel({
         </button>
       </div>
     </section>
+  );
+}
+
+/** Tick candidates, in minutes from onset; whichever fall in range and fit are drawn. */
+const LEAD_TICKS = [-2880, -1440, -720, -360, -180, -120, -60, -30, -15, -5, -1, 1, 5, 15, 30, 60];
+/** Where the line runs, from the top of the strip. */
+const LEAD_BASE = 50;
+/** Rise per stacked mark, when marks land on the same moment. */
+const LEAD_STEP = 11;
+
+/**
+ * The lead-up, drawn: every piece of evidence on one line against the moment
+ * the first alert fired.
+ *
+ * Minutes run on a log scale either side of onset. On a linear one, a change
+ * an hour earlier pinned everything else into the last few pixels — and the
+ * last few minutes are what this strip exists to show. The uneven ticks say
+ * so without a caption.
+ */
+function LeadUp({
+  evidence,
+  onset,
+  hovered,
+  onHover,
+  onOpen,
+}: {
+  evidence: Evidence[];
+  onset: string;
+  hovered?: string;
+  onHover: (id?: string) => void;
+  onOpen: (item: Evidence) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const t0 = Date.parse(onset);
+  const minutes = evidence.map((item) => (Date.parse(item.at) - t0) / 60_000);
+  const lo = Math.min(0, ...minutes);
+  const hi = Math.max(0, ...minutes);
+
+  const f = (m: number) => Math.sign(m) * Math.log1p(Math.abs(m) / 2);
+  const inverse = (v: number) => Math.sign(v) * 2 * Math.expm1(Math.abs(v));
+  // Room past each end, and always some after onset, so no mark sits on the
+  // edge and onset never reads as where the line stops.
+  const a = f(lo) - 0.3;
+  const b = Math.max(f(hi), 0.9) + 0.3;
+  const PAD = 14;
+  const x = (m: number) => PAD + ((f(m) - a) / (b - a)) * Math.max(0, width - 2 * PAD);
+  const zero = x(0);
+
+  // Marks on the same moment stack upward rather than hide each other.
+  const occupied: number[][] = [];
+  const marks = evidence
+    .map((item, i) => ({ item, m: minutes[i], px: x(minutes[i]) }))
+    .sort((p, q) => p.m - q.m)
+    .map((mark) => {
+      let level = 0;
+      while (level < 3 && (occupied[level] ?? []).some((px) => Math.abs(px - mark.px) < 11)) {
+        level++;
+      }
+      (occupied[level] ??= []).push(mark.px);
+      return { ...mark, y: LEAD_BASE - 8 - level * LEAD_STEP };
+    });
+
+  // The onset label is the one that must always show; ticks give way to it.
+  const onsetLabel = `first alert ${clock(onset)}`;
+  const onsetWidth = onsetLabel.length * 5.6;
+  const onsetAlign =
+    zero > width - onsetWidth / 2 - 4 ? "end" : zero < onsetWidth / 2 + 4 ? "start" : "middle";
+  const onsetLeft =
+    onsetAlign === "end"
+      ? zero - onsetWidth
+      : onsetAlign === "start"
+        ? zero
+        : zero - onsetWidth / 2;
+  const kept: number[] = [];
+  const ticks = LEAD_TICKS.filter((m) => {
+    if (m <= inverse(a) || m >= inverse(b)) return false;
+    const px = x(m);
+    if (px > onsetLeft - 22 && px < onsetLeft + onsetWidth + 22) return false;
+    if (kept.some((other) => Math.abs(other - px) < 40)) return false;
+    kept.push(px);
+    return true;
+  });
+
+  return (
+    <div ref={ref} aria-hidden className="relative h-[70px] shrink-0 border-b border-line-soft">
+      {width > 0 && (
+        <>
+          {/* The run-up: a wash that deepens toward onset. */}
+          <div
+            className="absolute top-2"
+            style={{
+              left: x(lo) - 6,
+              width: Math.max(0, zero - x(lo) + 6),
+              height: LEAD_BASE - 8,
+              background: `linear-gradient(to right, transparent, ${tint("var(--color-crit)", 16)})`,
+              // Rising off the line rather than a box laid on it.
+              maskImage: "linear-gradient(to top, black, transparent)",
+              WebkitMaskImage: "linear-gradient(to top, black, transparent)",
+            }}
+          />
+          <div className="absolute right-3 left-3 h-px bg-line-strong" style={{ top: LEAD_BASE }} />
+
+          {ticks.map((m) => (
+            <span key={m}>
+              <span
+                className="absolute h-[4px] w-px bg-line-strong"
+                style={{ left: x(m), top: LEAD_BASE }}
+              />
+              <span
+                className="num absolute -translate-x-1/2 text-[10px] whitespace-nowrap text-ink-4"
+                style={{ left: x(m), top: LEAD_BASE + 6 }}
+              >
+                {m < 0 ? "−" : "+"}
+                {span(Math.abs(m))}
+              </span>
+            </span>
+          ))}
+
+          <motion.div
+            className="absolute w-px origin-bottom"
+            style={{
+              left: zero,
+              top: 4,
+              height: LEAD_BASE - 4 + 5,
+              background: "var(--color-crit)",
+            }}
+            initial={{ scaleY: 0 }}
+            animate={{ scaleY: 1 }}
+            transition={EASE_OUT}
+          />
+          <span
+            className="num absolute text-[10px] font-medium whitespace-nowrap"
+            style={{
+              left: onsetLeft,
+              width: onsetWidth,
+              top: LEAD_BASE + 6,
+              color: "var(--color-crit)",
+              textAlign:
+                onsetAlign === "middle" ? "center" : onsetAlign === "end" ? "right" : "left",
+            }}
+          >
+            {onsetLabel}
+          </span>
+
+          <motion.div variants={stagger(0.06, 0.2)} {...enter}>
+            {marks.map(({ item, px, y }) => {
+              const tone = evidenceTone(item);
+              const on = hovered === item.id;
+              return (
+                <div key={item.id}>
+                  {/* The stem says which moment a stacked mark belongs to. */}
+                  <span
+                    className="absolute w-px"
+                    style={{
+                      left: px,
+                      top: y,
+                      height: LEAD_BASE - y,
+                      background: tint(tone, on ? 70 : 38),
+                    }}
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onMouseEnter={() => onHover(item.id)}
+                    onMouseLeave={() => onHover(undefined)}
+                    onClick={() => onOpen(item)}
+                    title={`${item.headline} — ${fromOnset(item.at, onset)}`}
+                    className="absolute grid h-4 w-4 -translate-x-1/2 -translate-y-1/2 place-items-center"
+                    style={{ left: px + 0.5, top: y }}
+                  >
+                    {/* Arrival and hover on separate elements: both are a
+                        scale, and one would overwrite the other. */}
+                    <motion.span variants={popIn} className="grid place-items-center">
+                      <span
+                        className={cx(
+                          "grid place-items-center rounded-full transition-[scale,box-shadow] duration-150",
+                          on && "scale-[1.45]",
+                        )}
+                        style={{
+                          boxShadow: on ? `0 0 0 3px ${tint(tone, 28)}` : undefined,
+                        }}
+                      >
+                        <EvidenceGlyph item={item} size={8} />
+                      </span>
+                    </motion.span>
+                  </button>
+                </div>
+              );
+            })}
+          </motion.div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const rowIn: Variants = {
+  hidden: { opacity: 0, y: 3 },
+  shown: { opacity: 1, y: 0, transition: EASE_OUT },
+};
+
+function EvidenceRow({
+  item,
+  onset,
+  catalog,
+  last,
+  hovered,
+  onHover,
+  onOpen,
+}: {
+  item: Evidence;
+  onset: string;
+  catalog: Catalog;
+  /** The most recent change before the first alert. */
+  last: boolean;
+  hovered: boolean;
+  onHover: (id?: string) => void;
+  onOpen: (item: Evidence) => void;
+}) {
+  const tone = evidenceTone(item);
+  const qualifier =
+    item.kind === "change"
+      ? item.change?.source
+      : item.kind === "alert"
+        ? item.severity
+        : item.kind === "log"
+          ? `${item.level}${item.count && item.count > 1 ? ` ×${item.count}` : ""}`
+          : undefined;
+
+  return (
+    <motion.button
+      type="button"
+      variants={rowIn}
+      onClick={() => onOpen(item)}
+      onMouseEnter={() => onHover(item.id)}
+      onMouseLeave={() => onHover(undefined)}
+      onFocus={() => onHover(item.id)}
+      onBlur={() => onHover(undefined)}
+      title={`${item.headline}\n${item.provenance}`}
+      className={cx(
+        "group/row flex w-full items-center gap-3 border-b border-line-soft px-3 py-2 text-left transition-colors last:border-0",
+        hovered && "bg-wash",
+      )}
+    >
+      <span
+        className="grid h-7 w-7 shrink-0 place-items-center rounded-md border transition-colors"
+        style={{
+          background: tint(tone, hovered ? 18 : 11),
+          borderColor: tint(tone, hovered ? 45 : 28),
+        }}
+      >
+        <EvidenceGlyph item={item} size={9} />
+      </span>
+
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex min-w-0 items-center gap-2 text-xs">
+          <EvidenceHeadline item={item} tone={tone} />
+          {last && (
+            <Tag color="var(--color-accent)" title="The most recent change before the first alert">
+              last change before onset
+            </Tag>
+          )}
+        </span>
+        <span className="flex min-w-0 items-center gap-1.5 text-2xs text-ink-4">
+          <span
+            className="shrink-0 font-semibold tracking-[.06em] uppercase"
+            style={{ color: tone }}
+          >
+            {item.kind}
+          </span>
+          {qualifier && <span className="shrink-0">{qualifier}</span>}
+          <span aria-hidden className="shrink-0 text-ink-4/60">
+            ·
+          </span>
+          <ServiceMark descriptor={catalog.get(item.connection.kind)} size={12} />
+          <span className="shrink-0 text-ink-3">{item.connection.name}</span>
+          {item.detail && (
+            <>
+              <span aria-hidden className="shrink-0 text-ink-4/60">
+                ·
+              </span>
+              <span className="num min-w-0 truncate">{item.detail}</span>
+            </>
+          )}
+        </span>
+      </span>
+
+      <span className="flex shrink-0 items-center gap-2 self-start pt-0.5">
+        <span className="num text-2xs whitespace-nowrap text-ink-3">
+          {fromOnset(item.at, onset)}
+        </span>
+        <ExternalIcon
+          size={11}
+          className="text-ink-4 opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-visible/row:opacity-100"
+        />
+      </span>
+    </motion.button>
+  );
+}
+
+/** The claim itself, drawn in its parts where it has them. */
+function EvidenceHeadline({ item, tone }: { item: Evidence; tone: string }) {
+  if (item.kind === "change" && item.change?.from) {
+    return (
+      <span className="min-w-0 truncate">
+        <span className="font-medium text-ink">{item.change.component}</span>{" "}
+        <span className="num text-ink-4">{item.change.from}</span>
+        <span className="text-ink-4"> → </span>
+        <span className="num font-medium text-ink">{item.change.to}</span>
+      </span>
+    );
+  }
+
+  if (item.kind === "metric" && item.movement) {
+    const { label, changePct, from, to, unit } = item.movement;
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 font-medium text-ink">{label}</span>
+        <span
+          className="num inline-flex h-[18px] shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs font-semibold"
+          style={{ color: tone, background: tint(tone, 14) }}
+        >
+          <span className="text-[8px]">{changePct >= 0 ? "▲" : "▼"}</span>
+          {Math.abs(Math.round(changePct))}%
+        </span>
+        <span className="num min-w-0 truncate text-2xs text-ink-4">
+          {formatMetricValue(from, unit)} → {formatMetricValue(to, unit)}
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span className={cx("min-w-0 truncate", item.kind === "log" ? "num text-ink-2" : "text-ink-2")}>
+      {item.headline}
+    </span>
   );
 }
 

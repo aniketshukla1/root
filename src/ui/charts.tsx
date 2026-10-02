@@ -13,6 +13,7 @@
 
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -127,8 +128,8 @@ export function Sparkline({
     <svg width={width} height={height} className="overflow-visible" aria-hidden>
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={stroke} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+          <stop offset="0%" style={{ stopColor: stroke, stopOpacity: 0.22 }} />
+          <stop offset="100%" style={{ stopColor: stroke, stopOpacity: 0 }} />
         </linearGradient>
       </defs>
       {warnAbove !== undefined && warnAbove <= hi && warnAbove >= lo && (
@@ -144,6 +145,16 @@ export function Sparkline({
         />
       )}
       <path d={area} fill={`url(#${id})`} />
+      {/* The glow: the same line, wide and faint, under the line itself. */}
+      <path
+        d={line}
+        fill="none"
+        stroke={stroke}
+        strokeWidth="4.5"
+        strokeOpacity={breaching ? 0.3 : 0.16}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
       <path
         d={line}
         fill="none"
@@ -201,6 +212,8 @@ export function TimeSeries({
   onBrush?: (range: Domain) => void;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
+  // Gradient and clip ids must be unique on a page of twenty charts.
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [localHover, setLocalHover] = useState<number | null>(null);
   const [brush, setBrush] = useState<{ from: number; to: number } | null>(null);
 
@@ -256,7 +269,10 @@ export function TimeSeries({
   const timeAt = (px: number) => from + ((px - padL) / (innerW || 1)) * spanMs;
 
   const ticks = [scale.lo, scale.lo + (scale.hi - scale.lo) / 2, scale.hi];
-  const clipId = `plot-${Math.round(from)}-${Math.round(height)}`;
+  const clipId = `plot-${Math.round(from)}-${Math.round(height)}-${uid}`;
+  const single = plotted.length === 1;
+  const inRange = (v?: number): v is number => v !== undefined && v >= scale.lo && v <= scale.hi;
+  const limits = [...new Set(plotted.map((s) => s.warnAbove).filter(inRange))];
 
   const onMove = (event: React.MouseEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -325,6 +341,25 @@ export function TimeSeries({
             <clipPath id={clipId}>
               <rect x={padL} y={padT} width={innerW} height={innerH} />
             </clipPath>
+            {/* Past a limit, the plot deepens toward red the further it goes —
+                the same hue as the run-up to an alert. */}
+            <linearGradient id={`${uid}-zone`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" style={{ stopColor: "var(--color-crit)", stopOpacity: 0.17 }} />
+              <stop offset="100%" style={{ stopColor: "var(--color-crit)", stopOpacity: 0.02 }} />
+            </linearGradient>
+            {single && (
+              <linearGradient id={`${uid}-area`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" style={{ stopColor: plotted[0].color, stopOpacity: 0.2 }} />
+                <stop offset="100%" style={{ stopColor: plotted[0].color, stopOpacity: 0 }} />
+              </linearGradient>
+            )}
+            {plotted.map((s, i) =>
+              inRange(s.warnAbove) ? (
+                <clipPath key={s.key} id={`${uid}-over-${i}`}>
+                  <rect x={padL} y={padT} width={innerW} height={Math.max(0, y(s.warnAbove) - padT)} />
+                </clipPath>
+              ) : null,
+            )}
           </defs>
 
           {/* Recessive grid — present enough to read a value against, quiet
@@ -374,6 +409,17 @@ export function TimeSeries({
           )}
 
           <g clipPath={`url(#${clipId})`}>
+            {limits.map((limit) => (
+              <rect
+                key={`zone-${limit}`}
+                x={padL}
+                y={padT}
+                width={innerW}
+                height={Math.max(0, y(limit) - padT)}
+                fill={`url(#${uid}-zone)`}
+              />
+            ))}
+
             {inView.map((annotation) => (
               <line
                 key={annotation.id}
@@ -388,20 +434,40 @@ export function TimeSeries({
               />
             ))}
 
-            {plotted.map((s) => {
+            {plotted.map((s, i) => {
               const path = s.points
                 .map((p, i) => `${i === 0 ? "M" : "L"}${x(ms(p.t)).toFixed(1)},${y(p.v).toFixed(1)}`)
                 .join(" ");
+              const first = s.points[0];
+              const last = s.points[s.points.length - 1];
+              const area = `${path} L${x(ms(last.t)).toFixed(1)},${padT + innerH} L${x(ms(first.t)).toFixed(1)},${padT + innerH} Z`;
+              const stroke = {
+                fill: "none",
+                strokeLinejoin: "round" as const,
+                strokeLinecap: "round" as const,
+              };
               return (
-                <path
-                  key={s.key}
-                  d={path}
-                  fill="none"
-                  stroke={s.color}
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
+                <g key={s.key}>
+                  {single && <path d={area} fill={`url(#${uid}-area)`} />}
+                  {/* The glow: the same line, wide and faint, under it. */}
+                  <path d={path} {...stroke} stroke={s.color} strokeWidth="6" strokeOpacity="0.14" />
+                  <path d={path} {...stroke} stroke={s.color} strokeWidth="2" />
+                  {/* Above its limit the line itself turns, and glows harder:
+                      the stretch that broke the threshold, not the whole
+                      series, is what the eye should land on. */}
+                  {inRange(s.warnAbove) && (
+                    <g clipPath={`url(#${uid}-over-${i})`}>
+                      <path
+                        d={path}
+                        {...stroke}
+                        stroke="var(--color-warn)"
+                        strokeWidth="7"
+                        strokeOpacity="0.28"
+                      />
+                      <path d={path} {...stroke} stroke="var(--color-warn)" strokeWidth="2" />
+                    </g>
+                  )}
+                </g>
               );
             })}
 
@@ -769,17 +835,32 @@ export function LogHistogram({
                   const h = (count / max) * (height - 2);
                   if (h < 0.5) return null;
                   cursor -= h;
+                  // Errors and warnings glow — the hue the rest of root gives
+                  // a failing thing — as a soft halo behind the segment.
+                  const halo =
+                    level === "error" || level === "fatal" ? 0.3 : level === "warn" ? 0.16 : 0;
                   return (
-                    <rect
-                      key={level}
-                      x={bx}
-                      y={cursor}
-                      width={barW}
-                      height={Math.max(1, h - 2)}
-                      rx={1}
-                      fill={LEVEL_COLOR[level]}
-                      opacity={active || hoverIndex === null ? 1 : 0.55}
-                    />
+                    <g key={level} opacity={active || hoverIndex === null ? 1 : 0.55}>
+                      {halo > 0 && (
+                        <rect
+                          x={bx - 1.5}
+                          y={cursor - 1}
+                          width={barW + 3}
+                          height={Math.max(1, h - 2) + 2}
+                          rx={2.5}
+                          fill={LEVEL_COLOR[level]}
+                          opacity={halo}
+                        />
+                      )}
+                      <rect
+                        x={bx}
+                        y={cursor}
+                        width={barW}
+                        height={Math.max(1, h - 2)}
+                        rx={1}
+                        fill={LEVEL_COLOR[level]}
+                      />
+                    </g>
                   );
                 })}
               </g>

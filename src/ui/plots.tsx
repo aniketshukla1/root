@@ -179,46 +179,59 @@ export function Lanes({
   );
 }
 
+/**
+ * One connection's health over the window, as runs of colour.
+ *
+ * Drawn in HTML rather than SVG so a failing run can glow: the same hue the
+ * Evidence run-up uses, falling off the amber and red stretches and only
+ * those. Healthy stays the quiet ground it is — a lane that glows green has
+ * nothing to say and would say it loudly.
+ */
 export function LaneStrip({ runs, height }: { runs: Run[]; height: number }) {
-  const hatch = `hatch-${runs.length}-${Math.round((runs[0]?.from ?? 0) * 1000)}`;
-  const needsHatch = runs.some((r) => r.health === "unknown");
-
   return (
-    <svg
-      viewBox={`0 0 100 ${height}`}
-      preserveAspectRatio="none"
-      className="block w-full"
-      style={{ height }}
-      aria-hidden
-    >
-      {needsHatch && (
-        <defs>
-          {/* Absence is drawn, not coloured. Hatching is the one convention
-              every reader already knows for "no data". */}
-          <pattern
-            id={hatch}
-            width="5"
-            height="5"
-            patternUnits="userSpaceOnUse"
-            patternTransform="rotate(45)"
-          >
-            <line x1="0" y1="0" x2="0" y2="5" stroke="var(--color-ink-4)" strokeWidth="1.6" />
-          </pattern>
-        </defs>
-      )}
+    <span className="relative block w-full" style={{ height }} aria-hidden>
       {runs.map((run, i) => {
-        const x = run.from * 100;
-        const w = Math.max(0.4, (run.to - run.from) * 100 - 0.25);
-        return run.health === "unknown" ? (
-          <g key={i}>
-            <rect x={x} y={0} width={w} height={height} fill="var(--color-cell-todo)" />
-            <rect x={x} y={0} width={w} height={height} fill={`url(#${hatch})`} />
-          </g>
-        ) : (
-          <rect key={i} x={x} y={0} width={w} height={height} fill={runFill(run.health)} />
+        const left = `${run.from * 100}%`;
+        // A hairline between runs, as the SVG had, so two runs of the same
+        // colour still read as two.
+        const width = `max(1.5px, calc(${(run.to - run.from) * 100}% - 1px))`;
+        if (run.health === "unknown") {
+          // Absence is drawn, not coloured: hatching is the one convention
+          // every reader already knows for "no data".
+          return (
+            <span
+              key={i}
+              className="absolute inset-y-0"
+              style={{
+                left,
+                width,
+                background:
+                  "repeating-linear-gradient(135deg, var(--color-ink-4) 0 1.2px, transparent 1.2px 5px), var(--color-cell-todo)",
+              }}
+            />
+          );
+        }
+        const color = runFill(run.health);
+        const failing = run.health === "down" || run.health === "degraded";
+        return (
+          <span
+            key={i}
+            className="absolute inset-y-0"
+            style={{
+              left,
+              width,
+              background: failing
+                ? `linear-gradient(to bottom, color-mix(in srgb, ${color} 82%, white), ${color})`
+                : color,
+              boxShadow: failing
+                ? `0 0 12px 0 color-mix(in srgb, ${color} 50%, transparent)`
+                : undefined,
+              zIndex: failing ? 1 : undefined,
+            }}
+          />
         );
       })}
-    </svg>
+    </span>
   );
 }
 
@@ -332,16 +345,19 @@ export function RankBars({
               initial={{ scaleX: 0 }}
               animate={{ scaleX: 1 }}
               transition={{ ...EASE_OUT, delay: 0.05 + i * 0.06 }}
-              className="block h-full origin-left rounded-sm"
-              style={{
-                width: `${(item.value / max) * 100}%`,
-                background:
-                  item.tone === "crit"
-                    ? "var(--color-crit)"
-                    : item.tone === "warn"
-                      ? "var(--color-warn)"
-                      : "var(--color-series-1)",
-              }}
+              className={cx("block h-full origin-left rounded-sm", item.tone && "hue-tip")}
+              style={
+                {
+                  width: `${(item.value / max) * 100}%`,
+                  background:
+                    item.tone === "crit"
+                      ? "var(--color-crit)"
+                      : item.tone === "warn"
+                        ? "var(--color-warn)"
+                        : "var(--color-series-1)",
+                  "--hue": item.tone === "crit" ? "var(--color-crit)" : "var(--color-warn)",
+                } as React.CSSProperties
+              }
             />
           </span>
           <span className="num text-right text-2xs text-ink-3">{format(item.value)}</span>

@@ -246,6 +246,7 @@ pub fn run() {
             tauri_cmds::save_notification_channel,
             tauri_cmds::delete_notification_channel,
             tauri_cmds::test_notification_channel,
+            tauri_cmds::get_alert_notices,
             tauri_cmds::rotate_ingest_token,
             tauri_cmds::get_mcp_settings,
             tauri_cmds::save_mcp_settings,

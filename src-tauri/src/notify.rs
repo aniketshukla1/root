@@ -312,6 +312,8 @@ fn matches(channel: &NotifyChannel, alert: &Alert, meta: &HashMap<String, Meta>)
 struct Told {
     /// The occurrence it was told about.
     first_seen: DateTime<Utc>,
+    /// When it was told.
+    at: DateTime<Utc>,
     /// The alert as it was told — see the module notes.
     alert: Alert,
     acknowledged_told: bool,
@@ -1101,6 +1103,7 @@ async fn send(
                             key,
                             Told {
                                 first_seen: alert.first_seen,
+                                at: now,
                                 alert: alert.clone(),
                                 acknowledged_told: alert.acknowledged,
                             },
@@ -1125,6 +1128,106 @@ async fn send(
             notifier.record(delivery);
         }
     }
+}
+
+// ------------------------------------------------------------------ notices
+
+/// Where one alert stands with one channel, for the Alerts screen.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Notice {
+    pub channel_id: String,
+    pub channel_name: String,
+    pub kind: ChannelKind,
+    pub status: NoticeStatus,
+    /// When it was told, when it will be, or when the next attempt is.
+    pub at: DateTime<Utc>,
+    pub delay_minutes: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoticeStatus {
+    /// Told about this occurrence.
+    Sent,
+    /// Will be told at `at` — for a delayed channel, unless somebody
+    /// acknowledges it first. That clause is the reason this exists: the
+    /// person reading the Alerts screen is the one who can stop the page.
+    Due,
+    /// The last attempt failed; the next is at `at`.
+    Retrying,
+    /// A delayed channel that will not hear of it, because it was
+    /// acknowledged in time.
+    Held,
+}
+
+/// Every active alert's standing with every channel whose rules it matches,
+/// keyed by alert id. Computed from the same ledger and rules the loop uses,
+/// so the screen cannot promise a page the loop will not send.
+pub async fn notices(state: &Arc<AppState>) -> HashMap<String, Vec<Notice>> {
+    let (channels, meta) = {
+        let config = state.config.read().await;
+        (
+            config
+                .notifications
+                .channels
+                .iter()
+                .filter(|c| c.enabled)
+                .cloned()
+                .collect::<Vec<_>>(),
+            meta_of(&config),
+        )
+    };
+    if channels.is_empty() {
+        return HashMap::new();
+    }
+    let alerts = state.alerts.read().await.all();
+    let notifier = state.notifier.lock().await;
+    notices_from(&channels, &alerts, &meta, &notifier, Utc::now())
+}
+
+fn notices_from(
+    channels: &[NotifyChannel],
+    alerts: &[Alert],
+    meta: &HashMap<String, Meta>,
+    notifier: &Notifier,
+    now: DateTime<Utc>,
+) -> HashMap<String, Vec<Notice>> {
+    let mut out: HashMap<String, Vec<Notice>> = HashMap::new();
+    for alert in alerts.iter().filter(|a| a.active) {
+        for channel in channels.iter().filter(|c| matches(c, alert, meta)) {
+            let wait = ChronoDuration::seconds(GROUP_WAIT_SECS)
+                .max(ChronoDuration::minutes(i64::from(channel.delay_minutes)));
+            let due = alert.first_seen + wait;
+            let told = notifier
+                .told
+                .get(&(channel.id.clone(), alert.fingerprint.clone()))
+                .filter(|t| t.first_seen == alert.first_seen);
+            let (status, at) = match (told, notifier.backoff.get(&channel.id)) {
+                (Some(told), _) => (NoticeStatus::Sent, told.at),
+                (None, _) if channel.delay_minutes > 0 && alert.acknowledged => {
+                    (NoticeStatus::Held, due)
+                }
+                (None, Some((until, _))) if *until > now && due <= now => {
+                    (NoticeStatus::Retrying, *until)
+                }
+                (None, _) => (NoticeStatus::Due, due),
+            };
+            out.entry(alert.id.clone()).or_default().push(Notice {
+                channel_id: channel.id.clone(),
+                channel_name: channel.name.clone(),
+                kind: channel.kind,
+                status,
+                at,
+                delay_minutes: channel.delay_minutes,
+            });
+        }
+    }
+    // Soonest first within an alert: what was told, then what is coming.
+    for list in out.values_mut() {
+        list.sort_by_key(|n| (n.delay_minutes, n.at));
+    }
+    out
 }
 
 // ----------------------------------------------------------------- commands
@@ -1413,12 +1516,69 @@ mod tests {
                     (channel.to_string(), alert.fingerprint.clone()),
                     Told {
                         first_seen: alert.first_seen,
+                        at: alert.first_seen + ChronoDuration::seconds(GROUP_WAIT_SECS),
                         alert: (*alert).clone(),
                         acknowledged_told: false,
                     },
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn the_screen_is_told_what_the_loop_will_do() {
+        let now = Utc::now();
+        let mut chat = channel(ChannelKind::Slack);
+        chat.id = "chat".into();
+        let mut pager = channel(ChannelKind::PagerDuty);
+        pager.id = "pager".into();
+        pager.delay_minutes = 5;
+        let mut quiet = channel(ChannelKind::Teams);
+        quiet.id = "quiet".into();
+        quiet.min_severity = AlertSeverity::Critical;
+
+        let told_one = alert("told", "p1", AlertSeverity::Warning, 120, now);
+        let mut acked = alert("acked", "p1", AlertSeverity::Warning, 120, now);
+        acked.acknowledged = true;
+        let notifier = Notifier {
+            told: told(&[("chat", &told_one)]),
+            backoff: HashMap::from([("chat".to_string(), (now + ChronoDuration::minutes(1), 1))]),
+            ..Notifier::default()
+        };
+
+        let notices = notices_from(
+            &[chat, pager, quiet],
+            &[told_one.clone(), acked.clone()],
+            &HashMap::new(),
+            &notifier,
+            now,
+        );
+
+        let told_notices = &notices[&told_one.id];
+        assert_eq!(
+            told_notices.len(),
+            2,
+            "a warning is not for the critical-only channel: {told_notices:?}"
+        );
+        assert_eq!(told_notices[0].status, NoticeStatus::Sent);
+        assert_eq!(told_notices[1].status, NoticeStatus::Due);
+        assert_eq!(
+            told_notices[1].at,
+            told_one.first_seen + ChronoDuration::minutes(5),
+            "pages five minutes after it fired"
+        );
+
+        let acked_notices = &notices[&acked.id];
+        assert_eq!(
+            acked_notices[0].status,
+            NoticeStatus::Retrying,
+            "never told, and the channel is backing off"
+        );
+        assert_eq!(
+            acked_notices[1].status,
+            NoticeStatus::Held,
+            "acknowledged inside the delay: the page will not go"
+        );
     }
 
     #[test]

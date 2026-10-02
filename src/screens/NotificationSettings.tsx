@@ -13,15 +13,13 @@ import type {
   NotifyChannel,
 } from "../types";
 import { Button, Chip, cx, Empty, Field, Input, Panel, Segmented, Tag } from "../ui/primitives";
+import { CHANNEL_BRAND, ChannelMark } from "../ui/ChannelMark";
 import { CheckIcon, CloseIcon, PlusIcon, TrashIcon } from "../ui/icons";
 
 // ------------------------------------------------------------------- kinds
 
+/** What the editor says about each kind. The brand itself is in `ui/ChannelMark`. */
 interface KindInfo {
-  label: string;
-  /** The brand's own colour, as the connection marks use theirs. */
-  color: string;
-  glyph: ReactNode;
   pitch: string;
   namePlaceholder: string;
   targetLabel: string;
@@ -31,17 +29,6 @@ interface KindInfo {
 
 const KINDS: Record<ChannelKind, KindInfo> = {
   slack: {
-    label: "Slack",
-    color: "#611f69",
-    glyph: (
-      <path
-        d="M9.5 4 7.5 20M16.5 4l-2 16M4.5 9h15.5M4 15h15.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-      />
-    ),
     pitch: "A channel, through an incoming webhook.",
     namePlaceholder: "#prod-alerts",
     targetLabel: "Incoming webhook URL",
@@ -54,9 +41,6 @@ const KINDS: Record<ChannelKind, KindInfo> = {
     ),
   },
   teams: {
-    label: "Microsoft Teams",
-    color: "#5b5fc7",
-    glyph: <path d="M5 5.5h14v3.2h-5.3V19h-3.4V8.7H5z" fill="currentColor" />,
     pitch: "A channel, through a Workflows webhook.",
     namePlaceholder: "Platform channel",
     targetLabel: "Workflow URL",
@@ -70,18 +54,6 @@ const KINDS: Record<ChannelKind, KindInfo> = {
     ),
   },
   discord: {
-    label: "Discord",
-    color: "#5865f2",
-    glyph: (
-      <>
-        <path
-          d="M6.2 7.2c3.8-1.7 7.8-1.7 11.6 0l1.7 8.6c-1.5 1.3-3.2 2-4.8 2.2l-.9-1.6c-1.2.4-2.4.4-3.6 0l-.9 1.6c-1.6-.2-3.3-.9-4.8-2.2z"
-          fill="currentColor"
-        />
-        <circle cx="9.6" cy="12.4" r="1.35" fill="var(--mark-bg)" />
-        <circle cx="14.4" cy="12.4" r="1.35" fill="var(--mark-bg)" />
-      </>
-    ),
     pitch: "A channel, through a channel webhook.",
     namePlaceholder: "#ops",
     targetLabel: "Webhook URL",
@@ -94,17 +66,6 @@ const KINDS: Record<ChannelKind, KindInfo> = {
     ),
   },
   pagerduty: {
-    label: "PagerDuty",
-    color: "#06ac38",
-    glyph: (
-      <path
-        d="M8 19V5h5.2c3 0 4.8 1.7 4.8 4.4s-1.8 4.4-4.8 4.4H11V19z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.6"
-        strokeLinejoin="round"
-      />
-    ),
     pitch: "Pages whoever is on call for a service.",
     namePlaceholder: "Payments on-call",
     targetLabel: "Integration key",
@@ -117,17 +78,6 @@ const KINDS: Record<ChannelKind, KindInfo> = {
     ),
   },
   webhook: {
-    label: "Webhook",
-    color: "var(--color-overlay)",
-    glyph: (
-      <path
-        d="M9 5c-2 0-2.8 1-2.8 2.8v2c0 1.2-.6 2.2-2.2 2.2 1.6 0 2.2 1 2.2 2.2v2C6.2 18 7 19 9 19M15 5c2 0 2.8 1 2.8 2.8v2c0 1.2.6 2.2 2.2 2.2-1.6 0-2.2 1-2.2 2.2v2C17.8 18 17 19 15 19"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinecap="round"
-      />
-    ),
     pitch: "Any URL that takes a JSON POST.",
     namePlaceholder: "Incident bot",
     targetLabel: "URL",
@@ -142,33 +92,6 @@ const KINDS: Record<ChannelKind, KindInfo> = {
 };
 
 const KIND_ORDER: ChannelKind[] = ["slack", "teams", "pagerduty", "discord", "webhook"];
-
-/** A channel's brand, as a tile — the same idea as a connection's mark. */
-export function ChannelMark({ kind, size = 28 }: { kind: ChannelKind; size?: number }) {
-  const info = KINDS[kind];
-  const neutral = kind === "webhook";
-  return (
-    <span
-      title={info.label}
-      className={cx(
-        "inline-grid shrink-0 place-items-center rounded-[6px]",
-        neutral ? "border border-line-strong text-ink-2" : "text-white",
-      )}
-      style={
-        {
-          width: size,
-          height: size,
-          background: info.color,
-          "--mark-bg": info.color,
-        } as React.CSSProperties
-      }
-    >
-      <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" aria-hidden>
-        {info.glyph}
-      </svg>
-    </span>
-  );
-}
 
 // ------------------------------------------------------------------- rules
 
@@ -374,7 +297,7 @@ function KindPicker({ onPick }: { onPick: (kind: ChannelKind) => void }) {
         >
           <ChannelMark kind={kind} size={32} />
           <span className="min-w-0">
-            <span className="block text-xs font-medium text-ink">{KINDS[kind].label}</span>
+            <span className="block text-xs font-medium text-ink">{CHANNEL_BRAND[kind].label}</span>
             <span className="block text-2xs leading-snug text-ink-4">{KINDS[kind].pitch}</span>
           </span>
           <PlusIcon
@@ -516,7 +439,7 @@ function ChannelRow({
             {!channel.enabled && <Tag>paused</Tag>}
           </div>
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-2xs text-ink-4">
-            <span className="shrink-0">{KINDS[channel.kind].label}</span>
+            <span className="shrink-0">{CHANNEL_BRAND[channel.kind].label}</span>
             {channel.targetHint && (
               <>
                 <span aria-hidden>·</span>
@@ -658,7 +581,7 @@ function ChannelEditor({
       title={
         <span className="flex items-center gap-2">
           <ChannelMark kind={channel.kind} size={18} />
-          {creating ? `New ${info.label} channel` : `Edit ${initial.name}`}
+          {creating ? `New ${CHANNEL_BRAND[channel.kind].label} channel` : `Edit ${initial.name}`}
         </span>
       }
       actions={

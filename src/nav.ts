@@ -9,7 +9,7 @@ export type View =
   /** Is root any good yet — precision from findings, recall from incidents. */
   | { name: "scorecard" }
   /** `profileId` opens that connection's editor straight away. */
-  | { name: "settings"; profileId?: string }
+  | { name: "settings"; profileId?: string; tab?: "notifications" }
   | { name: "service"; profileId: string; tab?: ServiceTab }
   /** One component inside a service — a container, a cluster node, a job. */
   | { name: "component"; profileId: string; sectionId: string; rowId: string }

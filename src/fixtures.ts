@@ -18,6 +18,7 @@ import type {
   AlertSeverity,
   ComponentReading,
   Delivery,
+  Notice,
   NotificationsView,
   NotifyChannel,
   FlappingCondition,
@@ -2169,7 +2170,7 @@ let notifyChannels: NotifyChannel[] = [
     minSeverity: "critical",
     environments: ["production"],
     teams: ["payments"],
-    delayMinutes: 5,
+    delayMinutes: 30,
     sendResolved: true,
     targetHint: "••••7c2e",
   },
@@ -2197,8 +2198,8 @@ let deliveries: Delivery[] = [
   },
   {
     id: "d2", channelId: "n-pd", channelName: "Payments on-call", kind: "pagerduty",
-    event: "firing", alerts: 1, summary: "orders-api / worker — 3 containers exited with code 137",
-    ok: true, status: 202, error: null, attempts: 1, latencyMs: 388, at: minutesAgo(13),
+    event: "resolved", alerts: 1, summary: "Resolved: payments-db — connection pool exhausted",
+    ok: true, status: 202, error: null, attempts: 1, latencyMs: 388, at: minutesAgo(96),
   },
   {
     id: "d3", channelId: "n-teams", channelName: "Platform", kind: "teams", event: "firing",
@@ -2303,4 +2304,44 @@ export function testNotificationChannel(channelId: string): Promise<Delivery> {
       resolve(delivery);
     }, 600),
   );
+}
+
+/**
+ * The same rules `notify.rs` applies, against the fixture alerts and channels,
+ * so the Alerts screen shows the states the backend would: told, due (with the
+ * escalation still to come), and held because somebody acknowledged in time.
+ */
+export function alertNotices(): Record<string, Notice[]> {
+  const rank: Record<AlertSeverity, number> = { info: 0, warning: 1, critical: 2 };
+  const opsOf = (profileId: string) =>
+    CONFIG.profiles.find((p) => p.id === profileId)?.metadata?.operations as
+      | { team?: string; environment?: string }
+      | undefined;
+  const now = Date.now();
+  const out: Record<string, Notice[]> = {};
+  for (const alert of ALERTS.filter((a) => a.active)) {
+    const ops = opsOf(alert.profileId);
+    for (const channel of notifyChannels.filter((c) => c.enabled)) {
+      if (rank[alert.severity] < rank[channel.minSeverity]) continue;
+      if (channel.environments.length && !channel.environments.includes((ops?.environment ?? "shared") as never)) continue;
+      if (channel.teams.length && !channel.teams.some((t) => t.toLowerCase() === ops?.team?.toLowerCase())) continue;
+      const wait = Math.max(30_000, channel.delayMinutes * 60_000);
+      const due = Date.parse(alert.firstSeen) + wait;
+      const status: Notice["status"] =
+        channel.delayMinutes > 0 && alert.acknowledged
+          ? "held"
+          : due <= now
+            ? "sent"
+            : "due";
+      (out[alert.id] ??= []).push({
+        channelId: channel.id,
+        channelName: channel.name,
+        kind: channel.kind,
+        status,
+        at: new Date(due).toISOString(),
+        delayMinutes: channel.delayMinutes,
+      });
+    }
+  }
+  return out;
 }

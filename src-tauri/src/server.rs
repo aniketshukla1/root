@@ -738,7 +738,7 @@ mod tests {
         let (status, body) = call(router(ctx("secret")), req).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["service"], "root");
-        assert_eq!(body["commands"], 75);
+        assert_eq!(body["commands"], 76);
         // No database, so there are no accounts to claim and the client must
         // not offer to create one.
         assert_eq!(body["accounts"], false);

@@ -1337,3 +1337,16 @@ export interface NotificationsView {
   /** Teams named in ownership metadata. */
   teams: string[];
 }
+
+export type NoticeStatus = "sent" | "due" | "retrying" | "held";
+
+/** One alert's standing with one channel. Keyed by alert id in `getAlertNotices`. */
+export interface Notice {
+  channelId: string;
+  channelName: string;
+  kind: ChannelKind;
+  status: NoticeStatus;
+  /** When it was told, when it will be, or when the next attempt is. */
+  at: string;
+  delayMinutes: number;
+}

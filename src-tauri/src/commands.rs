@@ -743,6 +743,13 @@ pub async fn delete_notification_channel(
     crate::notify::delete(state, &channel_id).await
 }
 
+/// Each active alert's standing with the channels that will hear of it.
+pub async fn get_alert_notices(
+    state: &Arc<AppState>,
+) -> Result<std::collections::HashMap<String, Vec<crate::notify::Notice>>> {
+    Ok(crate::notify::notices(state).await)
+}
+
 pub async fn test_notification_channel(
     state: &Arc<AppState>,
     channel_id: String,

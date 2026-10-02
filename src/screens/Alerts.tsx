@@ -8,7 +8,7 @@ import { useHistoryStats } from "../history";
 import { confidenceMeaning } from "../incident";
 import type { EstateModel } from "../model";
 import type { View } from "../nav";
-import type { Alert, AlertSeverity, FlappingCondition, Incident } from "../types";
+import type { Alert, AlertSeverity, FlappingCondition, Incident, Notice } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { compareAlerts, SEVERITY } from "../ui/AlertList";
 import { PredictionList } from "../ui/PredictionList";
@@ -24,6 +24,8 @@ import {
 } from "../ui/primitives";
 import { AssistantIcon, SearchIcon, SparkleIcon } from "../ui/icons";
 import { AiInline, type AiState } from "../ui/AiNote";
+import { ChannelMark } from "../ui/ChannelMark";
+import { useTick } from "../ui/charts";
 
 type StateFilter = "open" | "acknowledged" | "resolved" | "all";
 
@@ -99,6 +101,42 @@ export function Alerts({
       live = false;
     };
   }, [retained]);
+
+  /**
+   * Who each alert has reached, and who it will reach next.
+   *
+   * Polled rather than read once: the answer changes with the clock as well
+   * as with the alerts — an escalation comes due while nothing else moves —
+   * and the countdown on this screen is the one place the person who can stop
+   * a page finds out it is coming.
+   */
+  const [notices, setNotices] = useState<Record<string, Notice[]>>({});
+  const [channelCount, setChannelCount] = useState<number | null>(null);
+  useTick(15_000);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      api
+        .getAlertNotices()
+        .then((next) => live && setNotices(next))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, 10_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [alerts]);
+  useEffect(() => {
+    let live = true;
+    api
+      .getNotifications()
+      .then((view) => live && setChannelCount(view.channels.filter((c) => c.enabled).length))
+      .catch(() => live && setChannelCount(null));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const [state, setState] = useState<StateFilter>("open");
   const [severity, setSeverity] = useState<AlertSeverity | "any">("any");
@@ -376,39 +414,54 @@ export function Alerts({
             bodyClassName="overflow-y-auto max-h-[200px]"
           >
             <ul>
-              {flapping.map((condition, i) => (
-                <li
-                  key={`${condition.profileName}:${condition.title}:${i}`}
-                  className="flex items-center gap-2 border-b border-line/40 px-3 last:border-0 row-hover"
-                  style={{ height: "var(--row-h)" }}
-                >
-                  <span className="num w-8 shrink-0 text-right text-xs font-semibold text-ink">
-                    {condition.times}×
-                  </span>
-                  <span className="truncate text-xs text-ink-2">{condition.title}</span>
-                  <span className="ml-auto shrink-0">
-                    <Tag>{condition.profileName}</Tag>
-                  </span>
-                </li>
-              ))}
+              {flapping.map((condition, i) => {
+                const most = Math.max(...flapping.map((c) => c.times));
+                return (
+                  <li key={`${condition.profileName}:${condition.title}:${i}`}>
+                    {/* Filters the table to it: the question after "this keeps
+                        happening" is "is it happening now". */}
+                    <button
+                      type="button"
+                      onClick={() => setQuery(condition.title)}
+                      title="Show this condition in the table below"
+                      className="flex w-full items-center gap-2.5 border-b border-line/40 px-3 text-left row-hover"
+                      style={{ height: "var(--row-h)" }}
+                    >
+                      <span className="num w-8 shrink-0 text-right text-xs font-semibold text-ink">
+                        {condition.times}×
+                      </span>
+                      {/* How often, against the most frequent one: the list is
+                          ranked, and the bar is the ranking at a glance. */}
+                      <span className="relative h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-sunk">
+                        <span
+                          className="absolute inset-y-0 left-0 rounded-full"
+                          style={{
+                            width: `${Math.max(8, (condition.times / most) * 100)}%`,
+                            background: "var(--color-data)",
+                          }}
+                        />
+                      </span>
+                      <span className="truncate text-xs text-ink-2">{condition.title}</span>
+                      <span className="ml-auto shrink-0">
+                        <Tag>{condition.profileName}</Tag>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </Panel>
         )}
 
-        {unacked.length > 1 && (
-          <div className="flex items-center gap-2 rounded-md border border-line bg-panel px-3 py-2">
-            <span className="text-xs text-ink-3">
-              <span className="num text-ink">{unacked.length}</span> alerts in this view have not
-              been acknowledged.
-            </span>
-            <Button
-              className="ml-auto"
-              onClick={() => unacked.forEach((alert) => onAcknowledge(alert.id))}
-              title="Acknowledging silences notifications. Alerts stay listed until their collector reports recovery."
-            >
-              Acknowledge all
-            </Button>
-          </div>
+        {(unacked.length > 0 || channelCount === 0) && (
+          <ResponseStrip
+            open={visible.filter((a) => a.active && !a.acknowledged)}
+            unacked={unacked.length}
+            notices={notices}
+            channelCount={channelCount}
+            onAcknowledgeAll={() => unacked.forEach((alert) => onAcknowledge(alert.id))}
+            onSetUp={() => onNavigate({ name: "settings", tab: "notifications" })}
+          />
         )}
 
         {visible.length === 0 ? (
@@ -432,14 +485,17 @@ export function Alerts({
                 <tr className="border-b border-line">
                   <th className="label cell-pad-x py-1.5 text-left font-semibold">Severity</th>
                   <th className="label cell-pad-x py-1.5 text-left font-semibold">Alert</th>
-                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold @5xl:table-cell">
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold @6xl:table-cell">
                     Component
                   </th>
                   {groupBy !== "connection" && (
                     <th className="label cell-pad-x py-1.5 text-left font-semibold">Connection</th>
                   )}
-                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold @6xl:table-cell">
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold @7xl:table-cell">
                     Owner
+                  </th>
+                  <th className="label hidden cell-pad-x py-1.5 text-left font-semibold @min-[620px]:table-cell">
+                    Notified
                   </th>
                   <th className="label hidden cell-pad-x py-1.5 text-right font-semibold whitespace-nowrap @3xl:table-cell">
                     First seen
@@ -462,7 +518,7 @@ export function Alerts({
                           : { borderLeftColor: SEVERITY[group.worst].color }
                       }
                     >
-                      <td colSpan={8} className="cell-pad-x py-1.5">
+                      <td colSpan={99} className="cell-pad-x py-1.5">
                         {/* Wraps. Every item in this row is nowrap — a title,
                             three counts, two tags — and in a table cell that
                             is a width the whole table has to honour: at 1100px
@@ -625,7 +681,7 @@ export function Alerts({
                             collector called the thing. A Redis slow command
                             arrives 170 characters long and used to paint
                             straight across the four columns to its right. */}
-                        <td className="hidden max-w-44 cell-pad-x @5xl:table-cell">
+                        <td className="hidden max-w-44 cell-pad-x @6xl:table-cell">
                           {alert.component ? (
                             <div className="num truncate text-xs text-ink-3" title={alert.component}>
                               {alert.component}
@@ -657,7 +713,7 @@ export function Alerts({
                           </td>
                         )}
 
-                        <td className="hidden max-w-40 cell-pad-x @6xl:table-cell">
+                        <td className="hidden max-w-40 cell-pad-x @7xl:table-cell">
                           <div
                             className={cx(
                               "truncate text-xs",
@@ -668,6 +724,10 @@ export function Alerts({
                           >
                             {owner ?? "Unassigned"}
                           </div>
+                        </td>
+
+                        <td className="hidden cell-pad-x @min-[620px]:table-cell">
+                          <NoticeMarks notices={alert.active ? notices[alert.id] : undefined} />
                         </td>
 
                         <td
@@ -748,5 +808,186 @@ export function Alerts({
         )}
       </Screen>
     </>
+  );
+}
+
+// ------------------------------------------------------------ the response
+
+const tint = (color: string, pct: number) => `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+
+const minutesUntil = (iso: string) => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 60_000));
+
+/**
+ * What is open, how long the oldest has waited, and what happens next if
+ * nobody acts — then the one button that acts.
+ *
+ * "Next" is the escalation an acknowledgement would stop. It is the most
+ * useful sentence this screen can say to an on-call engineer, and until
+ * notifications existed there was nothing for it to say.
+ */
+function ResponseStrip({
+  open,
+  unacked,
+  notices,
+  channelCount,
+  onAcknowledgeAll,
+  onSetUp,
+}: {
+  open: Alert[];
+  unacked: number;
+  notices: Record<string, Notice[]>;
+  channelCount: number | null;
+  onAcknowledgeAll: () => void;
+  onSetUp: () => void;
+}) {
+  const counts: Record<AlertSeverity, number> = { critical: 0, warning: 0, info: 0 };
+  for (const alert of open) counts[alert.severity] += 1;
+  const oldest = open.reduce<string | null>(
+    (min, a) => (min === null || a.firstSeen < min ? a.firstSeen : min),
+    null,
+  );
+  const next = open
+    .flatMap((alert) =>
+      (notices[alert.id] ?? []).filter((n) => n.status === "due" && n.delayMinutes > 0),
+    )
+    .sort((a, b) => a.at.localeCompare(b.at))[0];
+
+  return (
+    <div className="panel flex flex-wrap items-center gap-x-5 gap-y-2 px-3 py-2.5">
+      {open.length > 0 && (
+        <div className="flex items-baseline gap-4">
+          {(["critical", "warning", "info"] as const)
+            .filter((severity) => counts[severity] > 0)
+            .map((severity) => (
+              <span key={severity} className="flex items-baseline gap-1.5">
+                <span
+                  className="num text-xl leading-none font-semibold"
+                  style={{ color: SEVERITY[severity].color }}
+                >
+                  {counts[severity]}
+                </span>
+                <span className="text-2xs text-ink-4">{SEVERITY[severity].label.toLowerCase()}</span>
+              </span>
+            ))}
+        </div>
+      )}
+
+      {open.length > 0 && (
+        <span className="text-xs text-ink-3">
+          <span className="num text-ink">{open.length}</span> unacknowledged
+          {oldest && (
+            <>
+              {" "}
+              · oldest waiting{" "}
+              <span className="num text-ink-2">{formatRelative(oldest).replace(" ago", "")}</span>
+            </>
+          )}
+        </span>
+      )}
+
+      {next && (
+        <span
+          className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs"
+          style={{
+            borderColor: tint("var(--color-warn)", 38),
+            background: tint("var(--color-warn)", 9),
+          }}
+          title="Acknowledging the alert stops it"
+        >
+          <ChannelMark kind={next.kind} size={16} />
+          <span className="text-ink-2">{next.channelName}</span>
+          <span style={{ color: "var(--color-warn)" }}>
+            {next.kind === "pagerduty" ? "pages" : "is told"}{" "}
+            {minutesUntil(next.at) === 0 ? (
+              "any moment"
+            ) : (
+              <>
+                in <span className="num font-semibold">{minutesUntil(next.at)} min</span>
+              </>
+            )}
+          </span>
+          <span className="text-ink-4">unless someone acknowledges</span>
+        </span>
+      )}
+
+      {channelCount === 0 && (
+        <button
+          type="button"
+          onClick={onSetUp}
+          className="text-xs text-ink-3 underline-offset-2 transition-colors hover:text-ink hover:underline"
+        >
+          Nobody is notified about these — set up a channel →
+        </button>
+      )}
+
+      {unacked > 0 && (
+        <Button
+          className="ml-auto"
+          onClick={onAcknowledgeAll}
+          title="Acknowledging stops escalations. Alerts stay listed until their collector reports recovery."
+        >
+          {unacked === 1 ? "Acknowledge" : "Acknowledge all"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** One alert's channels: told, coming, failing, or held back by an acknowledgement. */
+function NoticeMarks({ notices }: { notices?: Notice[] }) {
+  if (!notices?.length) return <span className="text-ink-4/60">—</span>;
+  return (
+    <div className="flex items-center gap-2">
+      {notices.slice(0, 4).map((notice) => (
+        <NoticeMark key={notice.channelId} notice={notice} />
+      ))}
+      {notices.length > 4 && (
+        <span className="num text-2xs text-ink-4">+{notices.length - 4}</span>
+      )}
+    </div>
+  );
+}
+
+function NoticeMark({ notice }: { notice: Notice }) {
+  const pager = notice.kind === "pagerduty";
+  const mins = minutesUntil(notice.at);
+  const clock = new Date(notice.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const title = {
+    sent: `${notice.channelName} was told ${formatRelative(notice.at)}`,
+    due:
+      notice.delayMinutes > 0
+        ? `${notice.channelName} ${pager ? "pages" : "is told"} in ${mins} min unless someone acknowledges`
+        : `${notice.channelName} is told in a moment`,
+    retrying: `Delivery to ${notice.channelName} failed — trying again at ${clock}`,
+    held: `Acknowledged in time — ${notice.channelName} was not ${pager ? "paged" : "told"}`,
+  }[notice.status];
+
+  return (
+    <span className="relative inline-flex items-center gap-1" title={title}>
+      <ChannelMark
+        kind={notice.kind}
+        size={16}
+        title={title}
+        className={cx(
+          notice.status === "due" && "opacity-50",
+          notice.status === "held" && "opacity-30 grayscale",
+        )}
+      />
+      {(notice.status === "sent" || notice.status === "retrying") && (
+        <span
+          aria-hidden
+          className="absolute top-[11px] left-[11px] h-[7px] w-[7px] rounded-full ring-2 ring-panel"
+          style={{
+            background: notice.status === "sent" ? "var(--color-ok)" : "var(--color-crit)",
+          }}
+        />
+      )}
+      {notice.status === "due" && notice.delayMinutes > 0 && (
+        <span className="num text-2xs font-semibold" style={{ color: "var(--color-warn)" }}>
+          {mins}m
+        </span>
+      )}
+      {notice.status === "held" && <span className="text-2xs text-ink-4">held</span>}
+    </span>
   );
 }

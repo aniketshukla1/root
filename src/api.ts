@@ -70,6 +70,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
     fixtures.correlation((at as string) ?? new Date().toISOString(), (windowSecs as number) ?? 120),
   pending_confirmations: () => [],
   get_notifications: () => fixtures.notifications(),
+  get_alert_notices: () => fixtures.alertNotices(),
   save_notification_channel: ({ channel, target }) =>
     fixtures.saveNotificationChannel(channel as NotifyChannel, target as string | null),
   delete_notification_channel: ({ channelId }) =>
@@ -188,6 +189,7 @@ import type {
   Delivery,
   IngestStatus,
   McpStatus,
+  Notice,
   NotificationsView,
   NotifyChannel,
   PredictionReport,
@@ -385,6 +387,8 @@ export const api = {
     invoke<NotificationsView>("delete_notification_channel", { channelId }),
   testNotificationChannel: (channelId: string) =>
     invoke<Delivery>("test_notification_channel", { channelId }),
+  /** Who each active alert has reached, and who it will reach. Keyed by alert id. */
+  getAlertNotices: () => invoke<Record<string, Notice[]>>("get_alert_notices"),
   getIngestSettings: () => invoke<IngestStatus>("get_ingest_settings"),
 
   saveIngestSettings: (enabled: boolean, port: number) =>

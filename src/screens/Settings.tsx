@@ -49,6 +49,7 @@ export function Settings({
   config,
   catalog,
   openProfileId,
+  openTab,
   onConfigChange,
   onAsk,
 }: {
@@ -56,10 +57,15 @@ export function Settings({
   catalog: Catalog;
   /** Opens this connection's editor on arrival. */
   openProfileId?: string;
+  /** Opens this tab on arrival — how another screen links to Notifications. */
+  openTab?: "notifications";
   onConfigChange: (config: AppConfig) => void;
   onAsk: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>("connections");
+  const [tab, setTab] = useState<Tab>(openTab ?? "connections");
+  useEffect(() => {
+    if (openTab) setTab(openTab);
+  }, [openTab]);
 
   return (
     <>

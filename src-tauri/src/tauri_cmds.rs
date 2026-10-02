@@ -130,6 +130,13 @@ pub async fn delete_notification_channel(
 }
 
 #[tauri::command]
+pub async fn get_alert_notices(
+    state: Shared<'_>,
+) -> Result<std::collections::HashMap<String, Vec<crate::notify::Notice>>> {
+    commands::get_alert_notices(&state).await
+}
+
+#[tauri::command]
 pub async fn test_notification_channel(
     state: Shared<'_>,
     channel_id: String,

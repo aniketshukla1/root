@@ -932,6 +932,7 @@ export default function App() {
           <Settings
             config={config}
             openProfileId={view.name === "settings" ? view.profileId : undefined}
+            openTab={view.name === "settings" ? view.tab : undefined}
             catalog={catalog}
             onConfigChange={onConfigChange}
             onAsk={askAssistant}

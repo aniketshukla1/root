@@ -240,7 +240,19 @@ function Block({
         // certainly exists; spanning into a track that isn't there
         // grows the grid instead of the block.
         group.entities.length > WIDE_BLOCK_AT && "@3xl:col-span-2",
+        // A block with something failing in it is lit in its worst colour.
+        (group.down > 0 || group.degraded > 0) && "hue",
       )}
+      style={
+        {
+          "--hue":
+            group.down > 0
+              ? "var(--color-crit)"
+              : group.degraded > 0
+                ? "var(--color-warn)"
+                : undefined,
+        } as React.CSSProperties
+      }
     >
       <div className="border-b border-line-soft px-2 py-1.5">
         <div className="flex items-center gap-1.5">
@@ -305,6 +317,7 @@ function Cell({
 }) {
   const color = healthColor(entity.health);
   const healthy = entity.health === "healthy";
+  const failing = entity.health === "down" || entity.health === "degraded";
 
   return (
     <button
@@ -341,7 +354,15 @@ function Cell({
               background: `color-mix(in srgb, ${color} 12%, var(--color-sunk))`,
               boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 45%, transparent)`,
             }
-          : { background: color, boxShadow: `inset 0 0 0 1px ${color}` }
+          : failing
+            ? {
+                // The hue: a failing cell is lit from above and glows in its
+                // own colour, so the seven wrong cells find the eye among
+                // the 357 quiet ones without anything else getting louder.
+                background: `linear-gradient(to bottom, color-mix(in srgb, ${color} 80%, white), ${color})`,
+                boxShadow: `inset 0 0 0 1px ${color}, 0 0 9px 0 color-mix(in srgb, ${color} 60%, transparent)`,
+              }
+            : { background: color, boxShadow: `inset 0 0 0 1px ${color}` }
       }
     />
   );

@@ -372,7 +372,10 @@ function ComponentPips({
           className="h-[9px] w-[9px] min-w-[2px] shrink rounded-xs"
           style={
             i < bad
-              ? { background: badColor, boxShadow: `inset 0 0 0 1px ${badColor}` }
+              ? {
+                  background: `linear-gradient(to bottom, color-mix(in srgb, ${badColor} 80%, white), ${badColor})`,
+                  boxShadow: `inset 0 0 0 1px ${badColor}, 0 0 7px 0 color-mix(in srgb, ${badColor} 55%, transparent)`,
+                }
               : {
                   background: `color-mix(in srgb, ${okColor} 12%, var(--color-panel))`,
                   boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${okColor} 45%, transparent)`,

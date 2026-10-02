@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type { Catalog } from "../catalog";
-import { DATA_INK, healthLabel, isProblem } from "../catalog";
+import { DATA_INK, healthColor, healthLabel, isProblem } from "../catalog";
 import { formatMetricValue, formatRelative, isBreaching } from "../format";
 import {
   criticalityLabel,
@@ -281,13 +281,31 @@ function ServiceRow({
   const trend = primary ? series.find((s) => s.key === primary.key) : undefined;
   const problems = service.entities.filter((e) => isProblem(e.health));
 
+  // A failing row is lit from its left edge in its own colour — the hue,
+  // across the first two cells and fading out by the end of the name. Two
+  // cells rather than the row, because a gradient on a <tr> is painted per
+  // cell in some engines and would restart in every column.
+  const failing = service.health === "down" || service.health === "degraded";
+  const hue = healthColor(service.health);
+  const lit = (from: number, to: number) =>
+    failing
+      ? {
+          background: `linear-gradient(to right, color-mix(in srgb, ${hue} ${from}%, transparent), color-mix(in srgb, ${hue} ${to}%, transparent))`,
+        }
+      : undefined;
+
   return (
     <>
       <tr
         className="group border-b border-line/50 row-hover"
         style={{ height: "var(--row-h)" }}
       >
-        <td className="pl-2">
+        <td
+          className="pl-2"
+          style={
+            failing ? { ...lit(16, 13), boxShadow: `inset 2px 0 0 ${hue}` } : undefined
+          }
+        >
           <button
             onClick={onToggle}
             disabled={problems.length === 0}
@@ -304,7 +322,7 @@ function ServiceRow({
           </button>
         </td>
 
-        <td className="max-w-64 cell-pad-x">
+        <td className="max-w-64 cell-pad-x" style={lit(13, 0)}>
           <button onClick={onOpen} className="flex min-w-0 items-center gap-2 text-left">
             <ServiceMark descriptor={descriptor} size={17} />
             <span className="truncate text-xs font-medium text-ink transition-colors group-hover:text-accent">

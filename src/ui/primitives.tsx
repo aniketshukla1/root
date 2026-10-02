@@ -53,7 +53,16 @@ export function HealthBadge({ health, className }: { health: Health; className?:
   return (
     <span className={cx("inline-flex items-center gap-1.5 whitespace-nowrap", className)}>
       <Dot health={health} />
-      <span className="text-2xs font-medium" style={{ color: healthColor(health) }}>
+      <span
+        className="text-2xs font-medium"
+        style={{
+          color: healthColor(health),
+          textShadow:
+            health === "down" || health === "degraded"
+              ? `0 0 10px color-mix(in srgb, ${healthColor(health)} 55%, transparent)`
+              : undefined,
+        }}
+      >
         {healthLabel(health)}
       </span>
     </span>
@@ -663,7 +672,12 @@ export function Stat({
         "num leading-none font-medium tracking-[-.03em] whitespace-nowrap",
         size === "lg" ? "text-3xl" : "text-xl",
       )}
-      style={{ color: tone ?? "var(--color-ink)" }}
+      style={{
+        color: tone ?? "var(--color-ink)",
+        // A toned figure is a status figure — a metric over its limit — and
+        // glows in its own colour, as every other failing thing in root does.
+        textShadow: tone ? `0 0 18px color-mix(in srgb, ${tone} 45%, transparent)` : undefined,
+      }}
     >
       {value}
     </span>

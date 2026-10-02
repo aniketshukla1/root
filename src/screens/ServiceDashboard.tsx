@@ -524,8 +524,9 @@ export function ServiceDashboard({
                   key={metric.key}
                   className={cx(
                     "rounded-md border bg-page p-2.5",
-                    over ? "border-warn/40" : "border-line",
+                    over ? "hue border-warn/40" : "border-line",
                   )}
+                  style={{ "--hue": "var(--color-warn)" } as React.CSSProperties}
                 >
                   <Stat
                     labelPosition="above"

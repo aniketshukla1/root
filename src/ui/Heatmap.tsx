@@ -351,8 +351,12 @@ function Cell({
               // eye. The ring still measures 3.10:1 against the block ground,
               // above the 3:1 floor for a mark carrying meaning, so quiet did
               // not become invisible. Re-measure if either number moves.
+              //
+              // The faint halo is the all-clear's own hue, chosen over none
+              // side by side: at 26% and 6px it reads as "alive", and the
+              // failing cells — solid, lit, glowing at 60% — still win.
               background: `color-mix(in srgb, ${color} 12%, var(--color-sunk))`,
-              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 45%, transparent)`,
+              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 45%, transparent), 0 0 6px 0 color-mix(in srgb, ${color} 26%, transparent)`,
             }
           : failing
             ? {

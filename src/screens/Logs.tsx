@@ -303,7 +303,7 @@ export function Logs({
 
             <div
               ref={listRef}
-              className="min-w-0 flex-1 overflow-x-auto overflow-y-auto"
+              className="@container/lines min-w-0 flex-1 overflow-x-auto overflow-y-auto"
             >
               {visible.length === 0 ? (
                 <Empty
@@ -383,15 +383,21 @@ function ConnectionRail({
   });
 
   return (
-    <aside className="flex w-52 shrink-0 flex-col border-r border-line">
+    // Narrow, the rail is a strip of marks. At its full 208px it left a 760px
+    // window 308px of log lines — timestamps and levels, with every message
+    // pushed off the right edge. The marks keep what the rail is for: which
+    // connections are showing, which have errors, one click to filter.
+    <aside className="flex w-10 shrink-0 flex-col border-r border-line @4xl:w-52">
       <div className="flex h-7 shrink-0 items-center gap-1 border-b border-line px-2">
-        <span className="label">Connections</span>
+        <span className="label hidden @4xl:inline">Connections</span>
         {!all && (
           <button
             onClick={onAll}
+            title="Show every connection"
             className="ml-auto flex h-6 items-center px-1 text-2xs text-accent transition-colors hover:underline"
           >
-            Show all
+            <span className="@4xl:hidden">All</span>
+            <span className="hidden @4xl:inline">Show all</span>
           </button>
         )}
       </div>
@@ -407,7 +413,7 @@ function ConnectionRail({
             <div
               key={id}
               className={cx(
-                "group flex h-7 items-center gap-1.5 border-l-2 pr-2 pl-1.5 transition-colors",
+                "group flex h-7 items-center gap-1.5 border-l-2 pr-1 pl-1.5 transition-colors @4xl:pr-2",
                 on ? "text-ink-2" : "text-ink-4",
               )}
               style={{
@@ -417,31 +423,47 @@ function ConnectionRail({
             >
               <button
                 onClick={() => onToggle(id)}
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                title={
+                className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-left @4xl:justify-start"
+                title={`${
                   all
                     ? `Show only ${service.snapshot.profileName}`
                     : on
                       ? `Hide ${service.snapshot.profileName}`
                       : `Add ${service.snapshot.profileName}`
-                }
+                } · ${count.total} line${count.total === 1 ? "" : "s"}${
+                  count.errors > 0 ? `, ${count.errors} at error or above` : ""
+                }`}
               >
-                <ServiceMark descriptor={descriptor} size={14} />
-                <span className="min-w-0 truncate text-xs">{service.snapshot.profileName}</span>
+                <span className="relative flex">
+                  <ServiceMark descriptor={descriptor} size={14} />
+                  {/* The counts do not fit the strip; whether there are
+                      errors at all is the one that must survive. */}
+                  {count.errors > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-serious ring-2 ring-panel @4xl:hidden" />
+                  )}
+                </span>
+                <span className="hidden min-w-0 truncate text-xs @4xl:block">
+                  {service.snapshot.profileName}
+                </span>
               </button>
 
               {count.errors > 0 && (
-                <span className="num shrink-0 text-2xs text-serious" title={`${count.errors} at error or above`}>
+                <span
+                  className="num hidden shrink-0 text-2xs text-serious @4xl:inline"
+                  title={`${count.errors} at error or above`}
+                >
                   {count.errors}
                 </span>
               )}
-              <span className="num shrink-0 text-2xs text-ink-4">{count.total}</span>
+              <span className="num hidden shrink-0 text-2xs text-ink-4 @4xl:inline">
+                {count.total}
+              </span>
 
               {!all && (
                 <button
                   onClick={() => onOnly(id)}
                   title={`Show only ${service.snapshot.profileName}`}
-                  className="shrink-0 text-2xs text-ink-4 opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent focus-visible:opacity-100"
+                  className="hidden shrink-0 text-2xs text-ink-4 opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent focus-visible:opacity-100 @4xl:inline"
                 >
                   only
                 </button>
@@ -608,8 +630,10 @@ function LineTable({
 
   return (
     // `min-w` is what stops the message column collapsing to a ribbon when the
-    // assistant dock takes its width; the pane scrolls instead.
-    <table className="w-full min-w-[640px] border-collapse">
+    // assistant dock takes its width; the pane scrolls instead. Below 672px of
+    // pane the source column goes first, so the floor can be lower: the
+    // message keeps its width and a narrow window still reads its lines.
+    <table className="w-full min-w-[460px] border-collapse @2xl/lines:min-w-[640px]">
       <tbody>
         {events.map((event) => {
           const on = selected.has(event.id);
@@ -659,7 +683,7 @@ function LineTable({
                   </span>
                 </td>
                 {showConnection && (
-                  <td className="w-px max-w-32 px-2 py-1">
+                  <td className="w-px max-w-24 px-2 py-1 @2xl/lines:max-w-32">
                     <span
                       className="num block truncate text-2xs text-ink-3"
                       title={`${event.profileName} · ${catalog.label(event.kind)}`}
@@ -668,26 +692,30 @@ function LineTable({
                     </span>
                   </td>
                 )}
-                <td className="w-px max-w-32 px-2 py-1">
+                <td className="hidden w-px max-w-32 px-2 py-1 @2xl/lines:table-cell">
                   <span className="num block truncate text-2xs text-ink-4" title={event.source}>
                     {event.source}
                   </span>
                 </td>
                 <td className="px-2 py-1">
+                  {/* `wrap-anywhere`, not `break-all`: lines break between
+                      words and only split a token too long to fit. Narrow,
+                      `break-all` cut nearly every line mid-word —
+                      "u|pstream", "exc|eeds". */}
                   <span
                     className={cx(
-                      "num block break-all",
+                      "num block wrap-anywhere",
                       LEVEL_RANK[event.level] >= 4 ? "text-ink" : "text-ink-2",
                     )}
                   >
                     {event.message}
                   </span>
                 </td>
-                {event.stream !== "runtime" && (
-                  <td className="w-px px-2 py-1">
-                    <Tag>{event.stream}</Tag>
-                  </td>
-                )}
+                {/* Always the cell, sometimes the tag: a row one cell short
+                    ended its hover wash a column early. */}
+                <td className="w-px px-2 py-1">
+                  {event.stream !== "runtime" && <Tag>{event.stream}</Tag>}
+                </td>
                 {/* Its own column: an action inlined next to the message competes
                     with the thing you are trying to read. */}
                 <td className="w-px px-2 py-1">

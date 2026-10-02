@@ -79,7 +79,42 @@ export function Scorecard({
     load();
   }, [load]);
 
+  // Fetched here rather than inside their panels, because the verdict row at
+  // the top reads them too and should not ask twice.
+  const [suite, setSuite] = useState<SuiteResult>();
+  const [suiteError, setSuiteError] = useState<string>();
+  const [running, setRunning] = useState(false);
+  const runSuite = useCallback(async () => {
+    setRunning(true);
+    setSuiteError(undefined);
+    try {
+      setSuite(await api.runScenarios());
+    } catch (e) {
+      setSuiteError(errorMessage(e));
+    } finally {
+      setRunning(false);
+    }
+  }, []);
+  // Cheap and dependency-free, so it runs on arrival rather than waiting to be
+  // asked — unlike the backtest, which reads somebody's production Prometheus.
+  useEffect(() => {
+    void runSuite();
+  }, [runSuite]);
+
+  const [report, setReport] = useState<RuntimeReport>();
+  const [reportError, setReportError] = useState<string>();
+  useEffect(() => {
+    api
+      .getRuntimeReport()
+      .then(setReport)
+      .catch((e) => setReportError(errorMessage(e)));
+  }, []);
+
   const judged = card?.byFamily.reduce((n, f) => n + f.judged, 0) ?? 0;
+  const scenarios = (
+    <Scenarios suite={suite} error={suiteError} running={running} onRun={runSuite} />
+  );
+  const runtime = <RuntimeReconciliation report={report} error={reportError} />;
 
   return (
     <>
@@ -118,26 +153,28 @@ export function Scorecard({
           </Panel>
         ) : judged === 0 && (card?.recall.incidents ?? 0) === 0 ? (
           <>
-            <Panel title="Nothing judged yet">
-              <Empty
-                title="No ratings recorded"
-                hint="Rate a finding on the overview or a connection's Config tab, and answer the question that appears on an incident. Both are needed: findings measure what root got right, incidents measure what it missed, and the second cannot be inferred from the first."
-              />
-              <div className="mt-3 flex gap-1.5">
-                <Button onClick={() => onNavigate({ name: "overview" })}>Go to findings</Button>
-              </div>
-            </Panel>
+            <Verdict card={card!} suite={suite} report={report} />
+            <div className="panel flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5">
+              <p className="max-w-[80ch] flex-1 text-xs leading-relaxed text-ink-3">
+                <span className="font-medium text-ink">Nothing rated yet.</span> Rate a finding on
+                the overview or a connection's Config tab, and answer the question an incident
+                asks. Both are needed: findings measure what root got right, incidents measure
+                what it missed — and the second cannot be inferred from the first.
+              </p>
+              <Button onClick={() => onNavigate({ name: "overview" })}>Go to findings</Button>
+            </div>
 
             {/* Available from the first day, on purpose. A backtest is the one
                 measurement that does not have to wait for ratings to
                 accumulate — it reads history that is already there. Hiding it
                 until somebody has rated something had it exactly backwards. */}
-            <RuntimeReconciliation />
-            <Scenarios />
+            {runtime}
+            {scenarios}
             <Backtest connections={connections} />
           </>
         ) : (
           <>
+            <Verdict card={card!} suite={suite} report={report} />
             <div className="grid gap-3 @4xl:grid-cols-2">
               <Panel
                 title="Precision"
@@ -189,8 +226,8 @@ export function Scorecard({
               )}
             </Panel>
 
-            <RuntimeReconciliation />
-            <Scenarios />
+            {runtime}
+            {scenarios}
             <Backtest connections={connections} />
 
             <p className="num max-w-[92ch] text-2xs leading-relaxed text-ink-4">
@@ -204,6 +241,199 @@ export function Scorecard({
         )}
       </Screen>
     </>
+  );
+}
+
+// ------------------------------------------------------------------ verdict
+
+/**
+ * The four answers to "is root any good yet?", side by side and never added
+ * up: precision, recall, the scenario library, and whether what root reads
+ * matches what people declared.
+ *
+ * Each says its sample. Under twenty judgements a tile shows the raw count in
+ * neutral ink rather than a coloured percentage — a green 100% over three
+ * ratings is the confident-looking number the rest of this screen exists to
+ * refuse.
+ */
+function Verdict({
+  card,
+  suite,
+  report,
+}: {
+  card: Card;
+  suite?: SuiteResult;
+  report?: RuntimeReport;
+}) {
+  const decided = card.byFamily.reduce((n, f) => n + f.real + f.notAProblem + f.alreadyKnew, 0);
+  const correct = card.byFamily.reduce((n, f) => n + f.real + f.alreadyKnew, 0);
+  const real = card.byFamily.reduce((n, f) => n + f.real, 0);
+  const knew = card.byFamily.reduce((n, f) => n + f.alreadyKnew, 0);
+  const notAProblem = card.byFamily.reduce((n, f) => n + f.notAProblem, 0);
+  const { recall } = card;
+  const recallScore =
+    recall.incidents > 0 ? (recall.called + recall.partly * 0.5) / recall.incidents : undefined;
+
+  const rate = (score: number) =>
+    score >= 0.8 ? "var(--color-ok)" : score >= 0.5 ? "var(--color-warn)" : "var(--color-crit)";
+  const quiet = "var(--color-ink-4)";
+  const neutral = "var(--color-ink-2)";
+
+  const failing = suite ? suite.total - suite.passed : 0;
+
+  return (
+    <div className="grid gap-3 @md:grid-cols-2 @5xl:grid-cols-4">
+      <Tile
+        label="Precision"
+        question="Of what root raised, how much was real"
+        tone={decided === 0 ? quiet : decided < ENOUGH_TO_MEAN_SOMETHING ? neutral : rate(correct / decided)}
+        value={
+          decided === 0
+            ? "—"
+            : decided < ENOUGH_TO_MEAN_SOMETHING
+              ? `${correct}/${decided}`
+              : `${Math.round((correct / decided) * 100)}%`
+        }
+        note={
+          decided === 0
+            ? "no findings rated yet"
+            : decided < ENOUGH_TO_MEAN_SOMETHING
+              ? `real, of ${decided} judged — too few to call a rate`
+              : `across ${decided} judged findings`
+        }
+        bar={
+          decided > 0
+            ? [
+                { value: real, color: "var(--color-ok)" },
+                { value: knew, color: "var(--color-accent)" },
+                { value: notAProblem, color: "var(--color-warn)" },
+              ]
+            : undefined
+        }
+      />
+      <Tile
+        label="Recall"
+        question="Of what actually broke, how much root saw coming"
+        tone={
+          recallScore === undefined
+            ? quiet
+            : recall.incidents < ENOUGH_TO_MEAN_SOMETHING
+              ? neutral
+              : rate(recallScore)
+        }
+        value={
+          recallScore === undefined
+            ? "—"
+            : recall.incidents < ENOUGH_TO_MEAN_SOMETHING
+              ? `${recall.called}/${recall.incidents}`
+              : `${Math.round(recallScore * 100)}%`
+        }
+        note={
+          recall.incidents === 0
+            ? "no incidents rated yet"
+            : recall.incidents < ENOUGH_TO_MEAN_SOMETHING
+              ? `called, of ${recall.incidents} rated — too few to call a rate`
+              : `across ${recall.incidents} rated incidents · ${recall.missed} missed`
+        }
+        bar={
+          recall.incidents > 0
+            ? [
+                { value: recall.called, color: "var(--color-ok)" },
+                { value: recall.partly, color: "var(--color-accent)" },
+                { value: recall.missed, color: "var(--color-crit)" },
+              ]
+            : undefined
+        }
+      />
+      <Tile
+        label="Scenarios"
+        question="Known situations, known right answers"
+        tone={!suite ? quiet : failing === 0 ? "var(--color-ok)" : "var(--color-warn)"}
+        value={suite ? `${suite.passed}/${suite.total}` : "…"}
+        note={
+          !suite
+            ? "running the library"
+            : failing === 0
+              ? "no regressions"
+              : `${failing} failing · ${suite.missed} missed · ${suite.spurious} spurious`
+        }
+        bar={
+          suite
+            ? [
+                { value: suite.passed, color: "var(--color-ok)" },
+                { value: failing, color: "var(--color-warn)" },
+              ]
+            : undefined
+        }
+      />
+      <Tile
+        label="Where things run"
+        question="Does root's reading match what was declared"
+        tone={
+          !report || report.declared === 0
+            ? quiet
+            : report.checks.length > 0
+              ? "var(--color-warn)"
+              : "var(--color-ok)"
+        }
+        value={!report ? "…" : report.declared === 0 ? "—" : `${report.declared}/${report.total}`}
+        note={
+          !report
+            ? "checking"
+            : report.declared === 0
+              ? "nothing declared — root's own reading is unchecked"
+              : report.checks.length > 0
+                ? `declared · ${report.checks.length} disagree${report.checks.length === 1 ? "s" : ""}`
+                : "declared · every one matches"
+        }
+        bar={
+          report && report.total > 0
+            ? [
+                {
+                  value: report.declared - report.checks.length,
+                  color: "var(--color-ok)",
+                },
+                { value: report.checks.length, color: "var(--color-warn)" },
+                { value: report.total - report.declared, color: "var(--color-line)" },
+              ]
+            : undefined
+        }
+      />
+    </div>
+  );
+}
+
+function Tile({
+  label,
+  question,
+  tone,
+  value,
+  note,
+  bar,
+}: {
+  label: string;
+  question: string;
+  tone: string;
+  value: ReactNode;
+  note: ReactNode;
+  bar?: { value: number; color: string }[];
+}) {
+  return (
+    <div className="panel flex flex-col gap-2 p-3">
+      <div className="flex items-center gap-1.5">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tone }} />
+        <span className="label">{label}</span>
+      </div>
+      <div
+        className="num text-3xl leading-none font-semibold tracking-[-.02em]"
+        style={{ color: tone }}
+      >
+        {value}
+      </div>
+      {bar ? <Bar segments={bar} /> : <div className="mt-1.5 h-1.5 rounded-full bg-sunk" />}
+      <p className="text-2xs leading-snug text-ink-3">{note}</p>
+      <p className="mt-auto text-2xs leading-snug text-ink-4">{question}</p>
+    </div>
   );
 }
 
@@ -580,29 +810,19 @@ function describeCaveat(caveat: Caveat): string {
  * blinder and one drifting noisier want opposite responses, and a single
  * pass-rate hides which is happening.
  */
-function Scenarios() {
-  const [suite, setSuite] = useState<SuiteResult>();
-  const [error, setError] = useState<string>();
-  const [running, setRunning] = useState(false);
+function Scenarios({
+  suite,
+  error,
+  running,
+  onRun,
+}: {
+  suite?: SuiteResult;
+  error?: string;
+  running: boolean;
+  onRun: () => void;
+}) {
   const [showAll, setShowAll] = useState(false);
-
-  const run = async () => {
-    setRunning(true);
-    setError(undefined);
-    try {
-      setSuite(await api.runScenarios());
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  // Cheap and dependency-free, so it runs on arrival rather than waiting to be
-  // asked — unlike the backtest, which reads somebody's production Prometheus.
-  useEffect(() => {
-    run();
-  }, []);
+  const run = onRun;
 
   const failed = suite?.outcomes.filter((o) => !o.passed) ?? [];
   const shown = showAll ? (suite?.outcomes ?? []) : failed;
@@ -767,17 +987,7 @@ function describeFailure(failure: Failure): string {
  * because root cannot tell a gap from a deliberate omission until somebody
  * says which it is.
  */
-function RuntimeReconciliation() {
-  const [report, setReport] = useState<RuntimeReport>();
-  const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    api
-      .getRuntimeReport()
-      .then(setReport)
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
-
+function RuntimeReconciliation({ report, error }: { report?: RuntimeReport; error?: string }) {
   if (error) {
     return (
       <Panel title="Where things run">

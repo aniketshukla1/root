@@ -25,8 +25,11 @@ interface Entry {
   icon: ComponentType<{ size?: number }>;
   view: View;
   count?: number;
-  /** Renders the count in the warning hue when something is unhandled. */
-  alarm?: boolean;
+  /**
+   * Renders the count as a lit pill when something is unhandled — red when
+   * any of it is critical, amber otherwise.
+   */
+  alarm?: "crit" | "warn";
 }
 
 export function Sidebar({
@@ -72,7 +75,12 @@ export function Sidebar({
       // Open, which is the unacknowledged set. Counting every active alert
       // here put a 5 beside a screen that then showed 3.
       count: model.counts.unacknowledged,
-      alarm: model.counts.unacknowledged > 0,
+      alarm:
+        model.counts.unacknowledged === 0
+          ? undefined
+          : model.alerts.some((a) => a.active && !a.acknowledged && a.severity === "critical")
+            ? "crit"
+            : "warn",
     },
     { key: "metrics", label: "Metrics", icon: MetricsIcon, view: { name: "metrics" } },
     { key: "logs", label: "Logs", icon: LogsIcon, view: { name: "logs" } },
@@ -111,8 +119,21 @@ export function Sidebar({
               <span
                 className={cx(
                   "num ml-auto text-2xs",
-                  entry.alarm ? "text-warn" : "text-ink-4",
+                  entry.alarm
+                    ? "min-w-[18px] rounded-full px-1.5 py-px text-center font-semibold"
+                    : "text-ink-4",
                 )}
+                style={
+                  entry.alarm
+                    ? {
+                        // The hue, on the one number that follows the reader
+                        // to every screen: lit in the worst unhandled colour.
+                        color: `var(--color-${entry.alarm})`,
+                        background: `color-mix(in srgb, var(--color-${entry.alarm}) 16%, transparent)`,
+                        boxShadow: `inset 0 0 0 1px color-mix(in srgb, var(--color-${entry.alarm}) 40%, transparent), 0 0 10px 0 color-mix(in srgb, var(--color-${entry.alarm}) 40%, transparent)`,
+                      }
+                    : undefined
+                }
               >
                 {entry.count}
               </span>
@@ -158,7 +179,12 @@ export function Sidebar({
             <span className="text-[14px] font-semibold tracking-[-.01em] text-ink">root</span>
             <span
               className="ml-auto h-1.5 w-1.5 shrink-0"
-              style={{ background: healthColor(model.health) }}
+              style={{
+                background: healthColor(model.health),
+                // The estate's own pulse: glowing in its colour, faintly when
+                // all is well, as the healthy cells do.
+                boxShadow: `0 0 ${model.health === "healthy" ? 6 : 9}px 1px color-mix(in srgb, ${healthColor(model.health)} ${model.health === "healthy" ? 40 : 65}%, transparent)`,
+              }}
               title={`All connections: ${healthLabel(model.health)}`}
             />
           </>

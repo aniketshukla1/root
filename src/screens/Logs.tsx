@@ -38,6 +38,16 @@ const LEVEL_RANK: Record<LogLevel, number> = {
  */
 type Mode = "merged" | "split";
 
+/** How strongly each level glows, in percent of its colour. Zero is no glow. */
+const LEVEL_GLOW: Record<LogLevel, number> = {
+  trace: 0,
+  debug: 0,
+  info: 0,
+  warn: 35,
+  error: 60,
+  fatal: 70,
+};
+
 export function Logs({
   logs,
   buckets,
@@ -222,7 +232,12 @@ export function Logs({
               <span key={level} className="flex items-center gap-1 text-2xs text-ink-4 capitalize">
                 <span
                   className="h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: levelColor(level) }}
+                  style={{
+                    background: levelColor(level),
+                    boxShadow: LEVEL_GLOW[level]
+                      ? `0 0 6px 1px color-mix(in srgb, ${levelColor(level)} ${LEVEL_GLOW[level]}%, transparent)`
+                      : undefined,
+                  }}
                 />
                 {level}
               </span>
@@ -268,7 +283,12 @@ export function Logs({
                   >
                     <span
                       className="h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: levelColor(level) }}
+                      style={{
+                        background: levelColor(level),
+                        boxShadow: LEVEL_GLOW[level]
+                          ? `0 0 6px 1px color-mix(in srgb, ${levelColor(level)} ${LEVEL_GLOW[level]}%, transparent)`
+                          : undefined,
+                      }}
                     />
                     <span className="capitalize">{level}</span>
                     <span className="num text-ink-4">{count}</span>
@@ -439,7 +459,13 @@ function ConnectionRail({
                   {/* The counts do not fit the strip; whether there are
                       errors at all is the one that must survive. */}
                   {count.errors > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-serious ring-2 ring-panel @4xl:hidden" />
+                    <span
+                      className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-serious @4xl:hidden"
+                      style={{
+                        boxShadow:
+                          "0 0 0 2px var(--color-panel), 0 0 7px 1px color-mix(in srgb, var(--color-serious) 65%, transparent)",
+                      }}
+                    />
                   )}
                 </span>
                 <span className="hidden min-w-0 truncate text-xs @4xl:block">
@@ -450,6 +476,9 @@ function ConnectionRail({
               {count.errors > 0 && (
                 <span
                   className="num hidden shrink-0 text-2xs text-serious @4xl:inline"
+                  style={{
+                    textShadow: "0 0 9px color-mix(in srgb, var(--color-serious) 55%, transparent)",
+                  }}
                   title={`${count.errors} at error or above`}
                 >
                   {count.errors}
@@ -676,7 +705,14 @@ function LineTable({
                 <td className="w-px px-1 py-1">
                   <span
                     className="num text-2xs"
-                    style={{ color: levelTextColor(event.level) }}
+                    style={{
+                      color: levelTextColor(event.level),
+                      // The hue on the word a reader scans the stream for:
+                      // errors glow, warnings faintly, the rest stay ink.
+                      textShadow: LEVEL_GLOW[event.level]
+                        ? `0 0 9px color-mix(in srgb, ${levelTextColor(event.level)} ${LEVEL_GLOW[event.level]}%, transparent)`
+                        : undefined,
+                    }}
                     title={`Severity: ${event.level}`}
                   >
                     {event.level.toUpperCase()}

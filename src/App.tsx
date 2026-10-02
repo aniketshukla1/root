@@ -923,8 +923,11 @@ export default function App() {
           <Assistant
             config={config}
             incidents={incidents}
+            model={model}
+            catalog={catalog}
             conversationId={CONVERSATION_ID}
             onOpenSettings={() => setView({ name: "settings" })}
+            onNavigate={setView}
           />
         )}
 

@@ -549,33 +549,60 @@ export function flapped(
  * mechanism, its blast radius, and the one thing the correlator cannot judge,
  * which is whether its own grouping is right.
  */
-export function suggestions(incidents: Incident[]): string[] {
+/** A question worth asking, with what kind of question it is and what answering it reads. */
+export interface Starter {
+  text: string;
+  /** Picks its mark: the same shapes and colours the rest of root uses for each. */
+  kind: "why" | "change" | "dependency" | "evidence" | "capacity" | "flap" | "trend";
+  /** What the assistant will look at — said up front, so the answer can be checked. */
+  reads: string;
+}
+
+export function suggestions(incidents: Incident[]): Starter[] {
   const lead = leadIncident(incidents.filter((i) => !i.acknowledged));
   if (!lead) {
     return [
-      "What is closest to a limit across the estate?",
-      "What changed in the last hour?",
-      "Which connections have flapped today?",
-      "Is anything trending toward a threshold?",
+      { text: "What is closest to a limit across the estate?", kind: "capacity", reads: "metric trends against thresholds" },
+      { text: "What changed in the last hour?", kind: "change", reads: "observed and reported changes" },
+      { text: "Which connections have flapped today?", kind: "flap", reads: "health runs and alert history" },
+      { text: "Is anything trending toward a threshold?", kind: "trend", reads: "metric history" },
     ];
   }
 
   const root = lead.leadProfileId || lead.profileIds[0];
-  const out = [
-    `Why is ${root} failing, and what should I check first?`,
-    `What changed on ${root} before this started?`,
+  const out: Starter[] = [
+    {
+      text: `Why is ${root} failing, and what should I check first?`,
+      kind: "why",
+      reads: `alerts, metrics and error lines on ${root}`,
+    },
+    {
+      text: `What changed on ${root} before this started?`,
+      kind: "change",
+      reads: "changes and deploys before onset",
+    },
   ];
 
   if (lead.profileIds.length > 1) {
     const others = lead.profileIds.filter((id) => id !== root);
-    out.push(
-      `Is ${others[0]} failing because of ${root}, or is that a separate problem?`,
-    );
+    out.push({
+      text: `Is ${others[0]} failing because of ${root}, or is that a separate problem?`,
+      kind: "dependency",
+      reads: "declared dependencies and timing",
+    });
   }
   if (lead.confidence !== "high") {
-    out.push("Does the evidence actually support grouping these as one incident?");
+    out.push({
+      text: "Does the evidence actually support grouping these as one incident?",
+      kind: "evidence",
+      reads: "the incident's grouping reasons",
+    });
   } else {
-    out.push(`What else depends on ${root} that has not failed yet?`);
+    out.push({
+      text: `What else depends on ${root} that has not failed yet?`,
+      kind: "dependency",
+      reads: "the topology around it",
+    });
   }
 
   return out;

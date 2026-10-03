@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "root — infrastructure intelligence"
 authors = ["you"]
 edition = "2021"
+# Three binaries live here — the desktop app, root-server and root-mcp — so
+# `cargo run`, which is what `tauri dev` calls, has to be told which is the app.
+default-run = "inframonitoring"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

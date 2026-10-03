@@ -48,7 +48,11 @@ const PRESSURE_WINDOW: Duration = Duration::minutes(15);
 
 /// Why a set of alerts is being shown as one thing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+// `rename_all` renames the variants only. Without `rename_all_fields` a
+// field like `window_secs` reached the UI in snake_case while every reader
+// there asks for `windowSecs` — the fixtures were written in camelCase, so
+// only a real backend showed it, as "undefined" in the sentence.
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum GroupingReason {
     /// Several conditions on one connection. Never in doubt.
     SameConnection { profile_id: String },
@@ -416,14 +420,19 @@ fn build(
         Confidence::Medium
     };
 
+    // Worst, then earliest, then the most specific: a container that went
+    // unhealthy says more than the count of unhealthy containers that rose
+    // with it in the same poll.
     let lead = mine
         .iter()
         .filter(|a| roots.contains(&a.profile_id))
-        .min_by_key(|a| (severity_rank(a.severity), a.first_seen))
-        .or_else(|| mine.iter().min_by_key(|a| a.first_seen));
+        .min_by_key(|a| (severity_rank(a.severity), a.first_seen, a.component.is_none()))
+        .or_else(|| mine.iter().min_by_key(|a| (a.first_seen, a.component.is_none())));
 
     let title = match lead {
-        Some(alert) if members.len() > 1 => {
+        // Alert titles already lead with their connection's name; prefixing
+        // it again read "prod-docker — prod-docker · …".
+        Some(alert) if members.len() > 1 && !alert.title.starts_with(&alert.profile_name) => {
             format!("{} — {}", alert.profile_name, alert.title)
         }
         Some(alert) => alert.title.clone(),
@@ -470,6 +479,33 @@ fn incident_id(fingerprint: Option<&str>, started: DateTime<Utc>) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reasons_reach_the_ui_in_camel_case() {
+        // The UI reads `profileId` and `windowSecs`. Snake case here is an
+        // "undefined" in the sentence an operator reads to judge the merge.
+        let same = serde_json::to_value(GroupingReason::SameConnection {
+            profile_id: "p1".into(),
+        })
+        .unwrap();
+        assert_eq!(same["kind"], "sameConnection");
+        assert_eq!(same["profileId"], "p1");
+        let storm = serde_json::to_value(GroupingReason::SimultaneousOnset {
+            count: 4,
+            window_secs: 90,
+        })
+        .unwrap();
+        assert_eq!(storm["windowSecs"], 90);
+        let evidence = serde_json::to_value(crate::advisor::Evidence::Projection {
+            key: "used_memory".into(),
+            seconds_to_limit: 60.0,
+            fit: 0.9,
+            window_secs: 3600.0,
+        })
+        .unwrap();
+        assert_eq!(evidence["secondsToLimit"], 60.0);
+        assert_eq!(evidence["windowSecs"], 3600.0);
+    }
+
     use super::*;
     use crate::config::ConnectionProfile;
     use crate::model::ServiceKind;

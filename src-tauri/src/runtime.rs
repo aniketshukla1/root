@@ -111,7 +111,11 @@ impl Runtime {
 
 /// Where root's inference and the declaration part company.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+// `rename_all` renames the variants only. Without `rename_all_fields` a
+// field like `window_secs` reached the UI in snake_case while every reader
+// there asks for `windowSecs` — the fixtures were written in camelCase, so
+// only a real backend showed it, as "undefined" in the sentence.
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Discrepancy {
     /// Declared to run on a connection that is not configured. Usually a
     /// deleted host or a typo, and either way the declaration is now fiction.

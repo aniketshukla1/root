@@ -47,7 +47,13 @@ pub async fn reload_all(state: Arc<AppState>) {
     }
 
     for profile in profiles.into_iter().filter(|p| p.enabled) {
-        start_profile(state.clone(), profile).await;
+        if profile.simulated && demo.running() {
+            // Not `start_profile`: that clears the connection's state first,
+            // which would erase the past just drawn for it.
+            launch(state.clone(), profile).await;
+        } else {
+            start_profile(state.clone(), profile).await;
+        }
     }
 }
 
@@ -74,6 +80,12 @@ pub async fn stop_profile(state: &Arc<AppState>, profile_id: &str) {
 /// failure to the UI rather than silently vanishing.
 pub async fn start_profile(state: Arc<AppState>, profile: ConnectionProfile) {
     stop_profile(&state, &profile.id).await;
+    launch(state, profile).await;
+}
+
+/// Build the collector and spawn the poller, keeping whatever root already
+/// holds for the connection. Only safe when no poller is running for it.
+async fn launch(state: Arc<AppState>, profile: ConnectionProfile) {
     let emitter = state.events().await;
 
     // A simulated connection has no credential, and asking the keychain for

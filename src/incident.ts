@@ -319,21 +319,25 @@ export function blindSpots(
     topology: TopologyView;
     changes: ChangeEvent[];
     history: Record<string, MetricSeries[]>;
+    /** Connection ids are what the incident carries; people read names. */
+    nameOf?: (profileId: string) => string;
   },
 ): BlindSpot[] {
   const out: BlindSpot[] = [];
   const members = incident.profileIds;
+  const nameOf = sources.nameOf ?? ((id: string) => id);
+  const names = (ids: string[]) => ids.map(nameOf).join(", ");
 
   const missing = members.filter((id) => (sources.topology.dependsOn[id] ?? []).length === 0);
   if (members.length > 1 && missing.length === members.length) {
     out.push({
       text: "No dependencies are declared between these connections, so the order below is inferred from timing alone.",
-      fix: { label: `Declare them on ${missing[0]}`, profileId: missing[0] },
+      fix: { label: `Declare them on ${nameOf(missing[0])}`, profileId: missing[0] },
     });
   } else if (members.length > 1 && missing.length > 0) {
     out.push({
-      text: `${missing.join(", ")} ${missing.length === 1 ? "declares" : "declare"} no dependencies, so ${missing.length === 1 ? "its" : "their"} place in the order is inferred from timing.`,
-      fix: { label: `Declare them on ${missing[0]}`, profileId: missing[0] },
+      text: `${names(missing)} ${missing.length === 1 ? "declares" : "declare"} no dependencies, so ${missing.length === 1 ? "its" : "their"} place in the order is inferred from timing.`,
+      fix: { label: `Declare them on ${nameOf(missing[0])}`, profileId: missing[0] },
     });
   }
 
@@ -352,8 +356,8 @@ export function blindSpots(
   const blind = members.filter((id) => (sources.history[id] ?? []).length === 0);
   if (blind.length > 0) {
     out.push({
-      text: `No metric history for ${blind.join(", ")}, so nothing here can say what ${blind.length === 1 ? "it" : "they"} looked like before.`,
-      fix: { label: `Check ${blind[0]}`, profileId: blind[0] },
+      text: `No metric history for ${names(blind)}, so nothing here can say what ${blind.length === 1 ? "it" : "they"} looked like before.`,
+      fix: { label: `Check ${nameOf(blind[0])}`, profileId: blind[0] },
     });
   }
 
@@ -415,14 +419,20 @@ export function propagation(
  * who cannot see why four alerts were merged cannot tell you the merge is
  * wrong, and a correlator nobody can correct is one nobody should trust.
  */
-export function groupingSentence(incident: Incident): string {
+export function groupingSentence(
+  incident: Incident,
+  /** Connection ids are what the reasons carry; people read names. */
+  nameOf: (profileId: string) => string = (id) => id,
+): string {
   if (incident.grouping.length === 0) {
     return incident.profileIds.length === 1
       ? "One connection, one condition."
       : "Grouped by connection.";
   }
 
-  return mergeReasons(incident.grouping).map(describe).join(" ");
+  return mergeReasons(incident.grouping)
+    .map((reason) => describe(reason, nameOf))
+    .join(" ");
 }
 
 /**
@@ -435,14 +445,27 @@ export function groupingSentence(incident: Incident): string {
  * naming every service on the other end.
  */
 type MergedReason =
-  | Exclude<GroupingReason, { kind: "dependencyFailedFirst" | "dependentPressuredIt" }>
+  | Exclude<
+      GroupingReason,
+      { kind: "sameConnection" | "dependencyFailedFirst" | "dependentPressuredIt" }
+    >
+  | { kind: "sameConnection"; profileIds: string[] }
   | { kind: "dependencyFailedFirst"; root: string; dependents: string[] }
   | { kind: "dependentPressuredIt"; origin: string; pressured: string[] };
 
 function mergeReasons(reasons: GroupingReason[]): MergedReason[] {
   const merged: MergedReason[] = [];
   for (const reason of reasons) {
-    if (reason.kind === "dependencyFailedFirst") {
+    if (reason.kind === "sameConnection") {
+      // One sentence for every connection with several conditions — five
+      // connections used to be the same sentence five times.
+      const same = merged.find((m) => m.kind === "sameConnection");
+      if (same?.kind === "sameConnection") {
+        if (!same.profileIds.includes(reason.profileId)) same.profileIds.push(reason.profileId);
+      } else {
+        merged.push({ kind: "sameConnection", profileIds: [reason.profileId] });
+      }
+    } else if (reason.kind === "dependencyFailedFirst") {
       const same = merged.find(
         (m) => m.kind === "dependencyFailedFirst" && m.root === reason.root,
       );
@@ -473,16 +496,22 @@ function listOf(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-function describe(reason: MergedReason): string {
+function describe(reason: MergedReason, nameOf: (profileId: string) => string): string {
   switch (reason.kind) {
-    case "sameConnection":
-      return `Several conditions on ${reason.profileId} are one problem with it.`;
-    case "dependencyFailedFirst":
-      return `${listOf(reason.dependents)} depend${reason.dependents.length === 1 ? "s" : ""} on ${reason.root}, and ${reason.root} failed first.`;
+    case "sameConnection": {
+      const names = reason.profileIds.map(nameOf);
+      return names.length === 1
+        ? `Several conditions on ${names[0]} are one problem with it.`
+        : `${listOf(names)} each have several conditions that are one problem apiece.`;
+    }
+    case "dependencyFailedFirst": {
+      const root = nameOf(reason.root);
+      return `${listOf(reason.dependents.map(nameOf))} depend${reason.dependents.length === 1 ? "s" : ""} on ${root}, and ${root} failed first.`;
+    }
     case "dependentPressuredIt": {
       const n = reason.pressured.length;
       const which = n === 1 ? "which" : n === 2 ? "both of which" : "all of which";
-      return `${reason.origin} failed first; ${listOf(reason.pressured)}, ${which} it depends on, degraded shortly after — back-pressure rather than the cause.`;
+      return `${nameOf(reason.origin)} failed first; ${listOf(reason.pressured.map(nameOf))}, ${which} it depends on, degraded shortly after — back-pressure rather than the cause.`;
     }
     case "simultaneousOnset":
       return `${reason.count} independent failures began within ${reason.windowSecs} seconds of each other with nothing declared between them — this may be one event, or a coincidence worth splitting.`;

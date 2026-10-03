@@ -698,6 +698,12 @@
             }
             return out;
           },
+          // The live demo is a backend feature; here it is only ever off, and
+          // the launcher's button answers with the config unchanged.
+          get_demo_status: () => ({ running: false, connections: 0, paused: 0, stories: [] }),
+          start_demo: () => config,
+          stop_demo: () => config,
+          trigger_demo_story: () => ({ running: false, connections: 0, paused: 0, stories: [] }),
           get_dashboard: () => ({
             snapshots, alerts, predictions, overallHealth: "down",
             servicesTotal: snapshots.length,

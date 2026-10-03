@@ -230,7 +230,7 @@ fn containers(
             if c.service == "checkout-api" && e.checkout_errors > 0.1 {
                 for n in 0..count(seed, source, second, 4, 1.4 * e.checkout_errors) {
                     let h = hash(&[seed, source, second as u64, 300 + n as u64]);
-                    let msg = if h % 3 == 0 {
+                    let msg = if h.is_multiple_of(3) {
                         "ERROR POST /api/checkout 503 5004ms: context deadline exceeded acquiring connection".to_string()
                     } else {
                         "ERROR POST /api/checkout 500: pq: sorry, too many clients already".to_string()
@@ -252,7 +252,7 @@ fn containers(
             if c.service == "catalog-api" && e.search_slow > 0.2 {
                 for n in 0..count(seed, source, second, 6, 0.8 * e.search_slow) {
                     let h = hash(&[seed, source, second as u64, 500 + n as u64]);
-                    let msg = if e.es_node_out && h % 3 == 0 {
+                    let msg = if e.es_node_out && h.is_multiple_of(3) {
                         "ERROR elasticsearch: request to search.acme.internal:9200 timed out after 2000ms".to_string()
                     } else {
                         format!(

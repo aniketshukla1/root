@@ -1043,6 +1043,11 @@ export interface ConnectionProfile {
   historySource?: HistorySource;
   snapshotSink?: SnapshotSink;
   runtime: Runtime;
+  /**
+   * Part of the live demo rather than anything real. Set only by starting the
+   * demo; such a connection never notifies and never leaves the process.
+   */
+  simulated?: boolean;
 }
 
 export type LlmProviderKind = "anthropic" | "open_ai_compatible" | "ollama";
@@ -1114,6 +1119,37 @@ export interface AppConfig {
   mcp: { enabled: boolean; port: number };
   prediction: { enabled: boolean; intervalMinutes: number };
   team: { serverUrl?: string; account?: Account };
+  /** The live demo, while one is running. */
+  demo?: DemoSettings;
+}
+
+export interface DemoSettings {
+  startedAt?: string;
+  seed: number;
+  /** Real connections switched off for the demo, switched back on when it ends. */
+  paused?: string[];
+}
+
+/** What the live demo is doing right now. */
+export interface DemoStatus {
+  running: boolean;
+  startedAt?: string;
+  /** Simulated connections in the config. */
+  connections: number;
+  /** Real connections switched off while it runs. */
+  paused: number;
+  /** The story playing now, if one is. */
+  playing?: {
+    story: string;
+    title: string;
+    /** Neutral on purpose — it must not give away what the incident view works out. */
+    phase: string;
+    startedAt: string;
+    endsAt: string;
+    manual: boolean;
+  };
+  next?: { story: string; title: string; at: string };
+  stories: { id: string; title: string }[];
 }
 
 /**

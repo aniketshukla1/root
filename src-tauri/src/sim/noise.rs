@@ -18,7 +18,7 @@ pub fn mix(mut z: u64) -> u64 {
 pub fn hash(parts: &[u64]) -> u64 {
     parts
         .iter()
-        .fold(0x5EED_0F_A0C1_u64, |acc, part| mix(acc ^ part.wrapping_mul(0x9E37_79B9_7F4A_7C15)))
+        .fold(0x005E_ED0F_A0C1_u64, |acc, part| mix(acc ^ part.wrapping_mul(0x9E37_79B9_7F4A_7C15)))
 }
 
 /// A stable number for a name, so a series can be keyed by what it measures.

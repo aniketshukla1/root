@@ -71,6 +71,10 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   pending_confirmations: () => [],
   get_notifications: () => fixtures.notifications(),
   get_alert_notices: () => fixtures.alertNotices(),
+  get_demo_status: () => fixtures.demoStatus(),
+  start_demo: ({ pauseOthers }) => fixtures.startDemo(Boolean(pauseOthers)),
+  stop_demo: () => fixtures.stopDemo(),
+  trigger_demo_story: ({ story }) => fixtures.triggerDemoStory((story as string | null) ?? null),
   save_notification_channel: ({ channel, target }) =>
     fixtures.saveNotificationChannel(channel as NotifyChannel, target as string | null),
   delete_notification_channel: ({ channelId }) =>
@@ -187,6 +191,7 @@ import type {
   HistogramBucket,
   Incident,
   Delivery,
+  DemoStatus,
   IngestStatus,
   McpStatus,
   Notice,
@@ -389,6 +394,14 @@ export const api = {
     invoke<Delivery>("test_notification_channel", { channelId }),
   /** Who each active alert has reached, and who it will reach. Keyed by alert id. */
   getAlertNotices: () => invoke<Record<string, Notice[]>>("get_alert_notices"),
+  /** What the live demo is doing: the story playing, and the next one. */
+  getDemoStatus: () => invoke<DemoStatus>("get_demo_status"),
+  /** Start the simulated estate; `pauseOthers` switches real connections off until it ends. */
+  startDemo: (pauseOthers: boolean) => invoke<AppConfig>("start_demo", { pauseOthers }),
+  stopDemo: () => invoke<AppConfig>("stop_demo"),
+  /** Start a story now, or straight after the one playing. Omit for the next in rotation. */
+  triggerDemoStory: (story?: string) =>
+    invoke<DemoStatus>("trigger_demo_story", { story: story ?? null }),
   getIngestSettings: () => invoke<IngestStatus>("get_ingest_settings"),
 
   saveIngestSettings: (enabled: boolean, port: number) =>

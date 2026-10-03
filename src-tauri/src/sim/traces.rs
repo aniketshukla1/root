@@ -37,17 +37,30 @@ fn slot_time(slot: i64, endpoint: usize) -> DateTime<Utc> {
     DateTime::from_timestamp_millis(slot * SLOT_SECS * 1000 + offset).unwrap_or_else(Utc::now)
 }
 
+/// Masks the slot so ids look like the random ones real tracers mint, while
+/// staying decodable — a run of leading zeros reads as made up.
+fn mask(seed: u64) -> u64 {
+    hash(&[seed, 0x7EACE])
+}
+
 fn trace_id(seed: u64, slot: i64, endpoint: usize) -> String {
     let check = hash(&[seed, slot as u64, endpoint as u64]) & 0x00FF_FFFF_FFFF_FFFF;
-    format!("{:016x}{:02x}{:014x}", slot as u64, endpoint, check)
+    let m = mask(seed);
+    format!(
+        "{:016x}{:02x}{:014x}",
+        slot as u64 ^ m,
+        (endpoint as u64 ^ (m >> 56)) & 0xFF,
+        check
+    )
 }
 
 fn decode(seed: u64, id: &str) -> Option<(i64, usize)> {
     if id.len() != 32 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }
-    let slot = u64::from_str_radix(&id[..16], 16).ok()? as i64;
-    let endpoint = usize::from_str_radix(&id[16..18], 16).ok()?;
+    let m = mask(seed);
+    let slot = (u64::from_str_radix(&id[..16], 16).ok()? ^ m) as i64;
+    let endpoint = ((u64::from_str_radix(&id[16..18], 16).ok()? ^ (m >> 56)) & 0xFF) as usize;
     (endpoint < ENDPOINTS.len() && trace_id(seed, slot, endpoint) == id.to_ascii_lowercase())
         .then_some((slot, endpoint))
 }
@@ -135,13 +148,26 @@ pub fn in_window(script: &Script, from: DateTime<Utc>, to: DateTime<Utc>, limit:
 
 // ------------------------------------------------------------------ spans
 
+/// One span while the request is being laid out, in milliseconds from its
+/// start.
+struct Draft {
+    parent: Option<usize>,
+    service: String,
+    name: String,
+    start: f64,
+    duration: f64,
+    status: SpanStatus,
+    message: Option<String>,
+    attributes: BTreeMap<String, String>,
+}
+
 /// Spans laid out in milliseconds from the start of the request, then
 /// scaled so the root lasts exactly as long as the summary said.
 struct Builder {
     seed: u64,
     slot: i64,
     endpoint: usize,
-    spans: Vec<(usize, Option<usize>, String, String, f64, f64, SpanStatus, Option<String>, BTreeMap<String, String>)>,
+    spans: Vec<Draft>,
 }
 
 impl Builder {
@@ -154,32 +180,34 @@ impl Builder {
         duration: f64,
         attrs: &[(&str, &str)],
     ) -> usize {
-        let index = self.spans.len();
-        self.spans.push((
-            index,
+        self.spans.push(Draft {
             parent,
-            service.to_string(),
-            name.to_string(),
+            service: service.to_string(),
+            name: name.to_string(),
             start,
-            duration.max(0.05),
-            SpanStatus::Ok,
-            None,
-            attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
-        ));
-        index
+            duration: duration.max(0.05),
+            status: SpanStatus::Ok,
+            message: None,
+            attributes: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+        });
+        self.spans.len() - 1
     }
 
     fn fail(&mut self, index: usize, message: &str) {
-        self.spans[index].6 = SpanStatus::Error;
-        self.spans[index].7 = Some(message.to_string());
+        self.spans[index].status = SpanStatus::Error;
+        self.spans[index].message = Some(message.to_string());
+    }
+
+    fn start(&self, index: usize) -> f64 {
+        self.spans[index].start
     }
 
     fn end(&self, index: usize) -> f64 {
-        self.spans[index].4 + self.spans[index].5
+        self.spans[index].start + self.spans[index].duration
     }
 
     fn set_end(&mut self, index: usize, end: f64) {
-        self.spans[index].5 = (end - self.spans[index].4).max(0.05);
+        self.spans[index].duration = (end - self.spans[index].start).max(0.05);
     }
 
     fn jitter(&self, salt: u64) -> f64 {
@@ -187,31 +215,35 @@ impl Builder {
     }
 
     fn finish(self, trace_id: &str, started: DateTime<Utc>, total: f64) -> Trace {
-        let natural = self.spans.first().map(|s| s.5).unwrap_or(1.0).max(0.001);
+        let natural = self.spans.first().map(|s| s.duration).unwrap_or(1.0).max(0.001);
         let scale = total / natural;
-        let span_id = |i: usize| format!("{:016x}", hash(&[self.seed, self.slot as u64, self.endpoint as u64, 7000 + i as u64]));
+        let span_id = |i: usize| {
+            format!("{:016x}", hash(&[self.seed, self.slot as u64, self.endpoint as u64, 7000 + i as u64]))
+        };
         let spans = self
             .spans
             .iter()
-            .map(|(i, parent, service, name, start, duration, status, message, attrs)| {
-                let at = started + Duration::microseconds((start * scale * 1000.0) as i64);
-                let mut events = Vec::new();
-                if *status == SpanStatus::Error {
-                    events.push(SpanEvent {
-                        at: at + Duration::microseconds((duration * scale * 900.0) as i64),
+            .enumerate()
+            .map(|(i, d)| {
+                let at = started + Duration::microseconds((d.start * scale * 1000.0) as i64);
+                let events = if d.status == SpanStatus::Error {
+                    vec![SpanEvent {
+                        at: at + Duration::microseconds((d.duration * scale * 900.0) as i64),
                         name: "exception".to_string(),
-                    });
-                }
+                    }]
+                } else {
+                    Vec::new()
+                };
                 Span {
-                    span_id: span_id(*i),
-                    parent_span_id: parent.map(span_id),
-                    name: name.clone(),
-                    service: service.clone(),
+                    span_id: span_id(i),
+                    parent_span_id: d.parent.map(span_id),
+                    name: d.name.clone(),
+                    service: d.service.clone(),
                     started_at: at,
-                    duration_ms: (duration * scale * 1000.0).round() / 1000.0,
-                    status: *status,
-                    status_message: message.clone(),
-                    attributes: attrs.clone(),
+                    duration_ms: (d.duration * scale * 1000.0).round() / 1000.0,
+                    status: d.status,
+                    status_message: d.message.clone(),
+                    attributes: d.attributes.clone(),
                     events,
                 }
             })
@@ -247,7 +279,7 @@ pub fn trace(script: &Script, id: &str) -> Result<Trace> {
             let session = b.span(Some(root), "web", "redis GET session", 1.2, 0.6, &[("db.system", "redis"), ("peer.service", "session-cache")]);
             let call = b.span(Some(root), "catalog-api", "GET /api/featured", b.end(session) + 0.8, 1.0, &[("http.method", "GET")]);
             let es_time = 9.0 + 20.0 * b.jitter(1) + 650.0 * e.search_slow;
-            let es = b.span(Some(call), "catalog-api", "elasticsearch POST /products-v7/_search", 2.0 + b.spans[call].4, es_time, &[("db.system", "elasticsearch"), ("peer.service", "search-es")]);
+            let es = b.span(Some(call), "catalog-api", "elasticsearch POST /products-v7/_search", 2.0 + b.start(call), es_time, &[("db.system", "elasticsearch"), ("peer.service", "search-es")]);
             let render = b.span(Some(call), "catalog-api", "render featured", b.end(es) + 0.4, 3.0 + 4.0 * b.jitter(2), &[]);
             let end = b.end(render) + 1.5;
             b.set_end(call, end);
@@ -259,7 +291,7 @@ pub fn trace(script: &Script, id: &str) -> Result<Trace> {
         1 => {
             let call = b.span(Some(root), "catalog-api", "GET /api/products", 1.5, 1.0, &[("http.method", "GET")]);
             let es_time = if failed { 2000.0 } else { 14.0 + 30.0 * b.jitter(1) + 2100.0 * e.search_slow };
-            let es = b.span(Some(call), "catalog-api", "elasticsearch POST /products-v7/_search", b.spans[call].4 + 1.0, es_time, &[("db.system", "elasticsearch"), ("peer.service", "search-es"), ("db.operation", "search")]);
+            let es = b.span(Some(call), "catalog-api", "elasticsearch POST /products-v7/_search", b.start(call) + 1.0, es_time, &[("db.system", "elasticsearch"), ("peer.service", "search-es"), ("db.operation", "search")]);
             if failed {
                 b.fail(es, "request timed out after 2000ms");
                 b.fail(call, "search unavailable");
@@ -273,7 +305,7 @@ pub fn trace(script: &Script, id: &str) -> Result<Trace> {
         // Checkout: session, cart, the order, the items, payment, the event.
         2 => {
             let call = b.span(Some(root), "checkout-api", "POST /api/checkout", 2.0, 1.0, &[("http.method", "POST"), ("service.version", &checkout_version)]);
-            let mut cursor = b.spans[call].4 + 0.6;
+            let mut cursor = b.start(call) + 0.6;
             let session = b.span(Some(call), "checkout-api", "redis GET session", cursor, 0.7, &[("db.system", "redis"), ("peer.service", "session-cache")]);
             cursor = b.end(session) + 0.4;
             let cart = b.span(Some(call), "cart-api", "GET /api/cart/{id}", cursor, 1.0, &[("http.method", "GET")]);

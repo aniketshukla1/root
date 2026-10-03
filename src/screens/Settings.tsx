@@ -42,6 +42,7 @@ import {
   Tag,
 } from "../ui/primitives";
 import { CloseIcon, PlusIcon, TrashIcon } from "../ui/icons";
+import { DEMO_HUE, DemoLauncher, demoRunning } from "../ui/demo";
 
 type Tab = "connections" | "notifications" | "team" | "assistant" | "ingest" | "mcp" | "display";
 
@@ -188,9 +189,13 @@ function Connections({
         </div>
       )}
 
+      {!demoRunning(config) && <DemoLauncher config={config} onConfigChange={onConfigChange} compact />}
+
       <Panel
         title="Connections"
-        subtitle={`${profiles.filter((p) => p.enabled).length} of ${profiles.length} enabled`}
+        subtitle={`${profiles.filter((p) => p.enabled).length} of ${profiles.length} enabled${
+          demoRunning(config) ? ` · ${profiles.filter((p) => p.simulated).length} simulated by the live demo` : ""
+        }`}
         actions={
           <Button variant="primary" onClick={() => setPicking(true)}>
             <PlusIcon size={13} />
@@ -237,6 +242,7 @@ function Connections({
                     style={{ height: "var(--row-h)" }}
                   >
                     <td className="max-w-52 px-3">
+                      <span className="flex min-w-0 items-center">
                       <button
                         onClick={() => setEditing(profile)}
                         className="flex min-w-0 items-center gap-2 text-xs font-medium text-ink transition-colors hover:text-accent"
@@ -244,6 +250,12 @@ function Connections({
                         <ServiceMark descriptor={descriptor} size={16} />
                         <span className="truncate">{profile.name}</span>
                       </button>
+                      {profile.simulated && (
+                        <Tag color={DEMO_HUE} title="Part of the live demo — simulated, never contacted, never notifies" className="ml-1.5">
+                          SIM
+                        </Tag>
+                      )}
+                      </span>
                     </td>
                     <td className="px-3 text-xs text-ink-3">{descriptor.label}</td>
                     <td className="num max-w-64 truncate px-3 text-xs text-ink-3" title={profile.endpoint}>
@@ -275,7 +287,14 @@ function Connections({
                       </label>
                     </td>
                     <td className="px-3">
-                      <span className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      <span
+                        className={cx(
+                          "flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
+                          // The demo's connections are its own: editing one
+                          // would only break the story it is in.
+                          profile.simulated && "invisible",
+                        )}
+                      >
                         <Button variant="ghost" onClick={() => setEditing(profile)}>
                           Edit
                         </Button>

@@ -4,6 +4,7 @@ import { api } from "../api";
 import { formatRelative } from "../format";
 import type { Alert, Incident, Notice } from "../types";
 import { ChannelMark } from "./ChannelMark";
+import { DEMO_HUE } from "./demo";
 import { useTick } from "./charts";
 import { cx } from "./primitives";
 
@@ -154,18 +155,24 @@ export function WhoKnows({
   notices,
   channelCount,
   layout = "list",
+  simulated = false,
   onSetUp,
 }: {
   incident: Incident;
   notices: Record<string, Notice[]>;
   channelCount: number | null;
   layout?: "list" | "strip";
+  /** Every connection in it belongs to the live demo, which never notifies. */
+  simulated?: boolean;
   onSetUp: () => void;
 }) {
   const rows = standing(incident, notices);
 
-  const empty =
-    channelCount === null ? null : channelCount === 0 ? (
+  const empty = simulated ? (
+    <span className="text-xs" style={{ color: DEMO_HUE }}>
+      Live demo — simulated connections never notify anyone, so nobody has been told.
+    </span>
+  ) : channelCount === null ? null : channelCount === 0 ? (
       <span className="text-xs text-ink-3">
         Nobody is notified — no channel is set up.{" "}
         <button

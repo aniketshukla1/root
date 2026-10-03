@@ -314,11 +314,11 @@ fn console(
     .ok_or_else(|| AppError::Collector(format!("no build {} of `{job}`", build.map(|n| n.to_string()).unwrap_or_else(|| "lastBuild".into()))))?;
 
     let mut lines = vec![
-        format!("Started by GitHub push to main"),
+        "Started by GitHub push to main".to_string(),
         format!("Running on agent-linux-{} in /var/jenkins/workspace/{job}", 1 + chosen.number % 2),
         "[Pipeline] Start of Pipeline".to_string(),
         "[Pipeline] stage (Checkout)".to_string(),
-        format!("Checking out Revision {:x} (refs/remotes/origin/main)", chosen.number as u64 * 0x9E37_79B9 & 0xFFFF_FFFF_FFFF),
+        format!("Checking out Revision {:x} (refs/remotes/origin/main)", (chosen.number as u64 * 0x9E37_79B9) & 0xFFFF_FFFF_FFFF),
     ];
     if job.starts_with("deploy-") {
         let service = job.trim_start_matches("deploy-");
@@ -793,11 +793,11 @@ mod tests {
     use super::*;
 
     /// The simulation's clock is process-wide; tests that set it take turns.
-    static WORLD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static WORLD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     #[tokio::test]
     async fn a_simulated_collector_answers_every_member() {
-        let _turn = WORLD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _turn = WORLD_LOCK.lock().await;
         configure(&DemoSettings {
             started_at: Some(Utc::now() - Duration::minutes(3)),
             seed: 1,
@@ -821,7 +821,7 @@ mod tests {
     /// landed on, with the database it starved pulled in behind it.
     #[tokio::test]
     async fn the_bad_deploy_is_one_incident_led_by_the_host_it_landed_on() {
-        let _turn = WORLD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _turn = WORLD_LOCK.lock().await;
         let started_at = DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap()
             - Duration::seconds(story::LEAD_SECS + 250);
         let demo = DemoSettings {
@@ -837,8 +837,9 @@ mod tests {
             ..Default::default()
         };
         let state = Arc::new(AppState::new(config, std::env::temp_dir().join("root-sim-test.json")));
-        configure(&demo);
-        backfill(&state, &profiles).await;
+        // Through the real startup path, pollers and all: starting a poller
+        // used to clear the connection's state and erase the replayed past.
+        crate::supervisor::reload_all(Arc::clone(&state)).await;
 
         let alerts = state.alerts.read().await.all();
         let snapshots: Vec<HealthSnapshot> = state.snapshots.read().await.values().cloned().collect();
@@ -867,6 +868,7 @@ mod tests {
         let connections = series.iter().find(|s| s.key == "connections").expect("a connections series");
         assert!(connections.points.len() > 600, "{}", connections.points.len());
         assert!(!state.logs.read().await.is_empty());
+        crate::supervisor::stop_all(&state).await;
         configure(&DemoSettings::default());
     }
 }

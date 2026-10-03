@@ -130,6 +130,11 @@ pub const MUTATING: &[&str] = &[
     "save_notification_channel",
     "delete_notification_channel",
     "test_notification_channel",
+    // Starting the demo switches real connections off; stopping it deletes
+    // thirteen; a story changes what everybody watching is shown.
+    "start_demo",
+    "stop_demo",
+    "trigger_demo_story",
 ];
 
 /// Whether a role may run a command.

@@ -407,12 +407,15 @@ impl Script {
                     format!("Deployed web 4.{}.0", 13 + (k - first) / 3),
                 ));
             }
-            for (slot, offset) in [(0u64, 200i64), (1, 560)] {
-                let flaky = hash(&[self.seed, k as u64, slot, 0xE2E]) % 6 == 0;
+            // A minute long, twice a cycle: the second run lands just after a
+            // bad deploy's recovery, so a smoke test failed by the outage goes
+            // green with the estate rather than lingering as its own incident.
+            for (slot, offset) in [(0u64, 200i64), (1, 400)] {
+                let flaky = hash(&[self.seed, k as u64, slot, 0xE2E]).is_multiple_of(6);
                 raw.push((
                     "e2e-smoke",
                     base + Duration::seconds(offset),
-                    150.0,
+                    60.0,
                     if flaky { BuildResult::Failure } else { BuildResult::Success },
                     if flaky {
                         "Smoke suite: 1 of 38 failed (search suggestions timed out)".to_string()
@@ -422,6 +425,17 @@ impl Script {
                 ));
             }
             k += 1;
+        }
+
+        // Each story's job last ran a day before the replay begins, so no
+        // job reads "never built" before its story first comes round.
+        let before = self.epoch() - Duration::days(1);
+        for (job, what) in [
+            ("deploy-checkout-api", "Deployed checkout-api 2.40.3"),
+            ("deploy-analytics-ingest", "Deployed analytics-ingest 1.33.2"),
+            ("reindex-catalog", "Reindexed products-v7: 2,138,977 documents"),
+        ] {
+            raw.push((job, before, 80.0, BuildResult::Success, what.to_string()));
         }
 
         // The stories' own builds.

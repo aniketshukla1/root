@@ -341,7 +341,15 @@ export function buildModel(
       entities,
       issues,
       alerts,
-      health: worst([snapshot.health, ...entities.map((e) => e.health)]),
+      // A row the collector calls unknown has no opinion — a finished one-shot
+      // container, a job never built, a trace in a list — and every collector
+      // leaves those out of its own rollup. Counting them here made a healthy
+      // Docker host read "unknown" for one completed job. The snapshot's own
+      // unknown still counts: that one means the connection itself is in doubt.
+      health: worst([
+        snapshot.health,
+        ...entities.map((e) => e.health).filter((h) => h !== "unknown"),
+      ]),
     };
   });
 

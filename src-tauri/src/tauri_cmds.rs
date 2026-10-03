@@ -145,6 +145,32 @@ pub async fn test_notification_channel(
 }
 
 #[tauri::command]
+pub async fn get_demo_status(state: Shared<'_>) -> Result<crate::sim::DemoStatus> {
+    commands::get_demo_status(&state).await
+}
+
+#[tauri::command]
+pub async fn start_demo(
+    state: Shared<'_>,
+    pause_others: bool,
+) -> Result<crate::config::AppConfig> {
+    commands::start_demo(&state, pause_others).await
+}
+
+#[tauri::command]
+pub async fn stop_demo(state: Shared<'_>) -> Result<crate::config::AppConfig> {
+    commands::stop_demo(&state).await
+}
+
+#[tauri::command]
+pub async fn trigger_demo_story(
+    state: Shared<'_>,
+    story: Option<String>,
+) -> Result<crate::sim::DemoStatus> {
+    commands::trigger_demo_story(&state, story).await
+}
+
+#[tauri::command]
 pub async fn rotate_ingest_token(state: Shared<'_>) -> Result<String> {
     commands::rotate_ingest_token(&state).await
 }

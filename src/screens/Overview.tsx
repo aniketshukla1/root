@@ -125,6 +125,12 @@ export function Overview({
   const [selectedId, setSelectedId] = useState<string>();
   const [split, setSplit] = useState<string[]>([]);
   const { notices, channelCount } = useNotices(model.alerts);
+  /** An incident wholly inside the live demo, which never notifies anyone. */
+  const allSimulated = (incident: Incident) =>
+    incident.profileIds.length > 0 &&
+    incident.profileIds.every(
+      (id) => model.services.find((s) => s.snapshot.profileId === id)?.profile?.simulated,
+    );
 
   // Splitting a storm is an override, not a setting: it lasts until the
   // grouping that prompted it stops existing.
@@ -308,6 +314,7 @@ export function Overview({
                         incident={selected}
                         notices={notices}
                         channelCount={channelCount}
+                        simulated={allSimulated(selected)}
                         onSetUp={() => onNavigate({ name: "settings", tab: "notifications" })}
                       />
                     </Panel>
@@ -339,6 +346,7 @@ export function Overview({
                 incident={selected}
                 notices={notices}
                 channelCount={channelCount}
+                simulated={allSimulated(selected)}
                 layout="strip"
                 onSetUp={() => onNavigate({ name: "settings", tab: "notifications" })}
               />

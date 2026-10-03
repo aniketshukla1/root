@@ -103,10 +103,13 @@ export function IncidentHero({
   footer?: ReactNode;
 }) {
   const radius = blastRadius(incident, context.model);
+  const nameOf = (id: string) =>
+    context.model.services.find((s) => s.snapshot.profileId === id)?.snapshot.profileName ?? id;
   const spots = blindSpots(incident, {
     topology: context.topology,
     changes: context.changes,
     history: context.history,
+    nameOf,
   });
 
   const change = context.changes
@@ -165,7 +168,7 @@ export function IncidentHero({
           </h2>
 
           <p className="mt-2.5 max-w-[96ch] text-base leading-relaxed text-ink-2">
-            {groupingSentence(incident)}
+            {groupingSentence(incident, nameOf)}
           </p>
         </div>
 

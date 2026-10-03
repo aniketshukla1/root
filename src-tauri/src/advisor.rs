@@ -66,7 +66,11 @@ pub enum Severity {
 /// A fact a finding rests on. Rendered beside the finding so the reasoning can
 /// be checked rather than believed.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+// `rename_all` renames the variants only. Without `rename_all_fields` a
+// field like `window_secs` reached the UI in snake_case while every reader
+// there asks for `windowSecs` — the fixtures were written in camelCase, so
+// only a real backend showed it, as "undefined" in the sentence.
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Evidence {
     Setting {
         key: String,

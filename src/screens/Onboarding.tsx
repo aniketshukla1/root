@@ -5,6 +5,7 @@ import type { AppConfig, ServiceDescriptor } from "../types";
 import { blankProfile, ProfileForm } from "./Settings";
 import { Button, cx, Empty, Input, PanelHeader, RootMark, ServiceMark } from "../ui/primitives";
 import { CheckIcon, SearchIcon } from "../ui/icons";
+import { DemoLauncher } from "../ui/demo";
 
 /**
  * First run: connect something.
@@ -78,6 +79,13 @@ export function Onboarding({
 
       <div className="flex min-h-0 flex-1 justify-center overflow-y-auto p-6">
         <div className="flex w-full max-w-[960px] flex-col">
+          {/* Nothing to connect yet is the commonest first run, and the
+              estate is where every screen earns its keep — so the demo comes
+              first, ahead of the catalogue, rather than after it. */}
+          <div className="mb-8">
+            <DemoLauncher config={null} onConfigChange={onConfigChange} />
+          </div>
+
           <p className="label mb-3">Step 2 of 2</p>
           <h1 className="text-5xl leading-[1.06] font-medium tracking-[-.03em] text-ink">
             Connect something you actually run.

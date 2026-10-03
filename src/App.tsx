@@ -40,6 +40,7 @@ import { AssistantDock } from "./shell/AssistantDock";
 import { ComponentDialog } from "./shell/ComponentDialog";
 import { Sidebar } from "./shell/Sidebar";
 import { Splash } from "./shell/Splash";
+import { DemoBar } from "./ui/demo";
 import { SEQUENCE_MS } from "./shell/splash/script";
 import { Toasts, toastFromAlert, type Toast } from "./shell/Toasts";
 
@@ -751,6 +752,7 @@ export default function App() {
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
+        <DemoBar config={config} onConfigChange={onConfigChange} />
         {connectionErrors.length > 0 && view.name !== "settings" && (
           <div className="shrink-0 border-b border-line px-4 py-2">
             {connectionErrors.map((error) => (

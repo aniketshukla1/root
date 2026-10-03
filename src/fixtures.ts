@@ -18,6 +18,7 @@ import type {
   AlertSeverity,
   ComponentReading,
   Delivery,
+  DemoStatus,
   Notice,
   NotificationsView,
   NotifyChannel,
@@ -1118,7 +1119,140 @@ export function deleteProfile(profileId: string): AppConfig {
 }
 
 export function currentConfig(): AppConfig {
-  return { ...CONFIG, profiles: [...SAVED] };
+  if (!demo) return { ...CONFIG, profiles: [...SAVED] };
+  // The fixture estate stands in for the simulated one.
+  return {
+    ...CONFIG,
+    profiles: SAVED.map((p) => ({ ...p, simulated: true })),
+    demo: { startedAt: new Date(demo.startedAt).toISOString(), seed: 1, paused: [] },
+  };
+}
+
+// ------------------------------------------------------------------- demo
+
+/**
+ * The live demo, in the browser.
+ *
+ * There is no simulation here — the fixture estate stands in for it — but the
+ * schedule is the backend's, story for story and phase for phase, so the band
+ * and its controls can be looked at with real timings. `?demo` starts in it.
+ */
+const DEMO_STORIES = [
+  {
+    id: "bad-deploy",
+    title: "A deploy goes wrong",
+    duration: 440,
+    phases: [
+      [0, "A deploy is building"],
+      [70, "The deploy is rolling out"],
+      [100, "Something is going wrong"],
+      [190, "Incident in progress"],
+      [290, "A fix is building"],
+      [360, "The fix is rolling out"],
+      [380, "Recovering"],
+    ],
+  },
+  {
+    id: "consumer-oom",
+    title: "A consumer falls over",
+    duration: 470,
+    phases: [
+      [0, "A deploy is building"],
+      [60, "The deploy is rolling out"],
+      [80, "Something is going wrong"],
+      [150, "Incident in progress"],
+      [250, "A fix is building"],
+      [310, "Recovering"],
+    ],
+  },
+  {
+    id: "search-heap",
+    title: "Search runs hot",
+    duration: 420,
+    phases: [
+      [0, "A batch job is running"],
+      [90, "Something is going wrong"],
+      [170, "Incident in progress"],
+      [250, "Recovering"],
+    ],
+  },
+] as const;
+
+let demo: { startedAt: number; triggers: { at: number; story: string }[] } | null =
+  typeof location !== "undefined" && new URLSearchParams(location.search).has("demo")
+    ? { startedAt: Date.now() - 140_000, triggers: [] }
+    : null;
+
+type DemoInstance = { story: (typeof DEMO_STORIES)[number]; start: number; manual: boolean };
+
+function demoInstances(until: number): DemoInstance[] {
+  if (!demo) return [];
+  const manual: DemoInstance[] = demo.triggers
+    .filter((t) => t.at <= until)
+    .map((t) => ({ story: DEMO_STORIES.find((s) => s.id === t.story) ?? DEMO_STORIES[0], start: t.at, manual: true }));
+  const out: DemoInstance[] = [];
+  for (let k = -2; ; k++) {
+    const start = demo.startedAt + 30_000 + k * 720_000;
+    if (start > until) break;
+    const displaced = manual.some((m) => start >= m.start && start < m.start + m.story.duration * 1000 + 120_000);
+    if (!displaced) out.push({ story: DEMO_STORIES[((k % 3) + 3) % 3], start, manual: false });
+  }
+  return [...out, ...manual].sort((a, b) => a.start - b.start);
+}
+
+function demoActive(at: number): DemoInstance | undefined {
+  return demoInstances(at)
+    .reverse()
+    .find((i) => i.start <= at && at < i.start + i.story.duration * 1000);
+}
+
+export function demoStatus(): DemoStatus {
+  const now = Date.now();
+  const active = demoActive(now);
+  const next = demoInstances(now + 1_440_000).find((i) => i.start > now);
+  const tau = active ? (now - active.start) / 1000 : 0;
+  return {
+    running: demo !== null,
+    startedAt: demo ? new Date(demo.startedAt).toISOString() : undefined,
+    connections: demo ? SAVED.length : 0,
+    paused: 0,
+    playing: active
+      ? {
+          story: active.story.id,
+          title: active.story.title,
+          phase: [...active.story.phases].reverse().find(([at]) => tau >= at)?.[1] ?? "Calm",
+          startedAt: new Date(active.start).toISOString(),
+          endsAt: new Date(active.start + active.story.duration * 1000).toISOString(),
+          manual: active.manual,
+        }
+      : undefined,
+    next: next
+      ? { story: next.story.id, title: next.story.title, at: new Date(next.start).toISOString() }
+      : undefined,
+    stories: DEMO_STORIES.map((s) => ({ id: s.id, title: s.title })),
+  };
+}
+
+export function startDemo(_pauseOthers: boolean): AppConfig {
+  demo ??= { startedAt: Math.floor(Date.now() / 1000) * 1000, triggers: [] };
+  return currentConfig();
+}
+
+export function stopDemo(): AppConfig {
+  demo = null;
+  return currentConfig();
+}
+
+export function triggerDemoStory(story: string | null): DemoStatus {
+  if (!demo) throw new Error("the live demo is not running");
+  const now = Date.now();
+  const playing = demoActive(now);
+  const at = playing ? playing.start + playing.story.duration * 1000 + 20_000 : now;
+  const earlier = demoInstances(at);
+  const last = earlier[earlier.length - 1]?.story.id;
+  const following = DEMO_STORIES[(DEMO_STORIES.findIndex((s) => s.id === last) + 1) % DEMO_STORIES.length];
+  demo.triggers.push({ at, story: story ?? following.id });
+  return demoStatus();
 }
 
 // ------------------------------------------------------------------- team

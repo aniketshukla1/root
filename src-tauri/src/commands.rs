@@ -757,6 +757,36 @@ pub async fn test_notification_channel(
     crate::notify::test(state, &channel_id).await
 }
 
+// ---------------------------------------------------------------- live demo
+
+/// What the live demo is doing: whether it runs, which story is playing,
+/// and what comes next.
+pub async fn get_demo_status(state: &Arc<AppState>) -> Result<crate::sim::DemoStatus> {
+    Ok(crate::sim::status(&*state.config.read().await))
+}
+
+/// Start the simulated estate. `pause_others` switches the real connections
+/// off until the demo ends, so its incidents are not mixed with real ones.
+pub async fn start_demo(
+    state: &Arc<AppState>,
+    pause_others: bool,
+) -> Result<crate::config::AppConfig> {
+    crate::sim::start(state, pause_others).await
+}
+
+/// Remove the simulated estate and switch back on what it switched off.
+pub async fn stop_demo(state: &Arc<AppState>) -> Result<crate::config::AppConfig> {
+    crate::sim::stop(state).await
+}
+
+/// "Break something": start a story now, or straight after the one playing.
+pub async fn trigger_demo_story(
+    state: &Arc<AppState>,
+    story: Option<String>,
+) -> Result<crate::sim::DemoStatus> {
+    crate::sim::trigger(state, story).await
+}
+
 /// Mint a new token and return it once. Any pipeline using the old one stops
 /// working immediately, which is the point.
 pub async fn rotate_ingest_token(state: &Arc<AppState>) -> Result<String> {

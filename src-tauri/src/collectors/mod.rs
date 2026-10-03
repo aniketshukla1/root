@@ -277,6 +277,11 @@ pub async fn build_collector(
     profile: &ConnectionProfile,
     secret: Option<String>,
 ) -> Result<Arc<dyn Collector>> {
+    // The live demo's connections are answered by the simulation, whatever
+    // their kind. Checked first, so no real client is ever built for one.
+    if profile.simulated {
+        return Ok(Arc::new(crate::sim::SimCollector::new(profile)?));
+    }
     let collector: Arc<dyn Collector> = match profile.kind {
         ServiceKind::Docker | ServiceKind::Podman => {
             Arc::new(docker::DockerCollector::new(profile)?)

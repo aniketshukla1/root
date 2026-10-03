@@ -185,7 +185,21 @@ impl AlertStore {
     /// Replace the set of conditions currently firing for one connection.
     /// Anything previously active and now absent is marked resolved.
     pub fn reconcile(&mut self, profile_id: &str, incoming: Vec<Alert>) -> Vec<Alert> {
-        self.reconcile_within(profile_id, incoming, false)
+        self.reconcile_within(profile_id, incoming, false, Utc::now())
+    }
+
+    /// The same, as of a moment other than now.
+    ///
+    /// Only the simulated estate needs this: it replays its own past at
+    /// startup, and an alert raised two hours ago in that past has to carry
+    /// the time it was raised, or every one of them opens "just now".
+    pub fn reconcile_at(
+        &mut self,
+        profile_id: &str,
+        incoming: Vec<Alert>,
+        now: DateTime<Utc>,
+    ) -> Vec<Alert> {
+        self.reconcile_within(profile_id, incoming, false, now)
     }
 
     /// The same, for the prediction engine's own alerts.
@@ -194,7 +208,7 @@ impl AlertStore {
     /// answer different questions — what is true now, and what is expected —
     /// and neither should be able to silence the other.
     pub fn reconcile_predictions(&mut self, profile_id: &str, incoming: Vec<Alert>) -> Vec<Alert> {
-        self.reconcile_within(profile_id, incoming, true)
+        self.reconcile_within(profile_id, incoming, true, Utc::now())
     }
 
     fn reconcile_within(
@@ -202,8 +216,8 @@ impl AlertStore {
         profile_id: &str,
         incoming: Vec<Alert>,
         predictions: bool,
+        now: DateTime<Utc>,
     ) -> Vec<Alert> {
-        let now = Utc::now();
         let mut seen = HashSet::new();
         let mut newly_raised = Vec::new();
 
@@ -339,7 +353,17 @@ pub fn alerts_from_snapshot(snapshot: &HealthSnapshot) -> Vec<Alert> {
         acknowledged: false,
     };
 
-    if snapshot.health == Health::Down {
+    // Unreachable means the collector could not ask at all — and only a
+    // snapshot built by `HealthSnapshot::unreachable` carries an error.
+    //
+    // This used to fire on any `Down` rollup, which is not the same thing. A
+    // Docker host with one crashed container rolls up to Down; so does a
+    // load balancer with one dead backend, and an endpoint answering 503.
+    // All three answered, and saying they were unreachable threw away the
+    // one fact worth having — which container, which backend — and reset
+    // the alert's start to the moment the rollup tipped, so an incident that
+    // began two minutes earlier appeared to begin now.
+    if snapshot.error.is_some() {
         alerts.push(make(
             format!("{}:unreachable", snapshot.profile_id),
             AlertSeverity::Critical,
@@ -350,7 +374,7 @@ pub fn alerts_from_snapshot(snapshot: &HealthSnapshot) -> Vec<Alert> {
                 .unwrap_or_else(|| snapshot.summary.clone()),
             None,
         ));
-        // Nothing below can be trusted when the service is down.
+        // Nothing below can be trusted when the service could not be read.
         return alerts;
     }
 
@@ -387,6 +411,21 @@ pub fn alerts_from_snapshot(snapshot: &HealthSnapshot) -> Vec<Alert> {
                 Some(row.name.clone()),
             ));
         }
+    }
+
+    // Down by its own account with nothing more specific to blame — a Kafka
+    // with no brokers has no rows to fail. Still one critical alert, named
+    // for what the collector said rather than for a failure to connect.
+    if snapshot.health == Health::Down
+        && !alerts.iter().any(|a| a.severity == AlertSeverity::Critical)
+    {
+        alerts.push(make(
+            format!("{}:down", snapshot.profile_id),
+            AlertSeverity::Critical,
+            format!("{} is down", snapshot.profile_name),
+            snapshot.summary.clone(),
+            None,
+        ));
     }
 
     alerts
@@ -753,6 +792,37 @@ mod tests {
         let alerts = alerts_from_snapshot(&snap);
         assert_eq!(alerts.len(), 1, "one root cause, not a cascade");
         assert_eq!(alerts[0].severity, AlertSeverity::Critical);
+    }
+
+    #[test]
+    fn a_reachable_service_that_rolls_up_down_names_what_failed() {
+        // One crashed container makes the host Down. It answered; the alert
+        // must say which container, not that the host could not be reached.
+        let mut snap = snapshot(Health::Down);
+        snap.sections.push(
+            Section::new("containers", "Containers", vec![ColumnSpec::text("name", "Name").primary()])
+                .rows(vec![
+                    Row::new("c1", "checkout-api-2", Health::Down).summary("Exited (137) 4 seconds ago"),
+                    Row::new("c2", "checkout-api-1", Health::Degraded).summary("Up 2 minutes (unhealthy)"),
+                ]),
+        );
+
+        let alerts = alerts_from_snapshot(&snap);
+        assert_eq!(alerts.len(), 2, "{alerts:#?}");
+        assert!(alerts.iter().all(|a| !a.fingerprint.ends_with(":unreachable")));
+        assert!(alerts.iter().any(|a| a.severity == AlertSeverity::Critical
+            && a.component.as_deref() == Some("checkout-api-2")));
+    }
+
+    #[test]
+    fn down_with_nothing_specific_still_raises_one_critical() {
+        let mut snap = snapshot(Health::Down);
+        snap.summary = "no brokers reachable".into();
+        let alerts = alerts_from_snapshot(&snap);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].severity, AlertSeverity::Critical);
+        assert_eq!(alerts[0].detail, "no brokers reachable");
+        assert!(alerts[0].fingerprint.ends_with(":down"));
     }
 
     #[test]

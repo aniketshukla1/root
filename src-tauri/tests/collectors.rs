@@ -73,6 +73,7 @@ fn profile(kind: ServiceKind, endpoint: String, options: ProfileOptions) -> Conn
             config_sources: Vec::new(),
             history_source: None,
             snapshot_sink: None,
+            simulated: false,
             runtime: Default::default(),
         metadata: ProfileOptions::default(),
     }

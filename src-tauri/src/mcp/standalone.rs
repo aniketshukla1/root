@@ -205,6 +205,7 @@ fn profile_from_env() -> Option<ConnectionProfile> {
         history_source: None,
         runtime: Default::default(),
         snapshot_sink: None,
+        simulated: false,
         metadata: Default::default(),
     })
 }

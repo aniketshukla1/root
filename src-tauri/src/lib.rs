@@ -47,6 +47,7 @@ pub mod server;
 pub mod runtime;
 pub mod scenarios;
 pub mod secrets;
+pub mod sim;
 pub mod state;
 pub mod store;
 pub mod team;

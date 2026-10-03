@@ -1096,6 +1096,26 @@ pub async fn sweep(state: &Arc<AppState>, client: &reqwest::Client) {
     send(state, client, plans, &targets, &meta).await;
 }
 
+/// Every alert except the live demo's.
+///
+/// An invented outage must never reach a real channel. The demo plays one
+/// every twelve minutes; routed like the rest, each would page whoever is on
+/// call for a checkout service that does not exist.
+async fn real_alerts(state: &Arc<AppState>) -> Vec<Alert> {
+    let simulated: std::collections::HashSet<String> = state
+        .config
+        .read()
+        .await
+        .profiles
+        .iter()
+        .filter(|p| p.simulated)
+        .map(|p| p.id.clone())
+        .collect();
+    let mut alerts = state.alerts.read().await.all();
+    alerts.retain(|a| !simulated.contains(&a.profile_id));
+    alerts
+}
+
 /// What every enabled channel is owed right now, with the bookkeeping that
 /// needs no message already done.
 async fn plans(
@@ -1115,7 +1135,7 @@ async fn plans(
             meta_of(&config),
         )
     };
-    let alerts = state.alerts.read().await.all();
+    let alerts = real_alerts(state).await;
     let mut notifier = state.notifier.lock().await;
 
     // A channel deleted or switched off takes its ledger with it.
@@ -1311,7 +1331,7 @@ pub async fn notices(state: &Arc<AppState>) -> HashMap<String, Vec<Notice>> {
     if channels.is_empty() {
         return HashMap::new();
     }
-    let alerts = state.alerts.read().await.all();
+    let alerts = real_alerts(state).await;
     let notifier = state.notifier.lock().await;
     notices_from(&channels, &alerts, &meta, &notifier, Utc::now())
 }

@@ -46,6 +46,7 @@ fn profile(kind: ServiceKind, endpoint: &str, username: &str) -> ConnectionProfi
             config_sources: Vec::new(),
             history_source: None,
             snapshot_sink: None,
+            simulated: false,
             runtime: Default::default(),
         metadata: ProfileOptions::default(),
     }

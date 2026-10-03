@@ -46,6 +46,7 @@ async fn collector(endpoint: String, declared_query: Option<&str>) -> std::sync:
         config_sources: Vec::new(),
         history_source: None,
         snapshot_sink: None,
+        simulated: false,
         runtime: Default::default(),
         metadata: Default::default(),
     };
@@ -290,6 +291,7 @@ async fn a_collector_without_profiles_refuses_the_query_instead_of_answering_it(
         config_sources: Vec::new(),
         history_source: None,
         snapshot_sink: None,
+        simulated: false,
         runtime: Default::default(),
         metadata: Default::default(),
     };

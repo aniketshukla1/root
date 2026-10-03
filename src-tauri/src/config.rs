@@ -148,6 +148,16 @@ pub struct ConnectionProfile {
     /// [`crate::influx`] for why that asymmetry is deliberate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snapshot_sink: Option<crate::influx::SnapshotSink>,
+    /// Part of the live demo rather than anything real.
+    ///
+    /// Set only by starting the demo, never by the connection form, and the
+    /// one flag every outward-facing path checks: a simulated connection is
+    /// polled by [`crate::sim`] instead of over the network, is never written
+    /// to a history database or a warehouse, and never notifies anybody. An
+    /// invented outage that paged a real on-call would be the worst thing
+    /// this feature could do.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub simulated: bool,
 }
 
 fn default_true() -> bool {
@@ -319,6 +329,47 @@ pub struct AppConfig {
     /// app, which has nobody to authenticate to.
     #[serde(default)]
     pub oidc: crate::oidc::OidcSettings,
+    /// The live demo, while one is running. See [`crate::sim`].
+    #[serde(default)]
+    pub demo: DemoSettings,
+}
+
+/// A simulated estate, running in place of — or beside — a real one.
+///
+/// Persisted so a restart replays the same story rather than starting a new
+/// one: the simulation is a pure function of the clock and this, so the same
+/// settings redraw the same two hours of history.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DemoSettings {
+    /// When it was started. `None` means no demo is running.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Varies the noise and which story comes first, so two demos are not
+    /// frame-for-frame identical.
+    pub seed: u64,
+    /// Real connections switched off for the demo's sake, to switch back on
+    /// when it ends. Only these: a connection that was already off stays off.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub paused: Vec<String>,
+    /// Incidents started on demand, so a restart replays them as well.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<DemoTrigger>,
+}
+
+impl DemoSettings {
+    pub fn running(&self) -> bool {
+        self.started_at.is_some()
+    }
+}
+
+/// One "break something now".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DemoTrigger {
+    pub at: chrono::DateTime<chrono::Utc>,
+    /// Which story, as `crate::sim` names them.
+    pub story: String,
 }
 
 /// Where the estate's history is kept, when it is kept anywhere.

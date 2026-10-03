@@ -29,10 +29,22 @@ const INITIAL_LOG_LOOKBACK_MINUTES: i64 = 15;
 /// Stop every poller, then start one for each enabled profile. Called at
 /// startup and whenever the connection list changes.
 pub async fn reload_all(state: Arc<AppState>) {
-    let profiles = state.config.read().await.profiles.clone();
+    let (profiles, demo) = {
+        let config = state.config.read().await;
+        (config.profiles.clone(), config.demo.clone())
+    };
 
     stop_all(&state).await;
     state.collectors.write().await.clear();
+
+    // The live demo's past is drawn before its pollers start, so the first
+    // thing on screen is two hours of history rather than a blank chart.
+    crate::sim::configure(&demo);
+    if demo.running() {
+        let simulated: Vec<ConnectionProfile> =
+            profiles.iter().filter(|p| p.enabled && p.simulated).cloned().collect();
+        crate::sim::backfill(&state, &simulated).await;
+    }
 
     for profile in profiles.into_iter().filter(|p| p.enabled) {
         start_profile(state.clone(), profile).await;
@@ -64,11 +76,17 @@ pub async fn start_profile(state: Arc<AppState>, profile: ConnectionProfile) {
     stop_profile(&state, &profile.id).await;
     let emitter = state.events().await;
 
-    let secret = match secrets::get_secret(&profile.secret_key()).await {
-        Ok(secret) => secret,
-        Err(e) => {
-            tracing::warn!(profile = %profile.name, "could not read the stored credential: {e}");
-            None
+    // A simulated connection has no credential, and asking the keychain for
+    // thirteen of them on every start is thirteen chances of a prompt.
+    let secret = if profile.simulated {
+        None
+    } else {
+        match secrets::get_secret(&profile.secret_key()).await {
+            Ok(secret) => secret,
+            Err(e) => {
+                tracing::warn!(profile = %profile.name, "could not read the stored credential: {e}");
+                None
+            }
         }
     };
 
@@ -110,6 +128,9 @@ pub async fn start_profile(state: Arc<AppState>, profile: ConnectionProfile) {
         let emitter = state.events().await;
         let interval = profile.poll_interval();
         let log_limit = profile.options.log_limit();
+        // Only real readings leave the process. A simulated series written
+        // into somebody's history database would sit there looking real.
+        let durable = !profile.simulated;
 
         loop {
             // --- Health snapshot
@@ -141,7 +162,7 @@ pub async fn start_profile(state: Arc<AppState>, profile: ConnectionProfile) {
                     // microseconds: a reader who sees a snapshot event should
                     // find the row behind it. Failure is logged and dropped —
                     // a database that is down is not a service outage.
-                    if let Some(store) = state.store.read().await.as_ref() {
+                    if let Some(store) = state.store.read().await.as_ref().filter(|_| durable) {
                         if let Err(e) = store.write_snapshot(&snapshot).await {
                             tracing::warn!(profile = %profile.name, "history write failed: {e}");
                         }
@@ -151,9 +172,10 @@ pub async fn start_profile(state: Arc<AppState>, profile: ConnectionProfile) {
                     // hold up a poll cycle, and a write that failed must never
                     // become an opinion about the service being polled — root
                     // filing its notes badly is not the service degrading.
-                    if writing
-                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                        .is_ok()
+                    if durable
+                        && writing
+                            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                            .is_ok()
                     {
                         let sink_state = Arc::clone(&state);
                         let sink_snapshot = snapshot.clone();
@@ -176,7 +198,7 @@ pub async fn start_profile(state: Arc<AppState>, profile: ConnectionProfile) {
                     if !observed.is_empty() {
                         let fresh = state.changes.write().await.record(observed);
                         if !fresh.is_empty() {
-                            if let Some(store) = state.store.read().await.as_ref() {
+                            if let Some(store) = state.store.read().await.as_ref().filter(|_| durable) {
                                 for change in &fresh {
                                     if let Err(e) = store.write_change(change).await {
                                         tracing::warn!("change write failed: {e}");
@@ -201,7 +223,7 @@ pub async fn start_profile(state: Arc<AppState>, profile: ConnectionProfile) {
                             .collect();
                         (raised, current)
                     };
-                    if let Some(store) = state.store.read().await.as_ref() {
+                    if let Some(store) = state.store.read().await.as_ref().filter(|_| durable) {
                         for alert in &current {
                             if let Err(e) = store.write_alert(alert, false).await {
                                 tracing::warn!("alert write failed: {e}");
@@ -238,7 +260,7 @@ pub async fn start_profile(state: Arc<AppState>, profile: ConnectionProfile) {
                             .insert(profile.id.clone(), newest.max(since));
                     }
                     state.logs.write().await.push_many(events.clone());
-                    if let Some(store) = state.store.read().await.as_ref() {
+                    if let Some(store) = state.store.read().await.as_ref().filter(|_| durable) {
                         if let Err(e) = store.write_logs(&events).await {
                             tracing::warn!(profile = %profile.name, "log write failed: {e}");
                         }

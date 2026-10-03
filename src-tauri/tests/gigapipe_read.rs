@@ -35,6 +35,7 @@ fn collector(endpoint: String) -> Box<dyn Collector> {
         config_sources: Vec::new(),
         history_source: None,
         snapshot_sink: None,
+        simulated: false,
         runtime: Default::default(),
         metadata: ProfileOptions::default(),
     };
@@ -370,6 +371,7 @@ async fn a_store_read_against_a_non_gigapipe_connection_is_refused() {
         config_sources: Vec::new(),
         history_source: None,
         snapshot_sink: None,
+        simulated: false,
         runtime: Default::default(),
         metadata: ProfileOptions::default(),
     };

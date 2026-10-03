@@ -802,6 +802,33 @@ npm run tauri build
 
 Requires Node 18+, a Rust toolchain, and the Tauri 2 platform prerequisites.
 
+### The live demo
+
+Nothing to connect yet? Start the live demo from the first-run screen, or from
+Settings → Connections. It adds a simulated online shop — thirteen connections
+across eleven collector kinds: a load balancer, a Docker host, Postgres, Redis,
+Kafka, RabbitMQ, Elasticsearch, Kubernetes, Jenkins, a Linux host and a
+telemetry store — with two hours of history already replayed behind it.
+
+Every twelve minutes something goes wrong, the way real outages do: a deploy
+ships an N+1 query and starves the orders database, a consumer crash-loops on
+the data cluster while its Kafka lag climbs, a reindex drives a search node into
+GC. Between them, benign deploys ship and two capacity trends climb slowly
+enough to be forecast. A band across every screen says which story is playing;
+**Break something** starts one on demand and **End demo** removes the estate
+and everything it left behind.
+
+It is not a mock-up. Each simulated connection is an ordinary profile answered
+by `sim::SimCollector` instead of the network, shaped exactly like its real
+collector's output, so alerts, deploy markers, incident grouping, config rules,
+forecasts, traces and flame graphs all reach it through the code paths a real
+estate uses. Three things it never does: notify a channel, write to a history
+database or warehouse, or run an action against anything. Starting it pauses
+your real connections by default and ending it switches them back on.
+
+This is separate from [the demo estate](#the-demo-estate) below, which is real
+software in Docker, misconfigured on purpose, for testing the rules against.
+
 ### Previewing the UI without a backend
 
 ```bash

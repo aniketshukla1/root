@@ -491,20 +491,31 @@ impl Script {
 
         let mut counters: Vec<(&str, i64)> = JOBS.to_vec();
         let mut out = Vec::with_capacity(raw.len());
+        let mut outage_failed_last = false;
         for (job, start, secs, mut result, mut what) in raw {
             let Some(slot) = counters.iter_mut().find(|(j, _)| *j == job) else {
                 continue;
             };
             let number = slot.1;
             slot.1 += 1;
-            // A smoke run while a bad checkout build is live fails on
-            // checkout, whatever the dice said — the test doing its job.
             if job == "e2e-smoke" {
+                // A smoke run while a bad checkout build is live fails on
+                // checkout, whatever the dice said — the test doing its job.
                 let mid = start + Duration::milliseconds((secs * 500.0) as i64);
                 if effects_at(instances, mid).checkout_errors > 0.3 {
                     result = BuildResult::Failure;
                     what = "Smoke suite: 3 of 38 failed (checkout flow timed out after 30s)"
                         .to_string();
+                    outage_failed_last = true;
+                } else {
+                    // And the run after it passes. A flake there would leave
+                    // CI red after the estate recovered, which reads as root
+                    // being wrong about the recovery.
+                    if outage_failed_last {
+                        result = BuildResult::Success;
+                        what = "Smoke suite: 38 of 38 passed".to_string();
+                    }
+                    outage_failed_last = false;
                 }
             }
             out.push(Build {
@@ -761,6 +772,18 @@ mod tests {
             for (i, n) in numbers.iter().enumerate() {
                 assert_eq!(*n, first + i as i64);
             }
+        }
+    }
+
+    #[test]
+    fn ci_is_green_again_soon_after_the_deploy_recovers() {
+        for seed in 0..40 {
+            let mut s = script();
+            s.seed = seed;
+            let deploy = s.next(s.started_at).unwrap();
+            let m = s.moment(deploy.at(470.0));
+            let last = m.job_builds("e2e-smoke").into_iter().rev().find(|b| !b.building(m.t)).unwrap();
+            assert_eq!(last.result, BuildResult::Success, "seed {seed}: {}", last.what);
         }
     }
 

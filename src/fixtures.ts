@@ -79,9 +79,6 @@ function seeded(seed: number) {
   };
 }
 
-/** Poll interval the fixtures pretend to have been collected at. */
-const STEP_MS = 15_000;
-
 /**
  * How long a series runs.
  *
@@ -92,7 +89,16 @@ const STEP_MS = 15_000;
  * short of it, so every projection on the demo estate was correctly refused
  * and the capacity columns all read "not knowable yet".
  */
-const SAMPLES = 240;
+const SAMPLES = (() => {
+  // `?samples=100000` packs that many into the same hour, to try the charts
+  // at the volume a real high-frequency series reaches.
+  const asked =
+    typeof window === "undefined" ? NaN : Number(new URLSearchParams(window.location.search).get("samples"));
+  return Number.isInteger(asked) && asked >= 2 ? Math.min(asked, 1_000_000) : 240;
+})();
+
+/** Poll interval the fixtures pretend to have been collected at: 15 s by default. */
+const STEP_MS = 3_600_000 / SAMPLES;
 
 /** The step figures below were tuned at this many points. See `series`. */
 const SAMPLES_TUNED_AT = 60;

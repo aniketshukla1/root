@@ -1,8 +1,8 @@
-// Charts are hand-drawn SVG rather than a charting dependency, because every
-// form here is narrow and the constraints are strict: thin recessive marks, a
-// hover layer on everything that plots, one y-axis per chart (two units means
-// two charts, never two scales), and status colours that never double as
-// series identity.
+// Time series draw through uPlot; the small forms (sparklines, the log
+// histogram, meters) stay hand-drawn SVG. Either way the constraints are the
+// same: thin recessive marks, a hover layer on everything that plots, one
+// y-axis per chart (two units means two charts, never two scales), and status
+// colours that never double as series identity.
 //
 // TIME DOMAIN. `TimeSeries` and `LogHistogram` position marks by *timestamp*
 // against an explicit `[from, to]` domain, not by array index. That is what
@@ -13,16 +13,26 @@
 
 import {
   useEffect,
-  useId,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import uPlot from "uplot";
+import "uplot/dist/uPlot.min.css";
 
 import { formatMetricValue, formatTime } from "../format";
 import type { LogLevel, MetricUnit, Point } from "../types";
+import {
+  BYTE_INCRS,
+  legendClick,
+  nearestIndex,
+  panRange,
+  SECOND_INCRS,
+  windowStats,
+  withAlpha,
+  yRange,
+} from "./plot-math";
 import { cx } from "./primitives";
 
 /** Inclusive millisecond bounds of a chart's x-axis. */
@@ -176,18 +186,118 @@ export interface Series {
   color: string;
   points: Point[];
   warnAbove?: number;
+  /** Shown before the label in the legend, such as the service's mark. */
+  icon?: ReactNode;
+}
+
+/** A series' samples as numbers, parsed once per points array however often
+ *  the panel re-renders — a shared crosshair re-renders every panel on every
+ *  mouse move, and a 100,000-point series must not be re-parsed each time. */
+interface Column {
+  ts: Float64Array;
+  vs: Float64Array;
+}
+
+const parsed = new WeakMap<Point[], Column>();
+
+function columnOf(points: Point[]): Column {
+  let column = parsed.get(points);
+  if (!column) {
+    const ts = new Float64Array(points.length);
+    const vs = new Float64Array(points.length);
+    for (let i = 0; i < points.length; i += 1) {
+      ts[i] = ms(points[i].t);
+      vs[i] = points[i].v;
+    }
+    column = { ts, vs };
+    parsed.set(points, column);
+  }
+  return column;
+}
+
+/** uPlot's data: one shared time column, then each series twice — its glow,
+ *  then itself — from the same array. Series sampled at different moments
+ *  are joined on the union of their timestamps and drawn across the gaps. */
+function align(columns: Column[]): uPlot.AlignedData {
+  const joined: uPlot.AlignedData =
+    columns.length === 1
+      ? [columns[0].ts, columns[0].vs]
+      : uPlot.join(columns.map((c) => [c.ts, c.vs] as uPlot.AlignedData));
+  const [x, ...ys] = joined;
+  return [x, ...ys.flatMap((y) => [y, y])] as uPlot.AlignedData;
+}
+
+/** A CSS colour as canvas takes it: a custom property is read off `el`. */
+function resolveColor(el: Element, color: string): string {
+  const custom = /^var\((--[\w-]+)\)$/.exec(color.trim());
+  if (!custom) return color;
+  return getComputedStyle(el).getPropertyValue(custom[1]).trim() || color;
+}
+
+/** Bumps when the theme flips, so canvas colours are read again. */
+function useThemeTick(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTick((t) => t + 1));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+  return tick;
+}
+
+/** Past a limit the line turns: one gradient with a hard stop at the limit,
+ *  so only the stretch that broke it changes colour. */
+function limitStroke(u: uPlot, limit: number | undefined, below: string, above: string) {
+  if (limit === undefined) return below;
+  const { top, height } = u.bbox;
+  const y = u.valToPos(limit, "y", true);
+  if (!Number.isFinite(y) || y <= top) return below;
+  if (y >= top + height) return above;
+  const stop = (y - top) / height;
+  const gradient = u.ctx.createLinearGradient(0, top, 0, top + height);
+  gradient.addColorStop(0, above);
+  gradient.addColorStop(stop, above);
+  gradient.addColorStop(stop, below);
+  gradient.addColorStop(1, below);
+  return gradient;
+}
+
+const clockFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const secondsFormat = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+const dayFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
+/** Time ticks: the clock, and the date wherever a tick crosses midnight. A
+ *  label centred on a tick at the plot's right edge would be cut in half, so
+ *  that one goes and its gridline stays. */
+function timeTicks(u: uPlot, splits: number[], incr: number): (string | null)[] {
+  const right = u.bbox.width / uPlot.pxRatio;
+  return splits.map((t, i) => {
+    if (u.valToPos(t, "x") > right - 16) return null;
+    if (incr >= 86_400_000) return dayFormat.format(t);
+    if (i > 0 && new Date(t).getDate() !== new Date(splits[i - 1]).getDate()) return dayFormat.format(t);
+    return (incr < 60_000 ? secondsFormat : clockFormat).format(t);
+  });
 }
 
 /**
- * Multi-series line chart on an explicit time domain.
+ * Multi-series line chart on an explicit time domain, drawn by uPlot — the
+ * engine inside Grafana's time-series panel — so round ticks, time ticks and a
+ * 100,000-point series come from code built for them.
  *
  * Every series on one chart must share a unit — the caller facets by unit
  * before it gets here. A second y-scale is never an option: it lets any two
  * shapes be made to look correlated.
  *
  * `hoverTime` / `onHoverTime` are controlled, so a parent can drive one
- * crosshair across a whole page of panels. Leave them out and the chart hovers
- * on its own.
+ * crosshair across a whole page of panels; leave them out and the chart
+ * hovers on its own. Drag to zoom: with `onBrush` the parent owns the window,
+ * without it the chart zooms itself and a double-click zooms back out.
+ * Shift-drag, or a sideways scroll, pans.
  */
 export function TimeSeries({
   series,
@@ -199,6 +309,7 @@ export function TimeSeries({
   hoverTime,
   onHoverTime,
   onBrush,
+  legendExtra,
 }: {
   series: Series[];
   unit: MetricUnit;
@@ -210,46 +321,366 @@ export function TimeSeries({
   onHoverTime?: (t: number | null) => void;
   /** Drag across the plot to pick a narrower window. */
   onBrush?: (range: Domain) => void;
+  /** One more legend column after the stats, for what only the caller knows. */
+  legendExtra?: { label: string; render: (series: Series) => ReactNode };
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
-  // Gradient and clip ids must be unique on a page of twenty charts.
-  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const host = useRef<HTMLDivElement>(null);
+  const plot = useRef<uPlot | null>(null);
+  const theme = useThemeTick();
   const [localHover, setLocalHover] = useState<number | null>(null);
-  const [brush, setBrush] = useState<{ from: number; to: number } | null>(null);
+  const [zoom, setZoom] = useState<Domain | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+  // Whether the pointer is over this panel, as opposed to a crosshair synced
+  // from another one: only the panel being read shows the tooltip.
+  const [pointer, setPointer] = useState(false);
 
   const controlled = onHoverTime !== undefined;
   const hover = controlled ? (hoverTime ?? null) : localHover;
-  const setHover = (t: number | null) => (controlled ? onHoverTime!(t) : setLocalHover(t));
+  const view: Domain = onBrush ? domain : (zoom ?? domain);
 
-  const plotted = useMemo(() => series.filter((s) => s.points.length > 1), [series]);
+  const plotted = series.filter((s) => s.points.length > 1);
+  const columns = plotted.map((s) => columnOf(s.points));
+  const single = plotted.length === 1;
 
-  // Wide enough for a formatted byte value ("284.1 GB") at the tick size.
-  const padL = 54;
-  const padR = 8;
-  const padT = annotations && annotations.length > 0 ? 12 : 8;
-  const padB = 18;
-  const innerW = Math.max(0, width - padL - padR);
-  const innerH = height - padT - padB;
+  // New data only when a points array actually changed, not on every render.
+  const aligned = useRef<{ columns: Column[]; data: uPlot.AlignedData } | null>(null);
+  if (
+    columns.length > 0 &&
+    (!aligned.current ||
+      aligned.current.columns.length !== columns.length ||
+      aligned.current.columns.some((c, i) => c !== columns[i]))
+  ) {
+    aligned.current = { columns, data: align(columns) };
+  }
+  const data = aligned.current?.data;
 
-  const [from, to] = domain;
-  const spanMs = Math.max(1, to - from);
+  // What the drawing is made of, as opposed to the data under it.
+  const shape = [
+    height,
+    unit,
+    theme,
+    plotted.map((s) => `${s.key}|${s.color}|${s.warnAbove ?? ""}`).join(","),
+    (annotations?.length ?? 0) > 0,
+  ].join("/");
 
-  const scale = useMemo(() => {
-    const all = plotted.flatMap((s) =>
-      s.points.filter((p) => {
-        const t = ms(p.t);
-        return t >= from && t <= to;
-      }).map((p) => p.v),
-    );
-    const thresholds = plotted
-      .map((s) => s.warnAbove)
-      .filter((v): v is number => v !== undefined);
-    let [lo, hi] = extent([...all, ...thresholds]);
-    // Anchor to zero when the data sits close to it, so a small wobble high
-    // above the baseline is not drawn as a mountain range.
-    if (lo > 0 && lo < (hi - lo) * 1.2) lo = 0;
-    return { lo, hi };
-  }, [plotted, from, to]);
+  // Where there is data at all: panning stops at its edges.
+  const bounds: Domain =
+    columns.length > 0
+      ? [
+          Math.min(...columns.map((c) => c.ts[0])),
+          Math.max(...columns.map((c) => c.ts[c.ts.length - 1])),
+        ]
+      : view;
+
+  // Latest values for the callbacks uPlot holds on to.
+  const live = useRef({
+    view,
+    bounds,
+    width,
+    data,
+    annotations,
+    syncing: false,
+    hover: (t: number | null) => (controlled ? onHoverTime!(t) : setLocalHover(t)),
+    setWindow: (range: Domain) => (onBrush ? onBrush(range) : setZoom(range)),
+    resetZoom: () => setZoom(null),
+    setPointer,
+  });
+  live.current = {
+    ...live.current,
+    view,
+    bounds,
+    width,
+    data,
+    annotations,
+    hover: (t) => (controlled ? onHoverTime!(t) : setLocalHover(t)),
+    setWindow: (range) => (onBrush ? onBrush(range) : setZoom(range)),
+  };
+
+  const ready = width > 0 && plotted.length > 0;
+
+  useEffect(() => {
+    const el = host.current;
+    const initial = live.current.data;
+    if (!ready || !el || !initial) return;
+
+    const css = (color: string) => resolveColor(el, color);
+    const ink = css("var(--color-ink-4)");
+    const grid = css("var(--color-line)");
+    const warn = css("var(--color-warn)");
+    const crit = css("var(--color-crit)");
+    const mono = getComputedStyle(el).getPropertyValue("--font-mono").trim() || "monospace";
+    const font = `10px ${mono}`;
+    const light = document.documentElement.dataset.theme === "light";
+    const glow = light ? 0.06 : 0.14;
+    const glowOver = light ? 0.14 : 0.28;
+    const px = uPlot.pxRatio;
+    const limits = [
+      ...new Set(plotted.map((s) => s.warnAbove).filter((v): v is number => v !== undefined)),
+    ];
+
+    const lines: uPlot.Series[] = [{}];
+    for (const s of plotted) {
+      const color = css(s.color);
+      // The glow: the same line, wide and faint, under it — and the area
+      // wash rides on it so the fill never covers the glow.
+      lines.push({
+        scale: "y",
+        spanGaps: true,
+        points: { show: false },
+        width: 6,
+        stroke: (u) => limitStroke(u, s.warnAbove, withAlpha(color, glow), withAlpha(warn, glowOver)),
+        ...(single
+          ? {
+              fill: (u: uPlot) => {
+                const { top, height: h } = u.bbox;
+                const wash = u.ctx.createLinearGradient(0, top, 0, top + h);
+                wash.addColorStop(0, withAlpha(color, 0.2));
+                wash.addColorStop(1, withAlpha(color, 0));
+                return wash;
+              },
+            }
+          : {}),
+      });
+      lines.push({
+        label: s.label,
+        scale: "y",
+        spanGaps: true,
+        points: { show: false },
+        width: 2,
+        stroke: (u) => limitStroke(u, s.warnAbove, color, warn),
+      });
+    }
+
+    // One window change a frame, and none when the data's edge leaves
+    // nowhere to go.
+    let frame = 0;
+    let pending: Domain | null = null;
+    const panTo = (u: uPlot, next: Domain) => {
+      if (next[0] === u.scales.x.min && next[1] === u.scales.x.max) return;
+      pending = next;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (pending) live.current.setWindow(pending);
+      });
+    };
+
+    const startPan = (u: uPlot, e: MouseEvent) => {
+      const startX = e.clientX;
+      const start: Domain = [u.scales.x.min ?? view[0], u.scales.x.max ?? view[1]];
+      const move = (ev: MouseEvent) =>
+        panTo(u, panRange(start, ev.clientX - startX, u.over.clientWidth, live.current.bounds));
+      const up = () => {
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", up);
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
+    };
+
+    const opts: uPlot.Options = {
+      width: live.current.width,
+      height,
+      ms: 1,
+      padding: [(annotations?.length ?? 0) > 0 ? 12 : 8, 8, 0, 0],
+      legend: { show: false },
+      cursor: {
+        x: true,
+        y: false,
+        points: { show: false },
+        drag: { x: true, y: false, setScale: false, dist: 8 },
+        bind: {
+          mousedown: (u, _target, handler) => (e) => {
+            if (e.shiftKey) {
+              startPan(u, e);
+              return null;
+            }
+            return handler(e);
+          },
+          dblclick: () => () => {
+            live.current.resetZoom();
+            return null;
+          },
+        },
+      },
+      scales: {
+        x: { time: true },
+        y: { range: (_u, min, max) => yRange(min, max, limits) },
+      },
+      axes: [
+        {
+          font,
+          stroke: ink,
+          grid: { stroke: grid, width: 1 },
+          ticks: { show: false },
+          size: 20,
+          gap: 4,
+          space: 72,
+          values: (u, splits, _axis, _space, incr) => timeTicks(u, splits, incr),
+        },
+        {
+          font,
+          stroke: ink,
+          grid: { stroke: grid, width: 1 },
+          ticks: { show: false },
+          gap: 6,
+          // About four ticks whatever the panel's height: a fixed spacing
+          // left a 104px card with a single label.
+          space: (_u, _axis, _min, _max, dim) => Math.max(18, dim / 4),
+          // Wide enough for the longest label at this size, and no wider.
+          size: (_u, values) =>
+            values ? Math.max(...values.map((v) => String(v).length)) * 6.2 + 14 : 40,
+          ...(unit === "bytes" ? { incrs: BYTE_INCRS } : unit === "seconds" ? { incrs: SECOND_INCRS } : {}),
+          values: (_u, splits) => splits.map((v) => formatMetricValue(v, unit)),
+        },
+      ],
+      series: lines,
+      hooks: {
+        // Under the lines: the zone past each limit, the limit itself, and
+        // a dashed line at each annotated moment.
+        drawAxes: [
+          (u) => {
+            const { ctx } = u;
+            const { left, top, width: w, height: h } = u.bbox;
+            ctx.save();
+            for (const limit of limits) {
+              const y = Math.round(u.valToPos(limit, "y", true));
+              if (y < top || y > top + h) continue;
+              const zone = ctx.createLinearGradient(0, top, 0, y);
+              zone.addColorStop(0, withAlpha(crit, 0.17));
+              zone.addColorStop(1, withAlpha(crit, 0.02));
+              ctx.fillStyle = zone;
+              ctx.fillRect(left, top, w, y - top);
+              ctx.strokeStyle = withAlpha(warn, 0.55);
+              ctx.lineWidth = px;
+              ctx.setLineDash([3 * px, 3 * px]);
+              ctx.beginPath();
+              ctx.moveTo(left, y + 0.5);
+              ctx.lineTo(left + w, y + 0.5);
+              ctx.stroke();
+            }
+            for (const note of live.current.annotations ?? []) {
+              const x = Math.round(u.valToPos(note.t, "x", true));
+              if (x < left || x > left + w) continue;
+              ctx.strokeStyle = withAlpha(css(note.color), 0.75);
+              ctx.lineWidth = px;
+              ctx.setLineDash([2 * px, 3 * px]);
+              ctx.beginPath();
+              ctx.moveTo(x + 0.5, top);
+              ctx.lineTo(x + 0.5, top + h);
+              ctx.stroke();
+            }
+            ctx.restore();
+          },
+        ],
+        // Annotation heads sit above the plot so they never cover a mark.
+        draw: [
+          (u) => {
+            const { ctx } = u;
+            const { left, top, width: w } = u.bbox;
+            for (const note of live.current.annotations ?? []) {
+              const x = u.valToPos(note.t, "x", true);
+              if (x < left || x > left + w) continue;
+              ctx.fillStyle = css(note.color);
+              ctx.beginPath();
+              ctx.moveTo(x, top - px);
+              ctx.lineTo(x + 4 * px, top - 7 * px);
+              ctx.lineTo(x - 4 * px, top - 7 * px);
+              ctx.closePath();
+              ctx.fill();
+            }
+          },
+        ],
+        setCursor: [
+          (u) => {
+            if (live.current.syncing) return;
+            const left = u.cursor.left ?? -1;
+            live.current.setPointer(left >= 0);
+            live.current.hover(left < 0 ? null : u.posToVal(left, "x"));
+          },
+        ],
+        setSelect: [
+          (u) => {
+            const { left, width: w } = u.select;
+            if (w <= 0) return;
+            const range: Domain = [u.posToVal(left, "x"), u.posToVal(left + w, "x")];
+            u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
+            live.current.setWindow(range);
+          },
+        ],
+      },
+    };
+
+    const u = new uPlot(opts, initial, el);
+    u.setScale("x", { min: live.current.view[0], max: live.current.view[1] });
+
+    // A sideways scroll pans; an up-and-down one still scrolls the page.
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      const min = u.scales.x.min ?? live.current.view[0];
+      const max = u.scales.x.max ?? live.current.view[1];
+      panTo(u, panRange([min, max], -e.deltaX, u.over.clientWidth, live.current.bounds));
+    };
+    u.over.addEventListener("wheel", onWheel, { passive: false });
+
+    plot.current = u;
+    return () => {
+      cancelAnimationFrame(frame);
+      u.over.removeEventListener("wheel", onWheel);
+      u.destroy();
+      plot.current = null;
+    };
+    // `shape` stands for everything the drawing is built from.
+  }, [shape, ready]);
+
+  useEffect(() => {
+    const u = plot.current;
+    if (!u || !data) return;
+    u.setData(data, false);
+    u.setScale("x", { min: view[0], max: view[1] });
+  }, [data]);
+
+  useEffect(() => {
+    plot.current?.setScale("x", { min: view[0], max: view[1] });
+  }, [view[0], view[1]]);
+
+  useEffect(() => {
+    if (width > 0) plot.current?.setSize({ width, height });
+  }, [width, height]);
+
+  useEffect(() => {
+    plot.current?.redraw(false, false);
+  }, [annotations]);
+
+  useEffect(() => {
+    const u = plot.current;
+    if (!u) return;
+    plotted.forEach((s, i) => {
+      const show = !hidden.has(s.key);
+      u.setSeries(1 + i * 2, { show });
+      u.setSeries(2 + i * 2, { show });
+    });
+  }, [hidden, shape]);
+
+  // Another panel moved the shared crosshair: put this one's on the same moment.
+  useEffect(() => {
+    const u = plot.current;
+    if (!u) return;
+    const current = u.cursor.left ?? -10;
+    if (hover === null) {
+      if (current < 0) return;
+    } else if (Math.abs(current - u.valToPos(hover, "x")) < 1) {
+      return;
+    }
+    live.current.syncing = true;
+    u.setCursor({
+      left: hover === null ? -10 : u.valToPos(hover, "x"),
+      top: hover === null ? -10 : u.over.clientHeight / 2,
+    });
+    live.current.syncing = false;
+  }, [hover]);
 
   if (plotted.length === 0) {
     return (
@@ -263,321 +694,143 @@ export function TimeSeries({
     );
   }
 
-  const x = (t: number) => padL + ((t - from) / spanMs) * innerW;
-  const y = (v: number) =>
-    padT + innerH - ((v - scale.lo) / (scale.hi - scale.lo || 1)) * innerH;
-  const timeAt = (px: number) => from + ((px - padL) / (innerW || 1)) * spanMs;
+  const u = plot.current;
+  const xMin = u?.scales.x.min ?? view[0];
+  const xMax = u?.scales.x.max ?? view[1];
+  const showHover = u !== null && hover !== null && hover >= xMin && hover <= xMax;
+  const offsetLeft = u ? u.bbox.left / uPlot.pxRatio : 0;
+  const offsetTop = u ? u.bbox.top / uPlot.pxRatio : 0;
 
-  const ticks = [scale.lo, scale.lo + (scale.hi - scale.lo) / 2, scale.hi];
-  const clipId = `plot-${Math.round(from)}-${Math.round(height)}-${uid}`;
-  const single = plotted.length === 1;
-  const inRange = (v?: number): v is number => v !== undefined && v >= scale.lo && v <= scale.hi;
-  const limits = [...new Set(plotted.map((s) => s.warnAbove).filter(inRange))];
-
-  const onMove = (event: React.MouseEvent<SVGSVGElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const px = event.clientX - rect.left;
-    if (px < padL || px > padL + innerW) {
-      setHover(null);
-      return;
-    }
-    const t = timeAt(px);
-    setHover(t);
-    if (brush) setBrush({ ...brush, to: t });
-  };
-
-  const onDown = (event: React.MouseEvent<SVGSVGElement>) => {
-    if (!onBrush) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const px = event.clientX - rect.left;
-    if (px < padL || px > padL + innerW) return;
-    const t = timeAt(px);
-    setBrush({ from: t, to: t });
-  };
-
-  const onUp = () => {
-    if (!brush || !onBrush) return setBrush(null);
-    const lo = Math.min(brush.from, brush.to);
-    const hi = Math.max(brush.from, brush.to);
-    // Ignore a click that happened to land inside the plot.
-    if (x(hi) - x(lo) > 8) onBrush([lo, hi]);
-    setBrush(null);
-  };
-
-  /** Nearest sample to the crosshair, so the tooltip reads real values. */
-  const nearest = (s: Series): Point | undefined => {
-    if (hover === null) return undefined;
-    let best: Point | undefined;
-    let bestGap = Infinity;
-    for (const p of s.points) {
-      const gap = Math.abs(ms(p.t) - hover);
-      if (gap < bestGap) {
-        bestGap = gap;
-        best = p;
-      }
-    }
-    // Beyond a couple of pixels' worth of time there is no sample to report.
-    return bestGap <= (spanMs / Math.max(1, innerW)) * 6 ? best : undefined;
-  };
-
-  const inView = (annotations ?? []).filter((a) => a.t >= from && a.t <= to);
+  // Nearest real sample per series, within a few pixels' worth of time.
+  const readings =
+    showHover && u
+      ? plotted.flatMap((s, i) => {
+          if (hidden.has(s.key)) return [];
+          const { ts, vs } = columns[i];
+          const k = nearestIndex(ts, hover);
+          const tolerance = ((xMax - xMin) / Math.max(1, u.over.clientWidth)) * 6;
+          if (k < 0 || Math.abs(ts[k] - hover) > tolerance) return [];
+          return [
+            {
+              series: s,
+              value: vs[k],
+              x: offsetLeft + u.valToPos(ts[k], "x"),
+              y: offsetTop + u.valToPos(vs[k], "y"),
+            },
+          ];
+        })
+      : [];
+  const hoverX = showHover && u ? offsetLeft + u.valToPos(hover, "x") : 0;
+  const notesNear =
+    showHover && u
+      ? (annotations ?? []).filter((a) => Math.abs(offsetLeft + u.valToPos(a.t, "x") - hoverX) < 6)
+      : [];
+  const keys = plotted.map((s) => s.key);
 
   return (
     <div ref={ref} className="relative">
-      {width > 0 && (
-        <svg
-          width={width}
-          height={height}
-          onMouseMove={onMove}
-          onMouseLeave={() => {
-            setHover(null);
-            setBrush(null);
-          }}
-          onMouseDown={onDown}
-          onMouseUp={onUp}
-          className={cx("block", onBrush && "cursor-crosshair select-none")}
+      <div ref={host} className={cx("uplot-host", onBrush && "select-none")} style={{ height }} />
+
+      {zoom && !onBrush && (
+        <button
+          type="button"
+          onClick={() => setZoom(null)}
+          className="absolute top-0 right-1 z-10 rounded border border-line bg-panel px-1.5 py-0.5 text-2xs text-ink-3 hover:text-ink"
         >
-          <defs>
-            <clipPath id={clipId}>
-              <rect x={padL} y={padT} width={innerW} height={innerH} />
-            </clipPath>
-            {/* Past a limit, the plot deepens toward red the further it goes —
-                the same hue as the run-up to an alert. */}
-            <linearGradient id={`${uid}-zone`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" style={{ stopColor: "var(--color-crit)", stopOpacity: 0.17 }} />
-              <stop offset="100%" style={{ stopColor: "var(--color-crit)", stopOpacity: 0.02 }} />
-            </linearGradient>
-            {single && (
-              <linearGradient id={`${uid}-area`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" style={{ stopColor: plotted[0].color, stopOpacity: 0.2 }} />
-                <stop offset="100%" style={{ stopColor: plotted[0].color, stopOpacity: 0 }} />
-              </linearGradient>
-            )}
-            {plotted.map((s, i) =>
-              inRange(s.warnAbove) ? (
-                <clipPath key={s.key} id={`${uid}-over-${i}`}>
-                  <rect x={padL} y={padT} width={innerW} height={Math.max(0, y(s.warnAbove) - padT)} />
-                </clipPath>
-              ) : null,
-            )}
-          </defs>
-
-          {/* Recessive grid — present enough to read a value against, quiet
-              enough that the data is what you see. */}
-          {ticks.map((tick) => (
-            <g key={tick}>
-              <line
-                x1={padL}
-                x2={padL + innerW}
-                y1={y(tick)}
-                y2={y(tick)}
-                stroke="var(--color-line)"
-                strokeWidth="1"
-              />
-              {/* `tnum` rather than `num`: the latter also sets a font-size, and
-                  a CSS size beats the SVG attribute, which overflows the gutter
-                  and clips the leading digit. */}
-              <text
-                x={padL - 6}
-                y={y(tick) + 3}
-                textAnchor="end"
-                className="tnum"
-                fontSize="9"
-                fill="var(--color-ink-4)"
-              >
-                {formatMetricValue(tick, unit)}
-              </text>
-            </g>
-          ))}
-
-          {plotted.map((s) =>
-            s.warnAbove !== undefined &&
-            s.warnAbove >= scale.lo &&
-            s.warnAbove <= scale.hi ? (
-              <line
-                key={`limit-${s.key}`}
-                x1={padL}
-                x2={padL + innerW}
-                y1={y(s.warnAbove)}
-                y2={y(s.warnAbove)}
-                stroke="var(--color-warn)"
-                strokeWidth="1"
-                strokeDasharray="3 3"
-                opacity="0.55"
-              />
-            ) : null,
-          )}
-
-          <g clipPath={`url(#${clipId})`}>
-            {limits.map((limit) => (
-              <rect
-                key={`zone-${limit}`}
-                x={padL}
-                y={padT}
-                width={innerW}
-                height={Math.max(0, y(limit) - padT)}
-                fill={`url(#${uid}-zone)`}
-              />
-            ))}
-
-            {inView.map((annotation) => (
-              <line
-                key={annotation.id}
-                x1={x(annotation.t)}
-                x2={x(annotation.t)}
-                y1={padT}
-                y2={padT + innerH}
-                stroke={annotation.color}
-                strokeWidth="1"
-                strokeDasharray="2 3"
-                opacity="0.75"
-              />
-            ))}
-
-            {plotted.map((s, i) => {
-              const path = s.points
-                .map((p, i) => `${i === 0 ? "M" : "L"}${x(ms(p.t)).toFixed(1)},${y(p.v).toFixed(1)}`)
-                .join(" ");
-              const first = s.points[0];
-              const last = s.points[s.points.length - 1];
-              const area = `${path} L${x(ms(last.t)).toFixed(1)},${padT + innerH} L${x(ms(first.t)).toFixed(1)},${padT + innerH} Z`;
-              const stroke = {
-                fill: "none",
-                strokeLinejoin: "round" as const,
-                strokeLinecap: "round" as const,
-              };
-              return (
-                <g key={s.key}>
-                  {single && <path d={area} fill={`url(#${uid}-area)`} />}
-                  {/* The glow: the same line, wide and faint, under it. */}
-                  <path d={path} {...stroke} stroke={s.color} strokeWidth="6" className="chart-glow" />
-                  <path d={path} {...stroke} stroke={s.color} strokeWidth="2" />
-                  {/* Above its limit the line itself turns, and glows harder:
-                      the stretch that broke the threshold, not the whole
-                      series, is what the eye should land on. */}
-                  {inRange(s.warnAbove) && (
-                    <g clipPath={`url(#${uid}-over-${i})`}>
-                      <path
-                        d={path}
-                        {...stroke}
-                        stroke="var(--color-warn)"
-                        strokeWidth="7"
-                        className="chart-glow-strong"
-                      />
-                      <path d={path} {...stroke} stroke="var(--color-warn)" strokeWidth="2" />
-                    </g>
-                  )}
-                </g>
-              );
-            })}
-
-            {brush && (
-              <rect
-                x={Math.min(x(brush.from), x(brush.to))}
-                y={padT}
-                width={Math.abs(x(brush.to) - x(brush.from))}
-                height={innerH}
-                fill="var(--color-accent)"
-                opacity="0.18"
-              />
-            )}
-          </g>
-
-          {/* Annotation heads sit above the plot so they stay clickable and do
-              not collide with the marks. */}
-          {inView.map((annotation) => (
-            <g key={`head-${annotation.id}`}>
-              <title>{`${annotation.label}${annotation.detail ? ` — ${annotation.detail}` : ""}`}</title>
-              <path
-                d={`M${x(annotation.t)},${padT - 1} l4,-6 l-8,0 Z`}
-                fill={annotation.color}
-              />
-            </g>
-          ))}
-
-          {hover !== null && hover >= from && hover <= to && (
-            <>
-              <line
-                x1={x(hover)}
-                x2={x(hover)}
-                y1={padT}
-                y2={padT + innerH}
-                stroke="var(--color-line-strong)"
-                strokeWidth="1"
-              />
-              {plotted.map((s) => {
-                const point = nearest(s);
-                if (!point) return null;
-                return (
-                  <circle
-                    key={s.key}
-                    cx={x(ms(point.t))}
-                    cy={y(point.v)}
-                    r="3.5"
-                    fill={s.color}
-                    // A 2px ring in the surface colour keeps overlapping
-                    // markers from merging into one blob.
-                    stroke="var(--color-panel)"
-                    strokeWidth="2"
-                  />
-                );
-              })}
-            </>
-          )}
-
-          <text x={padL} y={height - 5} fontSize="9" fill="var(--color-ink-4)" className="tnum">
-            {formatTime(new Date(from).toISOString())}
-          </text>
-          <text
-            x={padL + innerW}
-            y={height - 5}
-            textAnchor="end"
-            fontSize="9"
-            fill="var(--color-ink-4)"
-            className="tnum"
-          >
-            {formatTime(new Date(to).toISOString())}
-          </text>
-        </svg>
+          Zoom out
+        </button>
       )}
 
-      {hover !== null && hover >= from && hover <= to && (
-        <Tooltip x={x(hover)} containerWidth={width}>
-          <div className="mb-1 text-2xs text-ink-4">
-            {formatTime(new Date(hover).toISOString())}
-          </div>
-          {plotted.map((s) => {
-            const point = nearest(s);
-            if (!point) return null;
-            return (
-              <div key={s.key} className="flex items-center gap-2 whitespace-nowrap">
-                <span
-                  className="h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: s.color }}
-                />
-                <span className="max-w-40 truncate text-ink-2">{s.label}</span>
-                <span className="num ml-auto text-ink">{formatMetricValue(point.v, unit)}</span>
-              </div>
-            );
-          })}
-          {inView
-            .filter((a) => Math.abs(x(a.t) - x(hover)) < 6)
-            .map((a) => (
-              <div
-                key={a.id}
-                className="mt-1 flex items-center gap-2 border-t border-line pt-1 whitespace-nowrap"
-              >
-                <span
-                  className="h-1.5 w-1.5 shrink-0 rotate-45"
-                  style={{ background: a.color }}
-                />
-                <span className="max-w-44 truncate text-ink-2">{a.label}</span>
-              </div>
-            ))}
+      {readings.map((r) => (
+        <span
+          key={r.series.key}
+          className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+          // A 2px ring in the surface colour keeps a marker legible where it
+          // crosses another line.
+          style={{
+            left: r.x,
+            top: r.y,
+            background: r.series.color,
+            boxShadow: "0 0 0 2px var(--color-panel)",
+          }}
+        />
+      ))}
+
+      {showHover && (pointer || !controlled) && (
+        <Tooltip x={hoverX} containerWidth={width}>
+          <div className="mb-1 text-2xs text-ink-4">{formatTime(new Date(hover).toISOString())}</div>
+          {readings.map((r) => (
+            <div key={r.series.key} className="flex items-center gap-2 whitespace-nowrap">
+              <span className="h-[2px] w-2.5 shrink-0 rounded-full" style={{ background: r.series.color }} />
+              <span className="num text-ink">{formatMetricValue(r.value, unit)}</span>
+              {!single && <span className="max-w-40 truncate text-ink-3">{r.series.label}</span>}
+            </div>
+          ))}
+          {notesNear.map((a) => (
+            <div
+              key={a.id}
+              className="mt-1 flex items-center gap-2 border-t border-line pt-1 whitespace-nowrap"
+            >
+              <span className="h-1.5 w-1.5 shrink-0 rotate-45" style={{ background: a.color }} />
+              <span className="max-w-44 truncate text-ink-2">{a.label}</span>
+            </div>
+          ))}
         </Tooltip>
       )}
 
-      {showLegend && plotted.length > 1 && <Legend series={plotted} />}
+      {showLegend && plotted.length > 1 && (
+        <table className="mt-2 w-full table-fixed text-2xs">
+          <thead>
+            <tr className="text-ink-4">
+              <th className="text-left font-normal">
+                <span className="sr-only">Series</span>
+              </th>
+              {["Min", "Max", "Avg", "Last"].map((h) => (
+                <th key={h} className="w-16 text-right font-normal">
+                  {h}
+                </th>
+              ))}
+              {legendExtra && <th className="w-[72px] text-right font-normal">{legendExtra.label}</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {plotted.map((s, i) => {
+              const stats = windowStats(columns[i].ts, columns[i].vs, [xMin, xMax]);
+              const off = hidden.has(s.key);
+              const over = stats !== null && s.warnAbove !== undefined && stats.last > s.warnAbove;
+              return (
+                <tr
+                  key={s.key}
+                  onClick={(e) => setHidden((h) => legendClick(keys, h, s.key, e.metaKey || e.ctrlKey))}
+                  className={cx("cursor-pointer hover:bg-raised", off && "opacity-40")}
+                  title="Click to show only this series; ⌘-click to toggle it"
+                >
+                  <td className="py-0.5 pr-2">
+                    <button
+                      type="button"
+                      aria-pressed={!off}
+                      className="flex max-w-full items-center gap-1.5 text-ink-2"
+                    >
+                      <span className="h-[2px] w-3 shrink-0 rounded-full" style={{ background: s.color }} />
+                      {s.icon}
+                      <span className="truncate">{s.label}</span>
+                    </button>
+                  </td>
+                  {(["min", "max", "avg", "last"] as const).map((k) => (
+                    <td
+                      key={k}
+                      className={cx("num text-right", k === "last" && over ? "text-warn" : "text-ink-3")}
+                    >
+                      {stats ? formatMetricValue(stats[k], unit) : "—"}
+                    </td>
+                  ))}
+                  {legendExtra && <td className="num text-right">{legendExtra.render(s)}</td>}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -618,19 +871,6 @@ export function SteadyStats({
         <span key={s.key} className="flex items-baseline gap-1.5">
           <span className="text-xs text-ink-3">{s.label}</span>
           <span className="num text-sm text-ink">{formatMetricValue(s.latest, s.unit)}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-export function Legend({ series }: { series: { key: string; label: string; color: string }[] }) {
-  return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-      {series.map((s) => (
-        <span key={s.key} className="flex items-center gap-1.5 text-2xs text-ink-3">
-          <span className="h-[3px] w-3 shrink-0 rounded-full" style={{ background: s.color }} />
-          {s.label}
         </span>
       ))}
     </div>

@@ -413,7 +413,9 @@ function ComparisonChart({
     color: seriesColor(index),
     points: entry.series.points,
     warnAbove: entry.series.warnAbove,
+    icon: <ServiceMark descriptor={catalog.get(entry.kind)} size={14} />,
   }));
+  const trends = new Map(shown.map((entry) => [entry.profileId, entry.series]));
 
   const breaching = shown.filter(
     (e) => e.series.warnAbove !== undefined && e.series.latest > e.series.warnAbove,
@@ -432,41 +434,22 @@ function ComparisonChart({
         unit={group.unit}
         domain={domain}
         height={150}
-        showLegend={false}
+        // Comparing the same metric across the fleet, the question is which
+        // one gets there first — so the extra column is the horizon.
+        legendExtra={{
+          label: "Limit in",
+          render: (s) => {
+            const metric = trends.get(s.key);
+            return metric && <Horizon trend={metric.trend} unit={metric.unit} />;
+          },
+        }}
       />
-
-      <div className="mt-2 flex flex-col gap-0.5 border-t border-line pt-2">
-        {shown.map((entry, index) => {
-          const { series: s } = entry;
-          const over = s.warnAbove !== undefined && s.latest > s.warnAbove;
-          return (
-            <div key={entry.profileId} className="flex items-center gap-2 text-xs">
-              <span
-                className="h-[3px] w-3 shrink-0 rounded-full"
-                style={{ background: seriesColor(index) }}
-                aria-hidden
-              />
-              <ServiceMark descriptor={catalog.get(entry.kind)} size={14} />
-              <span className="min-w-0 flex-1 truncate text-ink-3">{entry.profileName}</span>
-              {/* Comparing the same metric across the fleet, the question is
-                  which one gets there first — so the column is the horizon,
-                  not the value's recent wobble. */}
-              <span className="num w-[68px] shrink-0 text-right text-2xs">
-                <Horizon trend={s.trend} unit={s.unit} />
-              </span>
-              <span className={cx("num w-16 text-right", over ? "text-warn" : "text-ink")}>
-                {formatMetricValue(s.latest, s.unit)}
-              </span>
-            </div>
-          );
-        })}
-        {overflow > 0 && (
-          <p className="mt-1 text-2xs text-ink-4">
-            {overflow} more connection{overflow === 1 ? "" : "s"} report this metric — scope to one
-            connection to see {overflow === 1 ? "it" : "them"}.
-          </p>
-        )}
-      </div>
+      {overflow > 0 && (
+        <p className="mt-1 text-2xs text-ink-4">
+          {overflow} more connection{overflow === 1 ? "" : "s"} report this metric — scope to one
+          connection to see {overflow === 1 ? "it" : "them"}.
+        </p>
+      )}
     </Panel>
   );
 }

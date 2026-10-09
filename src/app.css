@@ -941,3 +941,16 @@
   .splash-led,
   .splash-arc { animation: none; }
 }
+
+/* uPlot's crosshair and drag selection in root's chrome rather than its
+   defaults (a dashed blue-grey hairline, a grey wash). Outside any layer, and
+   one class more specific than uPlot's own rules, which are unlayered too. */
+.uplot-host .uplot.u-hz .u-cursor-x {
+  border-right: 1px solid var(--color-line-strong);
+}
+.uplot-host .uplot .u-select {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+.uplot-host .uplot .u-over {
+  cursor: crosshair;
+}

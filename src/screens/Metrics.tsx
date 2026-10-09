@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { Catalog } from "../catalog";
 import { DATA_INK, seriesColor, SERIES_CAP } from "../catalog";
 import { formatMetricValue } from "../format";
+import { bySignal } from "../golden";
 import type { EstateModel, ServiceView } from "../model";
 import type { View } from "../nav";
 import type { MetricSeries, MetricUnit } from "../types";
@@ -273,7 +274,10 @@ function ConnectionMetrics({
   const breaching = series.filter(
     (s) => s.warnAbove !== undefined && s.latest > s.warnAbove,
   ).length;
-  const plotted = series.filter((s) => !staticKind(s));
+  const plotted = bySignal(
+    series.filter((s) => !staticKind(s)),
+    service.snapshot.kind,
+  ).flatMap(([, list]) => list);
   const steady = series.filter((s) => staticKind(s));
 
   return (

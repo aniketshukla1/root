@@ -10,8 +10,9 @@ import { listen } from "../events";
 
 import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
-import { DATA_INK, healthColor, isProblem } from "../catalog";
+import { DATA_INK, healthColor, isProblem, SERIES_CAP, seriesColor } from "../catalog";
 import { formatDateTime, formatMetricValue, formatRelative, isBreaching } from "../format";
+import { bySignal, SIGNAL_LABEL } from "../golden";
 import type { Entity, ServiceView } from "../model";
 import type { View } from "../nav";
 import { useHistoryStats } from "../history";
@@ -22,8 +23,10 @@ import type {
   HistogramBucket,
   LogEvent,
   MetricSeries,
+  MetricUnit,
   PastAlert,
   PastChange,
+  Section as Inventory,
 } from "../types";
 import { GLOBAL_STREAMS } from "../types";
 import { AiNote, type AiState } from "../ui/AiNote";
@@ -37,6 +40,7 @@ import {
   TimeSeries,
   type Annotation,
   type Domain,
+  type Series,
 } from "../ui/charts";
 import { Horizon, Rate } from "../ui/capacity";
 import { Bullet } from "../ui/plots";
@@ -107,6 +111,64 @@ function mergeChanges(live: ChangeEvent[], stored: PastChange[]): ChangeEvent[] 
   return [...live, ...extra];
 }
 
+/** One overlay panel: a component column drawn once per component. */
+interface Overlay {
+  id: string;
+  label: string;
+  unit: MetricUnit;
+  series: Series[];
+}
+
+/**
+ * One panel per numeric column of each tracked section, a line per row — CPU
+ * by container — so the component behind a service-level spike shows without
+ * opening each one. Rows in trouble come first, up to the palette's eight; a
+ * panel whose every line is flat is left out, as it is everywhere else.
+ */
+async function componentOverlays(
+  profileId: string,
+  sections: Inventory[],
+  minutes: number,
+): Promise<Overlay[]> {
+  const out: Overlay[] = [];
+  for (const section of sections) {
+    if (!section.tracked || section.rows.length < 2) continue;
+    const picked = [...section.rows]
+      .sort((a, b) => Number(isProblem(b.health)) - Number(isProblem(a.health)))
+      .slice(0, SERIES_CAP);
+    // Colours by table order, so a row keeps its colour while the set holds.
+    const rows = section.rows.filter((row) => picked.includes(row));
+    const histories = await Promise.all(
+      rows.map((row) =>
+        api.getComponentHistory(profileId, section.id, row.id, minutes).catch(() => [] as MetricSeries[]),
+      ),
+    );
+    const byColumn = new Map<string, Overlay>();
+    histories.forEach((list, i) => {
+      for (const s of list) {
+        if (s.points.length < 2) continue;
+        let overlay = byColumn.get(s.key);
+        if (!overlay) {
+          overlay = { id: `${section.id}:${s.key}`, label: `${s.label} · ${section.label}`, unit: s.unit, series: [] };
+          byColumn.set(s.key, overlay);
+        }
+        overlay.series.push({
+          key: rows[i].id,
+          label: rows[i].name,
+          color: seriesColor(i),
+          points: s.points,
+          warnAbove: s.warnAbove,
+        });
+      }
+    });
+    for (const overlay of byColumn.values()) {
+      const moving = overlay.series.some((s) => !staticKind({ unit: overlay.unit, points: s.points }));
+      if (overlay.series.length >= 2 && moving) out.push(overlay);
+    }
+  }
+  return out;
+}
+
 export function ServiceDashboard({
   service,
   catalog,
@@ -128,6 +190,10 @@ export function ServiceDashboard({
   const [minutes, setMinutes] = useState(() => clampMinutes(60, pollSecs));
 
   const [history, setHistory] = useState<MetricSeries[]>([]);
+  const [overlays, setOverlays] = useState<Overlay[]>([]);
+  // The latest inventory, read by the load loop without restarting it each poll.
+  const inventory = useRef(service.snapshot.sections);
+  inventory.current = service.snapshot.sections;
   const [buckets, setBuckets] = useState<HistogramBucket[]>([]);
   const [changes, setChanges] = useState<ChangeEvent[]>([]);
   const [showDeploys, setShowDeploys] = useState(true);
@@ -206,7 +272,7 @@ export function ServiceDashboard({
       // at the ring's edge would report "4 in this window" while the database
       // held forty.
       const deep = retained && minutes > BACKEND_MAX_MINUTES;
-      const [series, histogram, changeEvents, deepChanges] = await Promise.all([
+      const [series, histogram, changeEvents, deepChanges, perComponent] = await Promise.all([
         api.getMetricHistory(profileId, minutes),
         api.logHistogram(
           { profileIds: [profileId], streams: GLOBAL_STREAMS },
@@ -217,8 +283,10 @@ export function ServiceDashboard({
         deep
           ? api.getChangeHistory(profileId, Math.ceil(minutes / 1440))
           : Promise.resolve([] as PastChange[]),
+        componentOverlays(profileId, inventory.current, minutes),
       ]);
       setHistory(series);
+      setOverlays(perComponent);
       setBuckets(histogram);
       setChanges(mergeChanges(changeEvents, deepChanges));
       const now = Date.now();
@@ -373,6 +441,13 @@ export function ServiceDashboard({
   // Flat lines and clocks are one number each: a line of values, not panels.
   const plotted = useMemo(() => withHistory.filter((s) => !staticKind(s)), [withHistory]);
   const steady = useMemo(() => withHistory.filter((s) => staticKind(s)), [withHistory]);
+  // Latency, traffic, errors, saturation, then the rest — the same four
+  // questions in the same order on every kind of service.
+  const signalGroups = useMemo(() => bySignal(plotted, service.snapshot.kind), [plotted, service.snapshot.kind]);
+  const signalMetrics = useMemo(
+    () => bySignal(service.snapshot.metrics, service.snapshot.kind).flatMap(([, list]) => list),
+    [service.snapshot.metrics, service.snapshot.kind],
+  );
   const line = DATA_INK;
 
   const errorLines = useMemo(
@@ -521,7 +596,7 @@ export function ServiceDashboard({
           />
         ) : (
           <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(196px,1fr))]">
-            {service.snapshot.metrics.map((metric) => {
+            {signalMetrics.map((metric) => {
               const series = history.find((s) => s.key === metric.key);
               const over = isBreaching(metric);
               return (
@@ -597,6 +672,7 @@ export function ServiceDashboard({
         title="Time series"
         subtitle={[
           `${plotted.length} charted${steady.length ? `, ${steady.length} steady` : ""}`,
+          overlays.length > 0 && `${overlays.length} by component`,
           service.alerts.length > 0 && `${service.alerts.length} alerts`,
           showDeploys && deploysInView.length > 0 && `${deploysInView.length} deploys`,
         ]
@@ -619,50 +695,79 @@ export function ServiceDashboard({
           />
         ) : (
           <div className="flex flex-col gap-3">
-            {plotted.length > 0 && (
-              <div className="grid gap-3" style={balancedTracks(plotted.length, 340)}>
-                {plotted.map((series) => {
-                  const over = series.warnAbove !== undefined && series.latest > series.warnAbove;
-                  return (
-                    <div key={series.key} className="rounded-md border border-line bg-page p-2.5">
-                      <div className="flex items-baseline gap-2">
-                        <span className="min-w-0 truncate text-xs text-ink-3" title={series.label}>
-                          {series.label}
-                        </span>
-                        <span className="num ml-auto shrink-0 text-2xs text-ink-4">
-                          {formatMetricValue(series.min, series.unit)} –{" "}
-                          {formatMetricValue(series.max, series.unit)}
-                        </span>
-                        <span
-                          className={cx("num shrink-0 text-sm", over ? "text-warn" : "text-ink")}
-                        >
-                          {formatMetricValue(series.latest, series.unit)}
-                        </span>
-                      </div>
+            {signalGroups.map(([signal, group]) => (
+              <div key={signal} className="flex flex-col gap-1.5">
+                {signalGroups.length > 1 && (
+                  <h4 className="text-2xs tracking-[0.08em] text-ink-4 uppercase">{SIGNAL_LABEL[signal]}</h4>
+                )}
+                <div className="grid gap-3" style={balancedTracks(group.length, 340)}>
+                  {group.map((series) => {
+                    const over = series.warnAbove !== undefined && series.latest > series.warnAbove;
+                    return (
+                      <div key={series.key} className="rounded-md border border-line bg-page p-2.5">
+                        <div className="flex items-baseline gap-2">
+                          <span className="min-w-0 truncate text-xs text-ink-3" title={series.label}>
+                            {series.label}
+                          </span>
+                          <span className="num ml-auto shrink-0 text-2xs text-ink-4">
+                            {formatMetricValue(series.min, series.unit)} –{" "}
+                            {formatMetricValue(series.max, series.unit)}
+                          </span>
+                          <span
+                            className={cx("num shrink-0 text-sm", over ? "text-warn" : "text-ink")}
+                          >
+                            {formatMetricValue(series.latest, series.unit)}
+                          </span>
+                        </div>
 
-                      {/* One series per chart, so no legend box — the label names it. */}
+                        {/* One series per chart, so no legend box — the label names it. */}
+                        <TimeSeries
+                          series={[
+                            {
+                              key: series.key,
+                              label: series.label,
+                              color: line,
+                              points: series.points,
+                              warnAbove: series.warnAbove,
+                            },
+                          ]}
+                          unit={series.unit}
+                          domain={view}
+                          height={132}
+                          showLegend={false}
+                          annotations={annotations}
+                          hoverTime={hoverTime}
+                          onHoverTime={setHoverTime}
+                          onBrush={setZoom}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            {overlays.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <h4 className="text-2xs tracking-[0.08em] text-ink-4 uppercase">By component</h4>
+                <div className="grid gap-3" style={balancedTracks(overlays.length, 420)}>
+                  {overlays.map((overlay) => (
+                    <div key={overlay.id} className="rounded-md border border-line bg-page p-2.5">
+                      <div className="mb-1 truncate text-xs text-ink-3" title={overlay.label}>
+                        {overlay.label}
+                      </div>
                       <TimeSeries
-                        series={[
-                          {
-                            key: series.key,
-                            label: series.label,
-                            color: line,
-                            points: series.points,
-                            warnAbove: series.warnAbove,
-                          },
-                        ]}
-                        unit={series.unit}
+                        series={overlay.series}
+                        unit={overlay.unit}
                         domain={view}
-                        height={132}
-                        showLegend={false}
+                        height={150}
                         annotations={annotations}
                         hoverTime={hoverTime}
                         onHoverTime={setHoverTime}
                         onBrush={setZoom}
                       />
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
             )}
             <SteadyStats series={steady} />

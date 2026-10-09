@@ -4,6 +4,7 @@ import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
 import { DATA_INK, isProblem } from "../catalog";
 import { formatDateTime, formatMetricValue, formatRelative, isBreaching } from "../format";
+import { bySignal } from "../golden";
 import { criticalityLabel, environmentLabel, type EstateModel } from "../model";
 import type { ServiceTab, View } from "../nav";
 import { spanOf } from "../ranges";
@@ -352,7 +353,7 @@ export function ServiceDetail({
               />
             )}
 
-            {tab === "metrics" && <MetricsTab history={history} />}
+            {tab === "metrics" && <MetricsTab history={history} kind={snapshot.kind} />}
 
             {tab === "logs" && (
               <LogsTab logs={serviceLogs} onNavigate={onNavigate} />
@@ -448,34 +449,37 @@ function SummaryBar({
 
       {showMetrics && snapshot.metrics.length > 0 && (
         <div className="flex flex-wrap gap-x-5 gap-y-2">
-          {snapshot.metrics.slice(0, 6).map((metric) => {
-            const series = history.find((s) => s.key === metric.key);
-            const over = isBreaching(metric);
-            return (
-              <Stat
-                key={metric.key}
-                size="md"
-                label={metric.label}
-                value={formatMetricValue(metric.value, metric.unit)}
-                tone={over ? "var(--color-warn)" : undefined}
-                hint={
-                  metric.warnAbove !== undefined
-                    ? `Threshold ${formatMetricValue(metric.warnAbove, metric.unit)}`
-                    : metric.label
-                }
-              >
-                {/* A clock gains an hour an hour; saying so is not a trend. */}
-                {series?.trend && !staticKind(series) && (
-                  <span className="num flex gap-1.5 pb-0.5 text-2xs">
-                    <Rate trend={series.trend} unit={metric.unit} />
-                    {metric.warnAbove !== undefined && (
-                      <Horizon trend={series.trend} unit={metric.unit} />
-                    )}
-                  </span>
-                )}
-              </Stat>
-            );
-          })}
+          {bySignal(snapshot.metrics, snapshot.kind)
+            .flatMap(([, list]) => list)
+            .slice(0, 6)
+            .map((metric) => {
+              const series = history.find((s) => s.key === metric.key);
+              const over = isBreaching(metric);
+              return (
+                <Stat
+                  key={metric.key}
+                  size="md"
+                  label={metric.label}
+                  value={formatMetricValue(metric.value, metric.unit)}
+                  tone={over ? "var(--color-warn)" : undefined}
+                  hint={
+                    metric.warnAbove !== undefined
+                      ? `Threshold ${formatMetricValue(metric.warnAbove, metric.unit)}`
+                      : metric.label
+                  }
+                >
+                  {/* A clock gains an hour an hour; saying so is not a trend. */}
+                  {series?.trend && !staticKind(series) && (
+                    <span className="num flex gap-1.5 pb-0.5 text-2xs">
+                      <Rate trend={series.trend} unit={metric.unit} />
+                      {metric.warnAbove !== undefined && (
+                        <Horizon trend={series.trend} unit={metric.unit} />
+                      )}
+                    </span>
+                  )}
+                </Stat>
+              );
+            })}
         </div>
       )}
     </div>
@@ -565,9 +569,12 @@ function AlertsTab({
   );
 }
 
-function MetricsTab({ history }: { history: MetricSeries[] }) {
+function MetricsTab({ history, kind }: { history: MetricSeries[]; kind: string }) {
   const withHistory = history.filter((s) => s.points.length > 1);
-  const plotted = withHistory.filter((s) => !staticKind(s));
+  const plotted = bySignal(
+    withHistory.filter((s) => !staticKind(s)),
+    kind,
+  ).flatMap(([, list]) => list);
   const steady = withHistory.filter((s) => staticKind(s));
   const line = DATA_INK;
 

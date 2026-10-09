@@ -101,8 +101,18 @@ function series(
   n: number,
   seed: number,
   base: number,
-  shape: "flat" | "rise" | "fall" | "spike",
+  shape: "flat" | "rise" | "fall" | "spike" | "steady" | "clock",
 ): Point[] {
+  // Real collectors also send a count that never moves (nodes, brokers) and a
+  // clock (uptime). Without them here the preview never shows how the
+  // dashboards set those apart from charts.
+  if (shape === "steady" || shape === "clock") {
+    return Array.from({ length: n }, (_, i) => ({
+      t: iso((n - i) * STEP_MS),
+      v: shape === "steady" ? base : base - ((n - 1 - i) * STEP_MS) / 1000,
+    }));
+  }
+
   const r = seeded(seed);
   const out: Point[] = [];
   let v = base;
@@ -302,7 +312,7 @@ const METRICS: Record<string, [string, string, number, string, number?][]> = {
   "checkout-web": [["pods", "Pods ready", 24, "count"], ["cpu", "CPU", 34, "percent", 75]],
   "events-bus": [["lag", "Lag", 1200, "count"], ["brokers", "Brokers", 3, "count"]],
   "session-cache": [["hit", "Hit rate", 99.1, "percent"], ["memory", "Memory", 1503238554, "bytes"]],
-  "billing-mongo": [["conns", "Connections", 88, "count"]],
+  "billing-mongo": [["conns", "Connections", 88, "count"], ["uptime", "Uptime", 1_234_567, "seconds"]],
   "metrics-store": [["targets", "Targets up", 42, "count"]],
   "status-page": [["latency", "Latency", 42, "millis", 800]],
 };
@@ -530,7 +540,8 @@ export function seriesFor(profileId: string): MetricSeries[] {
   // not still be plotting a series that breaches its own threshold.
   return scenarioMetrics(profileId).map(([key, label, value, unit, warnAbove], i) => {
     const shape = key === "memory" || key === "lag" || key === "heap" ? "rise"
-      : key === "error_rate" ? "spike" : key === "running" ? "fall" : "flat";
+      : key === "error_rate" ? "spike" : key === "running" ? "fall"
+      : key === "nodes" || key === "brokers" ? "steady" : key === "uptime" ? "clock" : "flat";
     const points = series(SAMPLES, profileId.length * 31 + i * 7, value, shape);
     const values = points.map((p) => p.v);
     return {

@@ -37,7 +37,7 @@ import type {
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { AlertList } from "../ui/AlertList";
-import { levelColor, Meter, Sparkline, TimeSeries, type Domain } from "../ui/charts";
+import { levelColor, Meter, Sparkline, staticKind, SteadyStats, TimeSeries, type Domain } from "../ui/charts";
 import { Horizon, Rate } from "../ui/capacity";
 import {
   Button,
@@ -204,7 +204,9 @@ export function ComponentDetail({
   const descriptor = catalog.get(service.snapshot.kind);
   const line = DATA_INK;
   const span = spanOf(history);
-  const plotted = history.filter((s) => s.points.length > 1);
+  const withHistory = history.filter((s) => s.points.length > 1);
+  const plotted = withHistory.filter((s) => !staticKind(s));
+  const steady = withHistory.filter((s) => staticKind(s));
 
   const runAction = async () => {
     if (!pending) return;
@@ -344,25 +346,31 @@ export function ComponentDetail({
           >
             {error ? (
               <p className="text-xs text-crit">{error}</p>
-            ) : loading && plotted.length === 0 ? (
+            ) : loading && withHistory.length === 0 ? (
               <div className="h-32 animate-pulse rounded-md border border-line opacity-40" />
-            ) : plotted.length === 0 ? (
+            ) : withHistory.length === 0 ? (
               <Empty
                 title="No history yet"
                 hint="This component was seen recently but has not been sampled enough times to plot. Give it a couple of collection cycles."
               />
             ) : (
-              <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
-                {plotted.map((series) => (
-                  <ChartCard
-                    key={series.key}
-                    series={series}
-                    color={line}
-                    domain={domain}
-                    hoverTime={hoverTime}
-                    onHoverTime={setHoverTime}
-                  />
-                ))}
+              <div className="flex flex-col gap-3">
+                {plotted.length > 0 && (
+                  <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
+                    {plotted.map((series) => (
+                      <ChartCard
+                        key={series.key}
+                        series={series}
+                        color={line}
+                        domain={domain}
+                        hoverTime={hoverTime}
+                        onHoverTime={setHoverTime}
+                      />
+                    ))}
+                  </div>
+                )}
+                {/* Flat lines and clocks are one number each; they get a line, not a panel. */}
+                <SteadyStats series={steady} />
               </div>
             )}
           </Panel>

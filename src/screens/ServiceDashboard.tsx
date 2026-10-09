@@ -32,6 +32,8 @@ import {
   LogHistogram,
   levelColor,
   Sparkline,
+  staticKind,
+  SteadyStats,
   TimeSeries,
   type Annotation,
   type Domain,
@@ -367,7 +369,10 @@ export function ServiceDashboard({
     [changes, view],
   );
 
-  const plotted = useMemo(() => history.filter((s) => s.points.length > 1), [history]);
+  const withHistory = useMemo(() => history.filter((s) => s.points.length > 1), [history]);
+  // Flat lines and clocks are one number each: a line of values, not panels.
+  const plotted = useMemo(() => withHistory.filter((s) => !staticKind(s)), [withHistory]);
+  const steady = useMemo(() => withHistory.filter((s) => staticKind(s)), [withHistory]);
   const line = DATA_INK;
 
   const errorLines = useMemo(
@@ -535,7 +540,8 @@ export function ServiceDashboard({
                     value={formatMetricValue(metric.value, metric.unit)}
                     tone={over ? "var(--color-warn)" : undefined}
                   >
-                    {series?.trend && (
+                    {/* A clock gains an hour an hour; saying so is not a trend. */}
+                    {series?.trend && !staticKind(series) && (
                       <span className="num flex gap-1.5 pb-0.5 text-2xs">
                         <Rate trend={series.trend} unit={metric.unit} />
                         {metric.warnAbove !== undefined && (
@@ -544,7 +550,7 @@ export function ServiceDashboard({
                       </span>
                     )}
                     <span className="ml-auto">
-                      {series && (
+                      {series && staticKind(series) !== "clock" && (
                         <Sparkline
                           points={series.points}
                           width={62}
@@ -590,7 +596,7 @@ export function ServiceDashboard({
       <Section
         title="Time series"
         subtitle={[
-          `${plotted.length} metrics`,
+          `${plotted.length} charted${steady.length ? `, ${steady.length} steady` : ""}`,
           service.alerts.length > 0 && `${service.alerts.length} alerts`,
           showDeploys && deploysInView.length > 0 && `${deploysInView.length} deploys`,
         ]
@@ -600,61 +606,66 @@ export function ServiceDashboard({
         onToggle={() => toggleSection("series")}
         hint="Drag across a chart to zoom. Hover moves the crosshair on every panel."
       >
-        {loading && plotted.length === 0 ? (
+        {loading && withHistory.length === 0 ? (
           <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(340px,1fr))]">
             {Array.from({ length: 2 }).map((_, i) => (
               <div key={i} className="h-40 animate-pulse rounded-md border border-line opacity-40" />
             ))}
           </div>
-        ) : plotted.length === 0 ? (
+        ) : withHistory.length === 0 ? (
           <Empty
             title="No history yet"
             hint="Series build as this connection polls. Give it a couple of collection cycles."
           />
         ) : (
-          <div className="grid gap-3" style={balancedTracks(plotted.length, 340)}>
-            {plotted.map((series) => {
-              const over = series.warnAbove !== undefined && series.latest > series.warnAbove;
-              return (
-                <div key={series.key} className="rounded-md border border-line bg-page p-2.5">
-                  <div className="flex items-baseline gap-2">
-                    <span className="min-w-0 truncate text-xs text-ink-3" title={series.label}>
-                      {series.label}
-                    </span>
-                    <span className="num ml-auto shrink-0 text-2xs text-ink-4">
-                      {formatMetricValue(series.min, series.unit)} –{" "}
-                      {formatMetricValue(series.max, series.unit)}
-                    </span>
-                    <span
-                      className={cx("num shrink-0 text-sm", over ? "text-warn" : "text-ink")}
-                    >
-                      {formatMetricValue(series.latest, series.unit)}
-                    </span>
-                  </div>
+          <div className="flex flex-col gap-3">
+            {plotted.length > 0 && (
+              <div className="grid gap-3" style={balancedTracks(plotted.length, 340)}>
+                {plotted.map((series) => {
+                  const over = series.warnAbove !== undefined && series.latest > series.warnAbove;
+                  return (
+                    <div key={series.key} className="rounded-md border border-line bg-page p-2.5">
+                      <div className="flex items-baseline gap-2">
+                        <span className="min-w-0 truncate text-xs text-ink-3" title={series.label}>
+                          {series.label}
+                        </span>
+                        <span className="num ml-auto shrink-0 text-2xs text-ink-4">
+                          {formatMetricValue(series.min, series.unit)} –{" "}
+                          {formatMetricValue(series.max, series.unit)}
+                        </span>
+                        <span
+                          className={cx("num shrink-0 text-sm", over ? "text-warn" : "text-ink")}
+                        >
+                          {formatMetricValue(series.latest, series.unit)}
+                        </span>
+                      </div>
 
-                  {/* One series per chart, so no legend box — the label names it. */}
-                  <TimeSeries
-                    series={[
-                      {
-                        key: series.key,
-                        label: series.label,
-                        color: line,
-                        points: series.points,
-                        warnAbove: series.warnAbove,
-                      },
-                    ]}
-                    unit={series.unit}
-                    domain={view}
-                    height={132}
-                    showLegend={false}
-                    annotations={annotations}
-                    hoverTime={hoverTime}
-                    onHoverTime={setHoverTime}
-                    onBrush={setZoom}
-                  />
-                </div>
-              );
-            })}
+                      {/* One series per chart, so no legend box — the label names it. */}
+                      <TimeSeries
+                        series={[
+                          {
+                            key: series.key,
+                            label: series.label,
+                            color: line,
+                            points: series.points,
+                            warnAbove: series.warnAbove,
+                          },
+                        ]}
+                        unit={series.unit}
+                        domain={view}
+                        height={132}
+                        showLegend={false}
+                        annotations={annotations}
+                        hoverTime={hoverTime}
+                        onHoverTime={setHoverTime}
+                        onBrush={setZoom}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <SteadyStats series={steady} />
           </div>
         )}
       </Section>

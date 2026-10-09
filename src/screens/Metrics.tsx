@@ -9,7 +9,7 @@ import type { MetricSeries, MetricUnit } from "../types";
 import { rangesAcross } from "../ranges";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { Horizon, Rate } from "../ui/capacity";
-import { TimeSeries, type Domain, type Series } from "../ui/charts";
+import { staticKind, SteadyStats, TimeSeries, type Domain, type Series } from "../ui/charts";
 import {
   Button,
   cx,
@@ -273,6 +273,8 @@ function ConnectionMetrics({
   const breaching = series.filter(
     (s) => s.warnAbove !== undefined && s.latest > s.warnAbove,
   ).length;
+  const plotted = series.filter((s) => !staticKind(s));
+  const steady = series.filter((s) => staticKind(s));
 
   return (
     <Panel
@@ -304,72 +306,78 @@ function ConnectionMetrics({
         </>
       }
     >
-      <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(268px,1fr))]">
-        {series.map((s) => {
-          const over = s.warnAbove !== undefined && s.latest > s.warnAbove;
-          return (
-            <div key={s.key} className="min-w-0 rounded-md border border-line bg-page p-2.5">
-              <div className="flex items-baseline gap-2">
-                <span className="min-w-0 truncate text-xs text-ink-3" title={s.label}>
-                  {s.label}
-                </span>
-                {/* The fitted slope, not the first-to-last delta that used
-                    to sit here — see Rate. Absent when the history cannot
-                    support a fit, which is its own answer. */}
-                <span className="num ml-auto shrink-0 text-2xs">
-                  <Rate trend={s.trend} unit={s.unit} />
-                </span>
-                <span
-                  className={cx("num shrink-0 text-lg", over ? "text-warn" : "text-ink")}
-                  title={
-                    s.warnAbove !== undefined
-                      ? `Threshold ${formatMetricValue(s.warnAbove, s.unit)}`
-                      : undefined
-                  }
-                >
-                  {formatMetricValue(s.latest, s.unit)}
-                </span>
-              </div>
-
-              {/* One series per chart here, so no legend box — the label above
-                  names it. */}
-              <TimeSeries
-                series={[
-                  {
-                    key: s.key,
-                    label: s.label,
-                    color: line,
-                    points: s.points,
-                    warnAbove: s.warnAbove,
-                  },
-                ]}
-                unit={s.unit}
-                domain={domain}
-                height={104}
-                showLegend={false}
-              />
-
-              <div className="mt-1 flex gap-3 text-2xs text-ink-4">
-                <span>
-                  min <span className="num text-ink-3">{formatMetricValue(s.min, s.unit)}</span>
-                </span>
-                <span>
-                  max <span className="num text-ink-3">{formatMetricValue(s.max, s.unit)}</span>
-                </span>
-                {s.warnAbove !== undefined && (
-                  <span className="ml-auto">
-                    limit{" "}
-                    <span className="num text-warn">
-                      {formatMetricValue(s.warnAbove, s.unit)}
+      <div className="flex flex-col gap-3">
+        {plotted.length > 0 && (
+          <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(268px,1fr))]">
+            {plotted.map((s) => {
+              const over = s.warnAbove !== undefined && s.latest > s.warnAbove;
+              return (
+                <div key={s.key} className="min-w-0 rounded-md border border-line bg-page p-2.5">
+                  <div className="flex items-baseline gap-2">
+                    <span className="min-w-0 truncate text-xs text-ink-3" title={s.label}>
+                      {s.label}
                     </span>
-                    {" · "}
-                    <Horizon trend={s.trend} unit={s.unit} />
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
+                    {/* The fitted slope, not the first-to-last delta that used
+                        to sit here — see Rate. Absent when the history cannot
+                        support a fit, which is its own answer. */}
+                    <span className="num ml-auto shrink-0 text-2xs">
+                      <Rate trend={s.trend} unit={s.unit} />
+                    </span>
+                    <span
+                      className={cx("num shrink-0 text-lg", over ? "text-warn" : "text-ink")}
+                      title={
+                        s.warnAbove !== undefined
+                          ? `Threshold ${formatMetricValue(s.warnAbove, s.unit)}`
+                          : undefined
+                      }
+                    >
+                      {formatMetricValue(s.latest, s.unit)}
+                    </span>
+                  </div>
+
+                  {/* One series per chart here, so no legend box — the label above
+                      names it. */}
+                  <TimeSeries
+                    series={[
+                      {
+                        key: s.key,
+                        label: s.label,
+                        color: line,
+                        points: s.points,
+                        warnAbove: s.warnAbove,
+                      },
+                    ]}
+                    unit={s.unit}
+                    domain={domain}
+                    height={104}
+                    showLegend={false}
+                  />
+
+                  <div className="mt-1 flex gap-3 text-2xs text-ink-4">
+                    <span>
+                      min <span className="num text-ink-3">{formatMetricValue(s.min, s.unit)}</span>
+                    </span>
+                    <span>
+                      max <span className="num text-ink-3">{formatMetricValue(s.max, s.unit)}</span>
+                    </span>
+                    {s.warnAbove !== undefined && (
+                      <span className="ml-auto">
+                        limit{" "}
+                        <span className="num text-warn">
+                          {formatMetricValue(s.warnAbove, s.unit)}
+                        </span>
+                        {" · "}
+                        <Horizon trend={s.trend} unit={s.unit} />
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* Flat lines and clocks are one number each; they get a line, not a panel. */}
+        <SteadyStats series={steady} />
       </div>
     </Panel>
   );

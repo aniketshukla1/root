@@ -22,8 +22,15 @@ export function formatMetricValue(value: number, unit: MetricUnit): string {
       return formatBytes(value);
     case "millis":
       return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
-    case "seconds":
-      return value >= 90 ? `${(value / 60).toFixed(1)}m` : `${value.toFixed(1)}s`;
+    case "seconds": {
+      // Past minutes into hours and days: an uptime of 41 days printed as
+      // "59600.3m" on every axis it touched.
+      const abs = Math.abs(value);
+      if (abs < 90) return `${value.toFixed(1)}s`;
+      if (abs < 90 * 60) return `${(value / 60).toFixed(1)}m`;
+      if (abs < 48 * 3600) return `${(value / 3600).toFixed(1)}h`;
+      return `${(value / 86400).toFixed(1)}d`;
+    }
     case "per_second":
       return `${value.toFixed(1)}/s`;
     case "count": {

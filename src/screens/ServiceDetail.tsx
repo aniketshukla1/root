@@ -20,7 +20,7 @@ import type {
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { ServiceDashboard } from "./ServiceDashboard";
 import { AlertList } from "../ui/AlertList";
-import { levelColor, TimeSeries, type Domain } from "../ui/charts";
+import { levelColor, staticKind, SteadyStats, TimeSeries, type Domain } from "../ui/charts";
 import { Horizon, Rate } from "../ui/capacity";
 import { ConfigTab } from "../ui/config";
 import { SectionList } from "../ui/SectionTable";
@@ -464,7 +464,8 @@ function SummaryBar({
                     : metric.label
                 }
               >
-                {series?.trend && (
+                {/* A clock gains an hour an hour; saying so is not a trend. */}
+                {series?.trend && !staticKind(series) && (
                   <span className="num flex gap-1.5 pb-0.5 text-2xs">
                     <Rate trend={series.trend} unit={metric.unit} />
                     {metric.warnAbove !== undefined && (
@@ -565,7 +566,9 @@ function AlertsTab({
 }
 
 function MetricsTab({ history }: { history: MetricSeries[] }) {
-  const plotted = history.filter((s) => s.points.length > 1);
+  const withHistory = history.filter((s) => s.points.length > 1);
+  const plotted = withHistory.filter((s) => !staticKind(s));
+  const steady = withHistory.filter((s) => staticKind(s));
   const line = DATA_INK;
 
   // This tab has no range control of its own — the Dashboard tab owns that —
@@ -577,7 +580,7 @@ function MetricsTab({ history }: { history: MetricSeries[] }) {
       ? [span.from, span.to]
       : [Date.now() - 3600_000, Date.now()];
 
-  if (plotted.length === 0) {
+  if (withHistory.length === 0) {
     return (
       <Empty
         title="No history yet"
@@ -587,68 +590,74 @@ function MetricsTab({ history }: { history: MetricSeries[] }) {
   }
 
   return (
-    <div className="grid gap-3" style={balancedTracks(plotted.length, 360)}>
-      {plotted.map((series) => (
-        <Panel
-          key={series.key}
-          title={series.label}
-          actions={
-            <span className="flex items-center gap-2">
-              <span className="num text-2xs">
-                <Rate trend={series.trend} unit={series.unit} />
-              </span>
-              {series.warnAbove !== undefined && (
-                <span className="num text-2xs">
-                  <Horizon trend={series.trend} unit={series.unit} />
+    <div className="flex flex-col gap-3">
+      {plotted.length > 0 && (
+        <div className="grid gap-3" style={balancedTracks(plotted.length, 360)}>
+          {plotted.map((series) => (
+            <Panel
+              key={series.key}
+              title={series.label}
+              actions={
+                <span className="flex items-center gap-2">
+                  <span className="num text-2xs">
+                    <Rate trend={series.trend} unit={series.unit} />
+                  </span>
+                  {series.warnAbove !== undefined && (
+                    <span className="num text-2xs">
+                      <Horizon trend={series.trend} unit={series.unit} />
+                    </span>
+                  )}
+                  <span
+                    className={cx(
+                      "num text-xs",
+                      series.warnAbove !== undefined && series.latest > series.warnAbove
+                        ? "text-warn"
+                        : "text-ink",
+                    )}
+                  >
+                    {formatMetricValue(series.latest, series.unit)}
+                  </span>
                 </span>
-              )}
-              <span
-                className={cx(
-                  "num text-xs",
-                  series.warnAbove !== undefined && series.latest > series.warnAbove
-                    ? "text-warn"
-                    : "text-ink",
+              }
+            >
+              {/* One series, so no legend box — the panel title names it. */}
+              <TimeSeries
+                series={[
+                  {
+                    key: series.key,
+                    label: series.label,
+                    color: line,
+                    points: series.points,
+                    warnAbove: series.warnAbove,
+                  },
+                ]}
+                unit={series.unit}
+                domain={domain}
+                height={132}
+                showLegend={false}
+              />
+              <div className="mt-1.5 flex gap-4 border-t border-line pt-1.5 text-2xs text-ink-4">
+                <span>
+                  min <span className="num text-ink-3">{formatMetricValue(series.min, series.unit)}</span>
+                </span>
+                <span>
+                  max <span className="num text-ink-3">{formatMetricValue(series.max, series.unit)}</span>
+                </span>
+                {series.warnAbove !== undefined && (
+                  <span className="ml-auto">
+                    threshold{" "}
+                    <span className="num text-warn">
+                      {formatMetricValue(series.warnAbove, series.unit)}
+                    </span>
+                  </span>
                 )}
-              >
-                {formatMetricValue(series.latest, series.unit)}
-              </span>
-            </span>
-          }
-        >
-          {/* One series, so no legend box — the panel title names it. */}
-          <TimeSeries
-            series={[
-              {
-                key: series.key,
-                label: series.label,
-                color: line,
-                points: series.points,
-                warnAbove: series.warnAbove,
-              },
-            ]}
-            unit={series.unit}
-            domain={domain}
-            height={132}
-            showLegend={false}
-          />
-          <div className="mt-1.5 flex gap-4 border-t border-line pt-1.5 text-2xs text-ink-4">
-            <span>
-              min <span className="num text-ink-3">{formatMetricValue(series.min, series.unit)}</span>
-            </span>
-            <span>
-              max <span className="num text-ink-3">{formatMetricValue(series.max, series.unit)}</span>
-            </span>
-            {series.warnAbove !== undefined && (
-              <span className="ml-auto">
-                threshold{" "}
-                <span className="num text-warn">
-                  {formatMetricValue(series.warnAbove, series.unit)}
-                </span>
-              </span>
-            )}
-          </div>
-        </Panel>
-      ))}
+              </div>
+            </Panel>
+          ))}
+        </div>
+      )}
+      {/* Flat lines and clocks are one number each; they get a line, not a panel. */}
+      <SteadyStats series={steady} />
     </div>
   );
 }

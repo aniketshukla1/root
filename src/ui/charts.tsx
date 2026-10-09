@@ -582,6 +582,48 @@ export function TimeSeries({
   );
 }
 
+/**
+ * Why a series is not worth a chart in this window, if it is not: it never
+ * moved, or it is a clock — an uptime grows exactly as fast as time passes.
+ * Either says one number, and a flat line or a perfect diagonal spends a
+ * whole panel saying it.
+ */
+export function staticKind(series: {
+  unit: MetricUnit;
+  points: { t: string; v: number }[];
+}): "steady" | "clock" | null {
+  const { points } = series;
+  if (points.length < 2) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (points.every((p) => p.v === first.v)) return "steady";
+  if (series.unit === "seconds") {
+    const elapsed = (Date.parse(last.t) - Date.parse(first.t)) / 1000;
+    if (elapsed > 0 && Math.abs(last.v - first.v - elapsed) <= elapsed * 0.02) return "clock";
+  }
+  return null;
+}
+
+/** The series `staticKind` takes out of the chart grid, as one line of values. */
+export function SteadyStats({
+  series,
+}: {
+  series: { key: string; label: string; unit: MetricUnit; latest: number }[];
+}) {
+  if (series.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5 rounded-md border border-line bg-page px-3 py-2">
+      <span className="text-2xs text-ink-4">Steady in this window</span>
+      {series.map((s) => (
+        <span key={s.key} className="flex items-baseline gap-1.5">
+          <span className="text-xs text-ink-3">{s.label}</span>
+          <span className="num text-sm text-ink">{formatMetricValue(s.latest, s.unit)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function Legend({ series }: { series: { key: string; label: string; color: string }[] }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">

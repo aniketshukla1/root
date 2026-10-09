@@ -158,19 +158,19 @@ the identical arithmetic yields a confident "full in four hours" that is pure ar
 A projection nobody can trust is worse than none, because the first wrong one teaches
 people to ignore the rest.
 
-Which is why root can read from a Prometheus you already run. Its own history is a ring
-buffer holding a few hours, deliberately, so there is no retention policy to manage — and
-a volume that fills in three weeks is invisible to a forecast built on that. Prometheus is
-read here and never written; it is a source, not a store.
+Which is why root can read from a Prometheus you already run. Its own history reaches back
+a month — a day of every poll, a week of minutes, a month of ten-minute buckets, in a SQLite
+file beside the config — and a volume that fills over a quarter is invisible to a forecast
+built on that. Prometheus is read here and never written; it is a source, not a store.
 
 ---
 
 ## Is it any good?
 
-Everything else in this app is disposable: metric history is a ring buffer, logs are a
-ring buffer, incidents are derived fresh on every read, and all of it is gone when the
-process stops. The judgement record is the exception, and the only thing on disk besides
-configuration.
+Everything else in this app is regenerable: incidents are derived fresh on every read, and
+the month of metric history in `history.db` is a record of what was seen, which the next
+polls would see again. The judgement record is the exception — the only irreplaceable thing
+on disk besides configuration, and a separate file that "clear history" cannot reach.
 
 A record of which findings were right, which were noise, and which problems root missed
 entirely is the only dataset here that gets **more** valuable with age. It is also the only
@@ -476,8 +476,8 @@ below it contradicts.
 
 ### Reading the warehouse
 
-root's own history is a ring buffer of a few hours and its log buffer is in memory, so
-"what did this look like last Tuesday" is a question root cannot answer about itself. A
+root's own history reaches back a month and keeps log lines for a day, so "what did this
+log say last Tuesday" is a question root cannot answer about itself. A
 [gigapipe](GIGAPIPE.md) connection can, and the assistant reaches it through nine
 read-only tools — the same surface `gigapipe-mcp` exposes over MCP, with root's limits
 on it:
@@ -1004,6 +1004,7 @@ src-tauri/src/
   promquery.rs    Long-range history read from a Prometheus you already run
   rca.rs          Why one incident happened — the model, on root's own evidence
   store.rs        The estate's history on disk — Postgres, TimescaleDB when present
+  archive.rs      The same history without a database: a month in SQLite beside the config
   server.rs       The engine over HTTP, and the only file that knows a network exists
   rpc.rs          The same 64 commands, dispatched by name
   tauri_cmds.rs   The same 64 commands, as Tauri IPC

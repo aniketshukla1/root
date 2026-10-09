@@ -11,6 +11,7 @@
 //! that state, driven by Tauri events.
 
 pub mod agent;
+pub mod archive;
 pub mod changes;
 pub mod claims;
 pub mod collectors;
@@ -183,9 +184,14 @@ pub fn run() {
                             *state.store.write().await = Some(store);
                         }
                         Err(e) => tracing::warn!(
-                            "history will not be kept — the database is not reachable: {e}"
+                            "history will not be kept in Postgres — the database is not reachable: {e}"
                         ),
                     }
+                }
+                // No database, or one that would not answer: keep history in
+                // the file beside the config instead, and carry on from it.
+                if state.store.read().await.is_none() {
+                    state.open_local_store().await;
                 }
 
                 // Before the pollers, so the first alert of the session is

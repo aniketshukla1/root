@@ -79,10 +79,11 @@ const RAW_METRIC_DAYS: i64 = 30;
 /// than a thousand round trips.
 const MAX_BATCH: usize = 1_000;
 
-/// One connection's metric history, as the database aggregated it.
+/// One bucket of a metric's history: an hour from Postgres, and from the
+/// local archive whatever resolution it still keeps for the window asked.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct HourlyPoint {
+pub struct BucketPoint {
     pub at: DateTime<Utc>,
     pub min: f64,
     pub max: f64,
@@ -133,9 +134,9 @@ pub struct PastChange {
     pub summary: String,
 }
 
-/// The persistent half of root's memory.
+/// The persistent half of root's memory, in an operator's Postgres.
 #[derive(Clone)]
-pub struct Store {
+pub struct PgStore {
     pool: PgPool,
     /// Whether the hypertable statements took. Reads do not branch on this —
     /// the queries are the same either way — but it is reported to the UI so
@@ -143,7 +144,7 @@ pub struct Store {
     timescale: bool,
 }
 
-impl Store {
+impl PgStore {
     /// Connect and bring the schema up to date.
     pub async fn open(url: &str) -> Result<Self> {
         let pool = PgPoolOptions::new()
@@ -155,7 +156,7 @@ impl Store {
         migrate(&pool).await?;
         let timescale = enable_timescale(&pool).await;
 
-        Ok(Store { pool, timescale })
+        Ok(PgStore { pool, timescale })
     }
 
     /// Whether the TimescaleDB extension is doing the aggregation, the
@@ -299,7 +300,7 @@ impl Store {
         profile_id: &str,
         metric_key: &str,
         since: DateTime<Utc>,
-    ) -> Result<Vec<HourlyPoint>> {
+    ) -> Result<Vec<BucketPoint>> {
         let sql = if self.timescale {
             "SELECT bucket AS at, min_value, max_value, avg_value, sample_count
              FROM metric_hourly
@@ -487,6 +488,152 @@ impl Store {
     }
 }
 
+/// Where history is kept: an operator's Postgres when one is configured, and
+/// otherwise a SQLite file beside the config — so every install keeps a month
+/// and survives a restart, and nobody has to run a database for that.
+#[derive(Clone)]
+pub enum Store {
+    Postgres(PgStore),
+    Local(crate::archive::Archive),
+}
+
+impl Store {
+    /// Connect to Postgres and bring its schema up to date.
+    pub async fn open(url: &str) -> Result<Self> {
+        PgStore::open(url).await.map(Store::Postgres)
+    }
+
+    /// Open (creating if needed) the archive file at `path`.
+    pub async fn open_local(path: &std::path::Path) -> Result<Self> {
+        crate::archive::Archive::open(path).await.map(Store::Local)
+    }
+
+    pub fn has_timescale(&self) -> bool {
+        matches!(self, Store::Postgres(pg) if pg.has_timescale())
+    }
+
+    /// Which kind of store this is, as the Settings panel names it.
+    pub fn backend(&self) -> &'static str {
+        match self {
+            Store::Postgres(_) => "postgres",
+            Store::Local(_) => "local",
+        }
+    }
+
+    /// Size on disk, where root can see it — only for the local file.
+    pub fn bytes(&self) -> Option<u64> {
+        match self {
+            Store::Postgres(_) => None,
+            Store::Local(archive) => archive.bytes(),
+        }
+    }
+
+    pub async fn write_snapshot(&self, snapshot: &HealthSnapshot) -> Result<()> {
+        match self {
+            Store::Postgres(pg) => pg.write_snapshot(snapshot).await,
+            Store::Local(archive) => archive.write_snapshot(snapshot).await,
+        }
+    }
+
+    pub async fn write_logs(&self, events: &[LogEvent]) -> Result<()> {
+        match self {
+            Store::Postgres(pg) => pg.write_logs(events).await,
+            Store::Local(archive) => archive.write_logs(events).await,
+        }
+    }
+
+    pub async fn write_alert(&self, alert: &Alert, predicted: bool) -> Result<()> {
+        match self {
+            Store::Postgres(pg) => pg.write_alert(alert, predicted).await,
+            Store::Local(archive) => archive.write_alert(alert, predicted).await,
+        }
+    }
+
+    pub async fn write_change(&self, change: &ChangeEvent) -> Result<()> {
+        match self {
+            Store::Postgres(pg) => pg.write_change(change).await,
+            Store::Local(archive) => archive.write_change(change).await,
+        }
+    }
+
+    /// A connection metric's history since `since`: hourly from Postgres, and
+    /// as fine as the archive still keeps for the window from the local file.
+    pub async fn metric_buckets(
+        &self,
+        profile_id: &str,
+        metric_key: &str,
+        since: DateTime<Utc>,
+    ) -> Result<Vec<BucketPoint>> {
+        match self {
+            Store::Postgres(pg) => pg.metric_hours(profile_id, metric_key, since).await,
+            Store::Local(archive) => archive.buckets(profile_id, "", metric_key, since).await,
+        }
+    }
+
+    /// A component column's history. Postgres keeps none, so it answers empty.
+    pub async fn entity_buckets(
+        &self,
+        profile_id: &str,
+        section: &str,
+        row: &str,
+        column: &str,
+        since: DateTime<Utc>,
+    ) -> Result<Vec<BucketPoint>> {
+        match self {
+            Store::Postgres(_) => Ok(Vec::new()),
+            Store::Local(archive) => {
+                let entity = crate::archive::Archive::entity(section, row);
+                archive.buckets(profile_id, &entity, column, since).await
+            }
+        }
+    }
+
+    pub async fn alert_history(
+        &self,
+        profile_id: &str,
+        since: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<PastAlert>> {
+        match self {
+            Store::Postgres(pg) => pg.alert_history(profile_id, since, limit).await,
+            Store::Local(archive) => archive.alert_history(profile_id, since, limit).await,
+        }
+    }
+
+    pub async fn alert_frequency(&self, since: DateTime<Utc>) -> Result<Vec<(String, String, i64)>> {
+        match self {
+            Store::Postgres(pg) => pg.alert_frequency(since).await,
+            Store::Local(archive) => archive.alert_frequency(since).await,
+        }
+    }
+
+    pub async fn changes_since(
+        &self,
+        profile_id: Option<&str>,
+        since: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<PastChange>> {
+        match self {
+            Store::Postgres(pg) => pg.changes_since(profile_id, since, limit).await,
+            Store::Local(archive) => archive.changes_since(profile_id, since, limit).await,
+        }
+    }
+
+    pub async fn counts(&self) -> Result<HashMap<String, i64>> {
+        match self {
+            Store::Postgres(pg) => pg.counts().await,
+            Store::Local(archive) => archive.counts().await,
+        }
+    }
+
+    pub async fn clear(&self) -> Result<()> {
+        match self {
+            Store::Postgres(pg) => pg.clear().await,
+            Store::Local(archive) => archive.clear().await,
+        }
+    }
+}
+
 /// An enum's wire name, as serde writes it everywhere else in the app.
 ///
 /// Not `format!("{:?}").to_lowercase()`, which is what this used to be and
@@ -502,8 +649,8 @@ fn wire<T: Serialize>(value: T) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn hourly_point(row: &PgRow) -> HourlyPoint {
-    HourlyPoint {
+fn hourly_point(row: &PgRow) -> BucketPoint {
+    BucketPoint {
         at: row.get("at"),
         min: row.try_get("min_value").unwrap_or(0.0),
         max: row.try_get("max_value").unwrap_or(0.0),

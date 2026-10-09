@@ -221,7 +221,133 @@ pub struct HealthRun {
     pub to: DateTime<Utc>,
 }
 
+/// One tracked component's numeric cell in a snapshot.
+///
+/// The ring and the on-disk archive both record exactly these, so the two can
+/// never disagree about which component readings exist.
+pub(crate) struct EntityReading<'a> {
+    pub section: &'a str,
+    pub row: &'a str,
+    pub column: &'a str,
+    pub label: &'a str,
+    pub unit: MetricUnit,
+    pub warn_above: Option<f64>,
+    pub value: f64,
+}
+
+/// Every finite number or gauge in a snapshot's tracked sections.
+pub(crate) fn entity_readings(snapshot: &HealthSnapshot) -> Vec<EntityReading<'_>> {
+    let mut out = Vec::new();
+    for section in snapshot.sections.iter().filter(|s| s.tracked) {
+        let numeric: Vec<&crate::model::ColumnSpec> = section
+            .columns
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c.kind,
+                    crate::model::CellKind::Metric { .. } | crate::model::CellKind::Gauge { .. }
+                )
+            })
+            .collect();
+
+        for row in &section.rows {
+            for column in &numeric {
+                let Some(cell) = row.cells.get(&column.key) else {
+                    continue;
+                };
+                let (value, warn_above) = match cell {
+                    crate::model::CellValue::Number { value } => (*value, None),
+                    crate::model::CellValue::Gauge {
+                        value, warn_above, ..
+                    } => (*value, *warn_above),
+                    _ => continue,
+                };
+                if !value.is_finite() {
+                    continue;
+                }
+                out.push(EntityReading {
+                    section: &section.id,
+                    row: &row.id,
+                    column: &column.key,
+                    label: &column.label,
+                    unit: column.unit().unwrap_or(MetricUnit::Count),
+                    warn_above,
+                    value,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The newest `MAX_POINTS` of a run of samples, as a ring holds them.
+fn tail(points: Vec<Point>, cap: usize) -> VecDeque<Point> {
+    let skip = points.len().saturating_sub(cap);
+    points.into_iter().skip(skip).collect()
+}
+
 impl HistoryStore {
+    /// Put a connection metric's samples, read back from disk, into the ring —
+    /// so a session starts where the last one stopped instead of blank.
+    pub fn restore_metric(
+        &mut self,
+        profile_id: &str,
+        key: &str,
+        label: &str,
+        unit: MetricUnit,
+        warn_above: Option<f64>,
+        points: Vec<Point>,
+    ) {
+        self.tracks.entry(profile_id.to_string()).or_default().insert(
+            key.to_string(),
+            Track {
+                label: label.to_string(),
+                unit,
+                warn_above,
+                points: tail(points, MAX_POINTS),
+            },
+        );
+    }
+
+    /// The same, for one component's one column.
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore_entity(
+        &mut self,
+        profile_id: &str,
+        section: &str,
+        row: &str,
+        column: &str,
+        label: &str,
+        unit: MetricUnit,
+        warn_above: Option<f64>,
+        points: Vec<Point>,
+    ) {
+        let entities = self.entities.entry(profile_id.to_string()).or_default();
+        if entities.len() >= MAX_TRACKED_ENTITIES {
+            return;
+        }
+        entities.insert(
+            EntityKey {
+                section: section.to_string(),
+                row: row.to_string(),
+                column: column.to_string(),
+            },
+            EntityTrack {
+                label: label.to_string(),
+                unit,
+                warn_above,
+                points: tail(points, MAX_POINTS),
+                misses: 0,
+            },
+        );
+    }
+
+    /// And a connection's health samples, so its lane does not open on a gap.
+    pub fn restore_health(&mut self, profile_id: &str, samples: Vec<HealthSample>) {
+        let skip = samples.len().saturating_sub(MAX_HEALTH);
+        self.health
+            .insert(profile_id.to_string(), samples.into_iter().skip(skip).collect());
+    }
     /// Fold one snapshot's service-level metrics into the history.
     ///
     /// Component-level metrics used to be skipped entirely, on the grounds that
@@ -346,13 +472,10 @@ impl HistoryStore {
     /// series. Everything else about a component is still readable live from
     /// the snapshot; this is only about what can be charted over time.
     fn record_entities(&mut self, snapshot: &HealthSnapshot) {
-        let tracked: Vec<&crate::model::Section> =
-            snapshot.sections.iter().filter(|s| s.tracked).collect();
-
         // Nothing to do, and nothing to expire against either — a collector
         // that reports no tracked sections this cycle (an error snapshot, say)
         // must not evict everything it recorded before.
-        if tracked.is_empty() {
+        if !snapshot.sections.iter().any(|s| s.tracked) {
             return;
         }
 
@@ -360,73 +483,38 @@ impl HistoryStore {
         let entities = self.entities.entry(snapshot.profile_id.clone()).or_default();
         let mut seen: Vec<EntityKey> = Vec::new();
 
-        for section in tracked {
-            let numeric: Vec<&crate::model::ColumnSpec> = section
-                .columns
-                .iter()
-                .filter(|c| {
-                    matches!(
-                        c.kind,
-                        crate::model::CellKind::Metric { .. } | crate::model::CellKind::Gauge { .. }
-                    )
-                })
-                .collect();
+        for reading in entity_readings(snapshot) {
+            let key = EntityKey {
+                section: reading.section.to_string(),
+                row: reading.row.to_string(),
+                column: reading.column.to_string(),
+            };
 
-            for row in &section.rows {
-                for column in &numeric {
-                    let Some(cell) = row.cells.get(&column.key) else {
-                        continue;
-                    };
-                    let (value, unit, warn_above) = match cell {
-                        crate::model::CellValue::Number { value } => {
-                            (*value, column.unit().unwrap_or(MetricUnit::Count), None)
-                        }
-                        crate::model::CellValue::Gauge {
-                            value, warn_above, ..
-                        } => (
-                            *value,
-                            column.unit().unwrap_or(MetricUnit::Count),
-                            *warn_above,
-                        ),
-                        _ => continue,
-                    };
-                    if !value.is_finite() {
-                        continue;
-                    }
-
-                    let key = EntityKey {
-                        section: section.id.clone(),
-                        row: row.id.clone(),
-                        column: column.key.clone(),
-                    };
-
-                    // Admit new entities only under the ceiling. Existing ones
-                    // keep recording, so a cluster that outgrows the cap
-                    // degrades by stopping at the edge rather than thrashing.
-                    if !entities.contains_key(&key) && entities.len() >= MAX_TRACKED_ENTITIES {
-                        continue;
-                    }
-
-                    let track = entities.entry(key.clone()).or_insert_with(|| EntityTrack {
-                        label: column.label.clone(),
-                        unit,
-                        warn_above,
-                        points: VecDeque::with_capacity(32),
-                        misses: 0,
-                    });
-
-                    track.label = column.label.clone();
-                    track.unit = unit;
-                    track.warn_above = warn_above;
-                    track.misses = 0;
-
-                    if track.points.len() >= MAX_POINTS {
-                        track.points.pop_front();
-                    }
-                    track.points.push_back(Point { t: now, v: value });
-                    seen.push(key);
-                }
+            // Admit new entities only under the ceiling. Existing ones keep
+            // recording, so a cluster that outgrows the cap degrades by
+            // stopping at the edge rather than thrashing.
+            if !entities.contains_key(&key) && entities.len() >= MAX_TRACKED_ENTITIES {
+                continue;
             }
+
+            let track = entities.entry(key.clone()).or_insert_with(|| EntityTrack {
+                label: reading.label.to_string(),
+                unit: reading.unit,
+                warn_above: reading.warn_above,
+                points: VecDeque::with_capacity(32),
+                misses: 0,
+            });
+
+            track.label = reading.label.to_string();
+            track.unit = reading.unit;
+            track.warn_above = reading.warn_above;
+            track.misses = 0;
+
+            if track.points.len() >= MAX_POINTS {
+                track.points.pop_front();
+            }
+            track.points.push_back(Point { t: now, v: reading.value });
+            seen.push(key);
         }
 
         // Age out anything absent this cycle, and drop it once it has been gone

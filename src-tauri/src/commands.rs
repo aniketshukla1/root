@@ -1024,7 +1024,7 @@ pub async fn get_metric_history(
     // further back than that, the rest comes off disk — see `backfill` for why
     // the two are spliced rather than concatenated.
     if let (Some(since), Some(store)) = (since, state.store.read().await.as_ref()) {
-        backfill(store, &profile_id, since, &mut series).await;
+        backfill(store, &profile_id, None, since, &mut series).await;
     }
     Ok(series)
 }
@@ -1048,6 +1048,8 @@ pub async fn get_metric_history(
 async fn backfill(
     store: &crate::store::Store,
     profile_id: &str,
+    // A component's (section, row), or `None` for the connection's own metrics.
+    entity: Option<(&str, &str)>,
     since: chrono::DateTime<chrono::Utc>,
     series: &mut [MetricSeries],
 ) {
@@ -1061,7 +1063,11 @@ async fn backfill(
             continue;
         }
 
-        let older = match store.metric_hours(profile_id, &one.key, since).await {
+        let older = match entity {
+            None => store.metric_buckets(profile_id, &one.key, since).await,
+            Some((section, row)) => store.entity_buckets(profile_id, section, row, &one.key, since).await,
+        };
+        let older = match older {
             Ok(rows) => rows,
             Err(e) => {
                 tracing::debug!(metric = %one.key, "history backfill failed: {e}");
@@ -1147,6 +1153,8 @@ pub async fn get_history_stats(state: &Arc<AppState>) -> Result<HistoryStats> {
     Ok(HistoryStats {
         configured: true,
         timescale: store.has_timescale(),
+        backend: Some(store.backend().to_string()),
+        bytes: store.bytes(),
         rows: store.counts().await.unwrap_or_default(),
     })
 }
@@ -1183,10 +1191,17 @@ pub struct FlappingCondition {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryStats {
-    /// False when no database is configured, which is the default.
+    /// False only when no store would open at all: the local file is the
+    /// default now, so history is kept unless something went wrong.
     pub configured: bool,
     /// Whether the rollup, compression and expiry are the database's job.
     pub timescale: bool,
+    /// `postgres` or `local`; absent when nothing is configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
+    /// The local file's size on disk. Postgres keeps its own counters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
     pub rows: std::collections::HashMap<String, i64>,
 }
 
@@ -1406,12 +1421,18 @@ pub async fn get_component_history(
     row_id: String,
     minutes: Option<i64>,
 ) -> Result<Vec<MetricSeries>> {
-    let since = minutes.map(|m| chrono::Utc::now() - chrono::Duration::minutes(m.clamp(1, 1440)));
-    Ok(state
+    let since =
+        minutes.map(|m| chrono::Utc::now() - chrono::Duration::minutes(m.clamp(1, STORE_MAX_MINUTES)));
+    let mut series = state
         .history
         .read()
         .await
-        .entity_series(&profile_id, &section_id, &row_id, since))
+        .entity_series(&profile_id, &section_id, &row_id, since);
+    // Past the ring, from disk — the same splice the connection's own charts use.
+    if let (Some(since), Some(store)) = (since, state.store.read().await.as_ref()) {
+        backfill(store, &profile_id, Some((&section_id, &row_id)), since, &mut series).await;
+    }
+    Ok(series)
 }
 
 /// Every piece of configuration root can see for one connection.

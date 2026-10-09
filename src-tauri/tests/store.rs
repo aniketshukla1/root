@@ -127,7 +127,7 @@ async fn a_snapshot_written_now_is_readable_as_history_later() {
     }
 
     let hours = store
-        .metric_hours("p1", "memory", base - Duration::hours(1))
+        .metric_buckets("p1", "memory", base - Duration::hours(1))
         .await
         .expect("read");
 
@@ -156,11 +156,11 @@ async fn a_value_that_is_not_a_number_is_left_out_rather_than_zeroed() {
     store.write_snapshot(&snap).await.expect("write");
 
     let bad = store
-        .metric_hours("p1", "ratio", at - Duration::hours(1))
+        .metric_buckets("p1", "ratio", at - Duration::hours(1))
         .await
         .expect("read");
     let good = store
-        .metric_hours("p1", "real", at - Duration::hours(1))
+        .metric_buckets("p1", "real", at - Duration::hours(1))
         .await
         .expect("read");
 
@@ -320,7 +320,7 @@ async fn timescale_is_optional_not_required() {
     let at = Utc::now() - Duration::minutes(30);
     store.write_snapshot(&snapshot(5.0e9, at)).await.expect("write");
     let hours = store
-        .metric_hours("p1", "memory", at - Duration::hours(1))
+        .metric_buckets("p1", "memory", at - Duration::hours(1))
         .await
         .expect("read");
 
@@ -377,11 +377,11 @@ async fn the_rollup_answers_further_back_than_a_ring_buffer_reaches() {
     }
 
     let recent = store
-        .metric_hours("p1", "memory", Utc::now() - Duration::hours(3))
+        .metric_buckets("p1", "memory", Utc::now() - Duration::hours(3))
         .await
         .unwrap();
     let everything = store
-        .metric_hours("p1", "memory", Utc::now() - Duration::days(3))
+        .metric_buckets("p1", "memory", Utc::now() - Duration::days(3))
         .await
         .unwrap();
 
@@ -412,7 +412,7 @@ async fn every_bucket_carries_the_extremes_and_not_only_the_average() {
     }
 
     let rows = store
-        .metric_hours("p1", "memory", hour - Duration::hours(1))
+        .metric_buckets("p1", "memory", hour - Duration::hours(1))
         .await
         .unwrap();
     let bucket = rows.iter().find(|r| r.count == 3).expect("one bucket of three samples");
@@ -432,11 +432,11 @@ async fn asking_for_a_window_with_nothing_in_it_is_empty_and_not_an_error() {
     store.write_snapshot(&snapshot(1.0e9, Utc::now())).await.unwrap();
 
     let ancient = store
-        .metric_hours("p1", "memory", Utc::now() - Duration::days(400))
+        .metric_buckets("p1", "memory", Utc::now() - Duration::days(400))
         .await
         .expect("a question about the distant past is still a question");
     let unknown_metric = store
-        .metric_hours("p1", "nothing_by_this_name", Utc::now() - Duration::days(1))
+        .metric_buckets("p1", "nothing_by_this_name", Utc::now() - Duration::days(1))
         .await
         .unwrap();
 

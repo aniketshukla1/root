@@ -7,8 +7,9 @@
 //     per metric, not a fixed duration (`MAX_POINTS` in
 //     src-tauri/src/history.rs), so how far back it reaches depends entirely on
 //     the poll interval: 720 samples is three hours at 15s and twelve at 60s.
-//   - **The history store**, when one is configured. Its hourly rollup has no
-//     retention policy, so it reaches back as far as the database goes.
+//   - **The history store**, on by default: a local SQLite file keeps a day of
+//     raw samples, a week of minutes and a month of ten-minute buckets; an
+//     operator's Postgres keeps hourly buckets for as long as it lives.
 //
 // Offering a 24h button against a ring that holds three meant "24h" and "3h"
 // drew the same series under different labels — silently, with no error. The
@@ -47,12 +48,12 @@ const CANDIDATES: Range[] = [
 ];
 
 /**
- * Only offered when a database is behind them.
+ * Only offered when a history store is behind them.
  *
- * These are read from the hourly rollup, so a point is an hour no matter which
- * one is picked — 7d is 168 points and 30d is 720. Nothing finer exists that
- * far back, and pretending otherwise would put a smooth line where there is
- * really one sample an hour.
+ * Read from the store's rollups, so a point is a bucket, not a poll: from the
+ * local file, minutes up to a week and ten-minute buckets beyond; from
+ * Postgres, hours. Nothing finer exists that far back, and pretending
+ * otherwise would draw a smooth line over coarser samples.
  */
 const LONG_CANDIDATES: Range[] = [
   { minutes: 2 * 1440, label: "2d" },

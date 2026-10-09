@@ -645,6 +645,30 @@ impl AppState {
         }
     }
 
+    /// Keep history in `history.db` beside the config file, and refill the
+    /// ring from it first so a restart carries on where the last session
+    /// stopped. Like the journal, a store that will not open is logged and
+    /// the app runs without it.
+    pub async fn open_local_store(&self) {
+        let path = self
+            .config_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("history.db");
+        match crate::store::Store::open_local(&path).await {
+            Ok(store) => {
+                if let crate::store::Store::Local(archive) = &store {
+                    match archive.restore(&mut *self.history.write().await).await {
+                        Ok(series) => tracing::info!(path = %path.display(), series, "history restored"),
+                        Err(e) => tracing::warn!("history could not be restored: {e}"),
+                    }
+                }
+                *self.store.write().await = Some(store);
+            }
+            Err(e) => tracing::warn!(path = %path.display(), "history will not be kept: {e}"),
+        }
+    }
+
     /// The journal, or an error naming why there is not one.
     pub async fn journal(&self) -> Result<Arc<crate::journal::Journal>> {
         if let Some(journal) = self.journal.read().await.clone() {

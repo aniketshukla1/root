@@ -98,13 +98,14 @@ async fn run() -> Result<(), String> {
                 *state.store.write().await = Some(opened);
             }
             // The same posture as everywhere else: a database that is not
-            // reachable costs the history, not the monitoring.
-            Err(e) => tracing::warn!("history will not be kept: {e}"),
+            // reachable costs the shared history, not the monitoring.
+            Err(e) => tracing::warn!("history will not be kept in Postgres: {e}"),
         }
     } else {
-        tracing::warn!(
-            "ROOT_DATABASE_URL is not set — this session's history will be lost when it stops"
-        );
+        tracing::info!("ROOT_DATABASE_URL is not set — keeping history in a file beside the config");
+    }
+    if state.store.read().await.is_none() {
+        state.open_local_store().await;
     }
 
     // Accounts live in the same database as the history. Without one the

@@ -359,10 +359,17 @@ export interface FlappingCondition {
 
 /** What the history store is holding, for the Settings panel. */
 export interface HistoryStats {
-  /** False when no database is configured, which is the desktop default. */
+  /**
+   * Whether history is kept at all. True by default now: without a database
+   * root keeps a month in a local file. False only when neither would open.
+   */
   configured: boolean;
   /** Whether the rollup, compression and expiry are the database's job. */
   timescale: boolean;
+  /** `local` (the SQLite file beside the config) or `postgres`. */
+  backend?: "local" | "postgres";
+  /** The local file's size on disk. */
+  bytes?: number;
   rows: Record<string, number>;
 }
 

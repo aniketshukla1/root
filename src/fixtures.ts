@@ -2192,11 +2192,13 @@ export function changeHistory(profileId?: string): PastChange[] {
   );
 }
 
-/** A configured store with a plausible amount in it. */
+/** The default store — the local file — with a plausible amount in it. */
 export function historyStats(): HistoryStats {
   return {
     configured: true,
-    timescale: true,
+    timescale: false,
+    backend: "local",
+    bytes: 171_212_800,
     rows: {
       alerts: 1_284,
       changes: 3_907,

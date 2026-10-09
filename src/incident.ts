@@ -389,11 +389,20 @@ export function propagation(
   model: EstateModel,
 ): PropagationRow[] {
   const roots = new Set(incident.roots);
+  // A minute of slack: a connection's health and its first alert land on the
+  // same poll, but not to the millisecond.
+  const began = Date.parse(incident.started) - 60_000;
 
   return incident.profileIds
     .map((profileId) => {
       const runs = healthRuns[profileId] ?? [];
-      const turn = runs.find((r) => r.health === "down" || r.health === "degraded");
+      // The bad run that belongs to THIS incident — the first one still going
+      // when it began. Taking the first bad run in the window picked up a
+      // blip that had healed forty minutes earlier, reordered the spread
+      // around it, and pulled that blip's deploy in as the trigger.
+      const turn = runs.find(
+        (r) => (r.health === "down" || r.health === "degraded") && Date.parse(r.to) >= began,
+      );
       const service = model.services.find((s) => s.snapshot.profileId === profileId);
       return {
         profileId,

@@ -58,6 +58,17 @@ export interface IncidentContext {
   minutes: number;
 }
 
+/**
+ * A connection's name, for any sentence an operator reads.
+ *
+ * Incidents, grouping reasons and the topology all carry profile ids. For a
+ * real connection that id is a UUID, so every sentence built from them has
+ * to come through here — one sentence that did not printed "depends on
+ * 3f2a…" in the middle of an incident.
+ */
+const nameIn = (context: IncidentContext) => (id: string) =>
+  context.model.services.find((s) => s.snapshot.profileId === id)?.snapshot.profileName ?? id;
+
 export interface IncidentActions {
   onOpenService: (profileId: string) => void;
   /** Where a blind spot gets closed — the connection's own configuration. */
@@ -103,8 +114,7 @@ export function IncidentHero({
   footer?: ReactNode;
 }) {
   const radius = blastRadius(incident, context.model);
-  const nameOf = (id: string) =>
-    context.model.services.find((s) => s.snapshot.profileId === id)?.snapshot.profileName ?? id;
+  const nameOf = nameIn(context);
   const spots = blindSpots(incident, {
     topology: context.topology,
     changes: context.changes,
@@ -516,16 +526,21 @@ export function PropagationPanel({
     });
   }
 
+  const ordered = rows.filter((r) => r.turnedAt);
+  const firstTurn = ordered[0]?.turnedAt;
+
+  // The last change before the first thing broke — the candidate trigger.
+  // This took the FIRST change in the window, so on an estate that deploys
+  // often the chain opened on a deploy from forty minutes earlier.
+  const turnMs = firstTurn ? Date.parse(firstTurn) + 60_000 : Infinity;
   const deploy = context.changes
     .filter((c) => incident.profileIds.includes(c.profileId))
-    .filter((c) => Date.parse(c.at) >= start)
-    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))[0];
+    .filter((c) => Date.parse(c.at) >= start && Date.parse(c.at) <= turnMs)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
   const deployAt = deploy ? clamp((Date.parse(deploy.at) - start) / windowMs) : undefined;
 
-  const ordered = rows.filter((r) => r.turnedAt);
   // The same run-up Evidence draws: from the change to the first failure,
   // deepening toward the moment it broke.
-  const firstTurn = ordered[0]?.turnedAt;
   const turnAt = firstTurn ? clamp((Date.parse(firstTurn) - start) / windowMs) : undefined;
   const runUp =
     deployAt !== undefined && turnAt !== undefined && turnAt > deployAt
@@ -614,19 +629,20 @@ function SpreadChain({
     context.model.services.map((s) => [s.snapshot.profileId, s.snapshot.kind]),
   );
 
+  const nameOf = nameIn(context);
   const linkFor = (row: PropagationRow, earlier: Set<string>) => {
     for (const reason of incident.grouping) {
       if (reason.kind === "dependencyFailedFirst" && reason.dependent === row.profileId && earlier.has(reason.root)) {
-        return { text: `depends on ${reason.root}`, declared: true };
+        return { text: `depends on ${nameOf(reason.root)}`, declared: true };
       }
       if (reason.kind === "dependentPressuredIt" && reason.pressured === row.profileId && earlier.has(reason.origin)) {
-        return { text: `pressure from ${reason.origin}, which depends on it`, declared: true };
+        return { text: `pressure from ${nameOf(reason.origin)}, which depends on it`, declared: true };
       }
     }
     const upstream = (context.topology.dependsOn[row.profileId] ?? []).find((id) => earlier.has(id));
-    if (upstream) return { text: `depends on ${upstream}`, declared: true };
+    if (upstream) return { text: `depends on ${nameOf(upstream)}`, declared: true };
     const downstream = (context.topology.dependents[row.profileId] ?? []).find((id) => earlier.has(id));
-    if (downstream) return { text: `${downstream} depends on it`, declared: true };
+    if (downstream) return { text: `${nameOf(downstream)} depends on it`, declared: true };
     return { text: "timing only — no declared link", declared: false };
   };
 

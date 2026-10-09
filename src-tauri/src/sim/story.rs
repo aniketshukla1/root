@@ -34,6 +34,10 @@ pub const PAST_STORIES: i64 = 2;
 pub const BACKFILL_SECS: i64 = 2 * 60 * 60;
 /// Quiet time kept after a story before another may begin.
 const CALM_SECS: i64 = 120;
+/// How far back builds are materialised. Everything that reads them — the
+/// replayed history, the CI job rows, the latest version of each service —
+/// looks back at most this far; older builds are only counted, for numbering.
+const BUILD_WINDOW_SECS: i64 = BACKFILL_SECS + 3600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -378,8 +382,28 @@ impl Script {
 
     /// Every build started by `until`, numbered per job, oldest first.
     fn builds_from(&self, instances: &[Instance], until: DateTime<Utc>) -> Vec<Build> {
+        self.builds_within(instances, until, BUILD_WINDOW_SECS)
+    }
+
+    /// Builds started in the last `window_secs` before `until`, numbered as
+    /// if every earlier one were listed too.
+    ///
+    /// Materialising every build since the demo began made each poll slower
+    /// the longer the demo ran — a week in, every snapshot rebuilt thousands
+    /// of them, and the startup replay did so thousands of times. Earlier
+    /// builds are now counted, not built.
+    fn builds_within(&self, instances: &[Instance], until: DateTime<Utc>, window_secs: i64) -> Vec<Build> {
         type Raw = (&'static str, DateTime<Utc>, f64, BuildResult, String);
         let mut raw: Vec<Raw> = Vec::new();
+        let from = until - Duration::seconds(window_secs);
+        let mut skipped: Vec<(&str, i64)> = JOBS.iter().map(|(job, _)| (*job, 0)).collect();
+        let mut skip = |job: &str| {
+            if let Some(slot) = skipped.iter_mut().find(|(j, _)| *j == job) {
+                slot.1 += 1;
+            }
+        };
+
+        let mut last_early_smoke = None;
 
         // Benign work on the grid, reaching back over the whole replayed past.
         let first = -(BACKFILL_SECS / CYCLE_SECS) - 1;
@@ -390,27 +414,42 @@ impl Script {
                 break;
             }
             if k.rem_euclid(2) == 0 {
-                raw.push((
-                    "deploy-catalog-api",
-                    base + Duration::seconds(495),
-                    75.0,
-                    BuildResult::Success,
-                    format!("Deployed catalog-api 3.{}.0", 19 + (k - first) / 2),
-                ));
+                let start = base + Duration::seconds(495);
+                if start < from {
+                    skip("deploy-catalog-api");
+                } else {
+                    raw.push((
+                        "deploy-catalog-api",
+                        start,
+                        75.0,
+                        BuildResult::Success,
+                        format!("Deployed catalog-api 3.{}.0", 19 + (k - first) / 2),
+                    ));
+                }
             }
             if k.rem_euclid(3) == 1 {
-                raw.push((
-                    "deploy-web",
-                    base + Duration::seconds(555),
-                    75.0,
-                    BuildResult::Success,
-                    format!("Deployed web 4.{}.0", 13 + (k - first) / 3),
-                ));
+                let start = base + Duration::seconds(555);
+                if start < from {
+                    skip("deploy-web");
+                } else {
+                    raw.push((
+                        "deploy-web",
+                        start,
+                        75.0,
+                        BuildResult::Success,
+                        format!("Deployed web 4.{}.0", 13 + (k - first) / 3),
+                    ));
+                }
             }
             // A minute long, twice a cycle: the second run lands just after a
             // bad deploy's recovery, so a smoke test failed by the outage goes
             // green with the estate rather than lingering as its own incident.
             for (slot, offset) in [(0u64, 200i64), (1, 400)] {
+                if base + Duration::seconds(offset) < from {
+                    skip("e2e-smoke");
+                    last_early_smoke = Some(base + Duration::seconds(offset));
+                    continue;
+                }
                 let flaky = hash(&[self.seed, k as u64, slot, 0xE2E]).is_multiple_of(6);
                 raw.push((
                     "e2e-smoke",
@@ -427,20 +466,18 @@ impl Script {
             k += 1;
         }
 
-        // Each story's job last ran a day before the replay begins, so no
-        // job reads "never built" before its story first comes round.
-        let before = self.epoch() - Duration::days(1);
-        for (job, what) in [
-            ("deploy-checkout-api", "Deployed checkout-api 2.40.3"),
-            ("deploy-analytics-ingest", "Deployed analytics-ingest 1.33.2"),
-            ("reindex-catalog", "Reindexed products-v7: 2,138,977 documents"),
-        ] {
-            raw.push((job, before, 80.0, BuildResult::Success, what.to_string()));
-        }
-
         // The stories' own builds.
         for instance in instances {
             let n = instance.ordinal;
+            if instance.end() < from {
+                // Every build a story starts falls inside its own span.
+                match instance.story {
+                    Story::BadDeploy => (0..2).for_each(|_| skip("deploy-checkout-api")),
+                    Story::ConsumerOom => (0..2).for_each(|_| skip("deploy-analytics-ingest")),
+                    Story::SearchHeap => skip("reindex-catalog"),
+                }
+                continue;
+            }
             match instance.story {
                 Story::BadDeploy => {
                     raw.push((
@@ -486,12 +523,49 @@ impl Script {
             }
         }
 
-        raw.retain(|(_, start, ..)| *start <= until);
+        // A story spanning the window's edge contributes builds on both sides
+        // of it; the early ones are counted like the rest.
+        for (job, start, ..) in &raw {
+            if *start < from {
+                skip(job);
+            }
+        }
+        raw.retain(|(_, start, ..)| *start >= from && *start <= until);
+
+        // Each story's job last ran a day before the replay begins, so no
+        // job reads "never built" before its story first comes round. That
+        // run is far outside the window, so it stays listed until a later
+        // run of the same job has left the window too.
+        let before = self.epoch() - Duration::days(1);
+        for (job, what) in [
+            ("deploy-checkout-api", "Deployed checkout-api 2.40.3"),
+            ("deploy-analytics-ingest", "Deployed analytics-ingest 1.33.2"),
+            ("reindex-catalog", "Reindexed products-v7: 2,138,977 documents"),
+        ] {
+            let Some(slot) = skipped.iter_mut().find(|(j, _)| *j == job) else {
+                continue;
+            };
+            if slot.1 > 0 {
+                slot.1 += 1;
+            } else {
+                raw.push((job, before, 80.0, BuildResult::Success, what.to_string()));
+            }
+        }
         raw.sort_by_key(|(_, start, ..)| *start);
 
-        let mut counters: Vec<(&str, i64)> = JOBS.to_vec();
+        let mut counters: Vec<(&str, i64)> = JOBS
+            .iter()
+            .map(|(job, first)| {
+                let before = skipped.iter().find(|(j, _)| j == job).map_or(0, |(_, n)| *n);
+                (*job, first + before)
+            })
+            .collect();
         let mut out = Vec::with_capacity(raw.len());
-        let mut outage_failed_last = false;
+        // Whether the first smoke run listed is the green-again one after an
+        // outage depends on the run before it, which the window left out.
+        // Its middle, as below: a smoke run takes a minute.
+        let mut outage_failed_last = last_early_smoke
+            .is_some_and(|start| effects_at(instances, start + Duration::seconds(30)).checkout_errors > 0.3);
         for (job, start, secs, mut result, mut what) in raw {
             let Some(slot) = counters.iter_mut().find(|(j, _)| *j == job) else {
                 continue;
@@ -769,8 +843,9 @@ mod tests {
         let m = s.moment(s.started_at + Duration::hours(1));
         for (job, first) in JOBS {
             let numbers: Vec<i64> = m.builds.iter().filter(|b| b.job == *job).map(|b| b.number).collect();
-            for (i, n) in numbers.iter().enumerate() {
-                assert_eq!(*n, first + i as i64);
+            assert!(numbers.first().is_some_and(|n| n >= first), "{job}: {numbers:?}");
+            for pair in numbers.windows(2) {
+                assert_eq!(pair[1], pair[0] + 1, "{job}: {numbers:?}");
             }
         }
     }
@@ -784,6 +859,42 @@ mod tests {
             let m = s.moment(deploy.at(470.0));
             let last = m.job_builds("e2e-smoke").into_iter().rev().find(|b| !b.building(m.t)).unwrap();
             assert_eq!(last.result, BuildResult::Success, "seed {seed}: {}", last.what);
+        }
+    }
+
+    #[test]
+    fn a_long_demo_lists_only_recent_builds_and_numbers_them_the_same() {
+        // The window's edge walks past outages and the smoke runs after them.
+        for seed in 0..6 {
+            let mut s = script();
+            s.seed = seed;
+            for step in 0..40 {
+                let until = s.started_at + Duration::days(3) + Duration::seconds(step * 120);
+                let instances = s.instances(until);
+                let recent = s.builds_from(&instances, until);
+                let all = s.builds_within(&instances, until, 10 * 86_400);
+                assert!(all.len() > recent.len() * 5, "{} vs {}", all.len(), recent.len());
+                assert!(recent.len() < 120, "{}", recent.len());
+                let tail = &all[all.len() - recent.len()..];
+                for (a, b) in recent.iter().zip(tail) {
+                    assert_eq!(
+                        (a.job, a.number, a.start, a.result),
+                        (b.job, b.number, b.start, b.result),
+                        "seed {seed}, until {until}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_job_reads_never_built_while_the_past_replays() {
+        let s = script();
+        for minutes in [0, 60, 119] {
+            let m = s.moment(s.epoch() + Duration::minutes(minutes));
+            for job in ["deploy-checkout-api", "deploy-analytics-ingest", "reindex-catalog"] {
+                assert!(!m.job_builds(job).is_empty(), "{job} at +{minutes}m");
+            }
         }
     }
 

@@ -30,7 +30,7 @@ import { Button, Chip, cx, Empty, Panel, Tag } from "../ui/primitives";
  * evidence goes underneath the conclusion it supports.
  */
 
-const SEVERITY: Record<Severity, { label: string; color: string; rank: number }> = {
+export const SEVERITY: Record<Severity, { label: string; color: string; rank: number }> = {
   now: { label: "now", color: "var(--color-crit)", rank: 3 },
   soon: { label: "soon", color: "var(--color-warn)", rank: 2 },
   advisory: { label: "advisory", color: "var(--color-ink-4)", rank: 1 },

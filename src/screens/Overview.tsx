@@ -26,7 +26,7 @@ import type {
 } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { Horizon } from "../ui/capacity";
-import { FindingList, RecallStrip } from "../ui/config";
+import { RecallStrip } from "../ui/config";
 import { AlertList } from "../ui/AlertList";
 import { PredictionList } from "../ui/PredictionList";
 import { RootCausePanel } from "../ui/RootCausePanel";
@@ -40,9 +40,10 @@ import {
   type IncidentActions,
   type IncidentContext,
 } from "../ui/incident";
+import { ConnectionGrid, EstateMap, FindingRows, SignalTiles } from "../ui/cockpit";
 import { Bullet } from "../ui/plots";
 import { Heatmap } from "../ui/Heatmap";
-import { Button, Chip, cx, Dot, Empty, Panel, ServiceMark, Tag } from "../ui/primitives";
+import { Button, Chip, cx, Dot, Empty, InfoTip, Panel, ServiceMark, Tag } from "../ui/primitives";
 import { useNotices, WhoKnows } from "../ui/notices";
 import { CheckIcon, ChevronRight } from "../ui/icons";
 
@@ -270,6 +271,8 @@ export function Overview({
           <QuietState
             model={model}
             catalog={catalog}
+            topology={topology}
+            history={history}
             onExplain={onExplain}
             changes={changes}
             healthRuns={healthRuns}
@@ -499,6 +502,8 @@ function HeaderState({
 function QuietState({
   model,
   catalog,
+  topology,
+  history,
   changes,
   healthRuns,
   capacity,
@@ -511,6 +516,8 @@ function QuietState({
 }: {
   model: EstateModel;
   catalog: Catalog;
+  topology: TopologyView;
+  history: Record<string, MetricSeries[]>;
   changes: ChangeEvent[];
   healthRuns: Record<string, HealthRun[]>;
   capacity: CapacityRisk[];
@@ -547,45 +554,73 @@ function QuietState({
 
   return (
     <>
-      <section
-        className="panel hue flex shrink-0 flex-col items-start gap-4 px-4 py-4 @2xl:flex-row"
+      {/* What used to be a paragraph is one line now: the claim, how much of
+          the estate it covers, and when anything last left healthy. The
+          screen under it is pictures — what depends on what, and every
+          component — rather than prose about them. */}
+      <Panel
+        className="hue"
         style={
           { "--hue": expected > 0 ? "var(--color-warn)" : "var(--color-ok)" } as React.CSSProperties
         }
+        title={
+          <span className="flex items-center gap-2">
+            <span style={{ color: expected > 0 ? "var(--color-warn)" : "var(--color-ok)" }}>
+              <CheckIcon size={15} />
+            </span>
+            {expected > 0 ? "Nothing is wrong yet" : "Nothing is wrong"}
+          </span>
+        }
+        subtitle={[
+          `${model.counts.connections} connections reporting`,
+          `${model.counts.entities} components healthy`,
+          clearFor !== undefined
+            ? `last recovery ${formatRelative(new Date(clearFor).toISOString())}`
+            : `nothing left healthy in ${minutes}m`,
+          expected > 0 && `${expected} expected to break`,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => onNavigate({ name: "metrics" })}>
+              Metrics
+            </Button>
+            <Button variant="ghost" onClick={() => onNavigate({ name: "logs" })}>
+              Logs
+            </Button>
+          </>
+        }
       >
-        {/* "Nothing is wrong" is a claim about now, and it stays true while
-            something is expected to break later — but saying only that, on a
-            screen that also carries a forecast, reads as reassurance the
-            forecast contradicts. So the headline keeps its tense and names
-            the exception rather than swallowing it. */}
-        <span
-          className="mt-1"
-          style={{ color: expected > 0 ? "var(--color-warn)" : "var(--color-ok)" }}
-        >
-          <CheckIcon size={20} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-3xl leading-tight font-medium tracking-[-.025em] text-ink">
-            {expected > 0 ? "Nothing is wrong yet." : "Nothing is wrong."}
-          </h2>
-          <p className="mt-2 max-w-[92ch] text-base leading-relaxed text-ink-2">
-            All {model.counts.connections} connections reported on their last poll, and{" "}
-            {model.counts.entities} components are healthy.
-            {clearFor !== undefined
-              ? ` The last thing to leave healthy recovered ${formatRelative(new Date(clearFor).toISOString())}.`
-              : ` Nothing has left healthy in the last ${minutes} minutes.`}{" "}
-            {expected > 0
-              ? ` ${expected} thing${expected === 1 ? " is" : "s are"} expected to break anyway — that is the first panel below, and it is the one worth reading now.`
-              : findings.length > 0
-                ? " What follows is what its own configuration says is coming, what is closest to a limit, and what changed while it was quiet."
-                : " What follows is what is closest to a limit, and what changed while it was quiet — the two things that decide whether this lasts."}
-          </p>
+        <div className="grid gap-5 @5xl:grid-cols-2">
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="label">Connections</span>
+              <HealthKey />
+            </div>
+            <ConnectionGrid
+              services={model.services}
+              catalog={catalog}
+              onOpen={(profileId) => onNavigate({ name: "service", profileId })}
+            />
+          </div>
+          <div className="min-w-0">
+            <div className="label mb-2">Depends on</div>
+            <EstateMap
+              services={model.services}
+              topology={topology}
+              onOpen={(profileId) => onNavigate({ name: "service", profileId })}
+            />
+          </div>
         </div>
-        <div className="flex w-full shrink-0 flex-col gap-1.5 @2xl:w-[168px]">
-          <Button onClick={() => onNavigate({ name: "metrics" })}>Open metrics</Button>
-          <Button onClick={() => onNavigate({ name: "logs" })}>Open logs</Button>
-        </div>
-      </section>
+      </Panel>
+
+      <SignalTiles
+        services={model.services}
+        history={history}
+        catalog={catalog}
+        onOpen={(profileId) => onNavigate({ name: "service", profileId })}
+      />
 
       {/* Above both of the panels below, and for the same reason they are
           ordered against each other: a headroom row says a number is moving
@@ -604,26 +639,21 @@ function QuietState({
       {findings.length > 0 && (
         <Panel
           title="From configuration"
-          subtitle="read against this estate's own telemetry"
+          subtitle={`${findings.length} finding${findings.length === 1 ? "" : "s"} · most urgent first`}
+          flush
           actions={
-            <Button variant="ghost" onClick={() => onNavigate({ name: "services" })}>
-              All connections
-            </Button>
+            <InfoTip>
+              Each finding reads a setting against this estate&apos;s own telemetry. Open one for
+              its reasoning, the evidence it rests on and the change that fixes it.
+            </InfoTip>
           }
         >
-          <FindingList
-            findings={findings.slice(0, 3)}
+          <FindingRows
+            findings={findings}
             verdicts={verdicts}
             onJudge={onJudge}
-            onOpenService={(profileId) =>
-              onNavigate({ name: "service", profileId, tab: "config" })
-            }
+            onOpenService={(profileId) => onNavigate({ name: "service", profileId, tab: "config" })}
           />
-          {findings.length > 3 && (
-            <p className="num mt-2 text-2xs text-ink-4">
-              {findings.length - 3} more on their own connections.
-            </p>
-          )}
         </Panel>
       )}
 
@@ -635,13 +665,16 @@ function QuietState({
               ? "soonest to reach it first, not fullest"
               : "no thresholds declared"
           }
+          actions={
+            <InfoTip>
+              Ranked by when each reaches its limit, not by how full it is now. Only metrics with
+              a declared threshold appear: a number with no limit is not a warning waiting to
+              happen, it is just a number.
+            </InfoTip>
+          }
         >
           {limits.length === 0 ? (
-            <p className="num text-2xs leading-relaxed text-ink-4">
-              None of the metrics these collectors return carry a declared threshold, so there is
-              no headroom to report. A number with no limit is not a warning waiting to happen —
-              it is just a number.
-            </p>
+            <p className="num text-2xs text-ink-4">No declared limits to measure against.</p>
           ) : (
             <div className="flex flex-col gap-2.5">
               {limits.map((row) => (
@@ -668,11 +701,13 @@ function QuietState({
                   {/* The component is the answer when there is one. "nfs-prod
                       is 71% full" sends you looking; "/mnt/teams/alpha" is
                       the thing to go and look at. */}
-                  <span className="num w-[110px] shrink-0 truncate text-2xs text-ink-3">
-                    {row.component?.row ?? names.get(row.profileId) ?? row.profileId}
-                  </span>
-                  <span className="num w-[120px] shrink-0 truncate text-2xs text-ink-2">
-                    {row.label}
+                  {/* Name over metric, one cell: two fixed columns side by side
+                      left no room for the bar at 760px. */}
+                  <span className="num w-[132px] shrink-0 text-2xs leading-tight">
+                    <span className="block truncate text-ink-3">
+                      {row.component?.row ?? names.get(row.profileId) ?? row.profileId}
+                    </span>
+                    <span className="block truncate text-ink-2">{row.label}</span>
                   </span>
                   <span className="min-w-0 flex-1">
                     {/* The bar runs past the limit so the limit can be DRAWN
@@ -682,14 +717,14 @@ function QuietState({
                         moment the drawing no longer has anything to warn. */}
                     <Bullet value={row.value} max={row.limit * 1.25} warnAbove={row.limit} />
                   </span>
-                  <span className="num w-[124px] shrink-0 text-right text-2xs text-ink-3">
+                  <span className="num w-[112px] shrink-0 text-right text-2xs text-ink-3">
                     {formatMetricValue(row.value, row.unit)}
                     <span className="text-ink-4"> of {formatMetricValue(row.limit, row.unit)}</span>
                   </span>
                   {/* The capacity answer. A row with no projection says so
                       rather than showing a blank column, because a blank one
                       reads as "no rush" and the truth is "not knowable yet". */}
-                  <span className="num w-[104px] shrink-0 text-right text-2xs">
+                  <span className="num w-[64px] shrink-0 text-right text-2xs">
                     <Horizon trend={row.trend} unit={row.unit} />
                   </span>
                 </button>
@@ -702,10 +737,7 @@ function QuietState({
           <div className="mt-3.5 border-t border-line pt-3">
             <div className="label mb-2">Flapped in the window</div>
             {flaps.length === 0 ? (
-              <p className="num text-2xs text-ink-4">
-                Nothing left healthy in the last {minutes} minutes. Not one recovery, not one
-                blip.
-              </p>
+              <p className="num text-2xs text-ink-4">Nothing left healthy in the last {minutes} minutes.</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {flaps.map((flap) => (

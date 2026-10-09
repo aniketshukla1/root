@@ -1,4 +1,4 @@
-import type { ComponentProps, KeyboardEvent, ReactNode } from "react";
+import { useState, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
 
 import { healthColor, healthLabel, healthShape, markColor } from "../catalog";
 import { iconFor } from "../icons/registry";
@@ -181,10 +181,12 @@ export function PanelHeader({
           title refuses to shrink and pushes the buttons out of the panel.
           When something has to give it should be the words, which are still
           readable from the tooltip, and never the controls, which cannot be
-          clicked once they are off the edge. */}
+          clicked once they are off the edge. Of the words, the subtitle goes
+          first: it shrinks a hundred times faster, so a title is cut only once
+          its subtitle is gone. */}
       <h2 className="label min-w-0 truncate whitespace-nowrap">{title}</h2>
       {subtitle && (
-        <span className="min-w-0 truncate text-2xs text-ink-4">{subtitle}</span>
+        <span className="min-w-0 shrink-[100] truncate text-2xs text-ink-4">{subtitle}</span>
       )}
       {actions && <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div>}
     </header>
@@ -555,6 +557,37 @@ export function Tabs<T extends string>({
 }
 
 // --------------------------------------------------------------------- atoms
+
+/**
+ * The explanation behind a small "i": one click opens it beside the title,
+ * so a panel's body can be the picture and the paragraph is there for whoever
+ * asks.
+ */
+export function InfoTip({ label = "About this", children }: { label?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex" onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        onBlur={() => setOpen(false)}
+        className="grid h-4 w-4 place-items-center rounded-full border border-line-strong text-[9px] leading-none text-ink-4 hover:text-ink"
+      >
+        i
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute top-5 right-0 z-30 w-72 rounded-md border border-line-strong bg-overlay px-2.5 py-2 text-2xs leading-relaxed text-ink-2 overlay-plate"
+        >
+          {children}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export function Tag({
   children,

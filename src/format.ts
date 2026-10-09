@@ -33,6 +33,8 @@ export function formatMetricValue(value: number, unit: MetricUnit): string {
     }
     case "per_second":
       return `${value.toFixed(1)}/s`;
+    case "bytes_per_second":
+      return `${formatBytes(value)}/s`;
     case "count": {
       // Keeps climbing past thousands: a document count runs to hundreds of
       // millions, and "412908.1k" is not a number anyone can read.

@@ -269,6 +269,7 @@ because most infrastructure exposes an API and not a stream.
 
 | Source | What is collected | Logs |
 | --- | --- | --- |
+| **This computer** | The machine root runs on, read directly on macOS, Windows and Linux: CPU, memory available, every writable disk (read-only volumes are full by design and skipped), network throughput per interface, and the ten busiest processes. Onboarding offers it in one click, and the first reading lands in well under a second | None |
 | **Linux host** | Disk fill per mount and never averaged — a root filesystem at 99% beside a data volume at 3% averages to comfortable, and only one of them stops the machine. Memory *available* rather than free, because `MemFree` on a healthy box is near zero. Load against the core count from the same scrape | None. node_exporter exposes metrics, not a stream |
 | **NFS exports** | Fill *and* inode exhaustion per export, since millions of small files run out of inodes while `df -h` still shows 40% free. Exports are grouped by the server they come from, so one dead server is one row rather than six broken teams. `node_filesystem_device_error` is checked before any fill number is believed — a stale mount reports zeroes that otherwise read as an empty, healthy export | None |
 
@@ -915,6 +916,7 @@ collection cycle and reports what came back.
 | Docker | empty for the local socket, or `tcp://host:2375` | none |
 | Podman | empty for the local socket — rootless, then rootful, then a `podman machine` on macOS | none |
 | Kubernetes | empty for the current context, or a context name such as `docker-desktop` | none; kubeconfig already carries it |
+| This computer | nothing — it reads the machine root is running on | none |
 | Linux host | `web-1.internal` — a node_exporter listener | optional username + password |
 | NFS exports | `build-1.internal` — node_exporter on a client that mounts the exports | optional username + password |
 | HTTP endpoint | `https://api.internal/health` | optional password or bearer token |

@@ -17,6 +17,7 @@ pub enum ServiceKind {
     Docker,
     Podman,
     LinuxHost,
+    ThisMachine,
     Nfs,
     Jenkins,
     Elasticsearch,
@@ -51,6 +52,7 @@ impl ServiceKind {
         ServiceKind::Docker,
         ServiceKind::Podman,
         ServiceKind::LinuxHost,
+        ServiceKind::ThisMachine,
         ServiceKind::Nfs,
         ServiceKind::Jenkins,
         ServiceKind::Elasticsearch,
@@ -85,6 +87,7 @@ impl ServiceKind {
             ServiceKind::Docker => "Docker",
             ServiceKind::Podman => "Podman",
             ServiceKind::LinuxHost => "Linux host",
+            ServiceKind::ThisMachine => "This computer",
             ServiceKind::Nfs => "NFS exports",
             ServiceKind::Jenkins => "Jenkins",
             ServiceKind::Elasticsearch => "Elasticsearch",
@@ -192,6 +195,8 @@ pub enum MetricUnit {
     Millis,
     Seconds,
     PerSecond,
+    /// A byte rate: network or disk throughput.
+    BytesPerSecond,
 }
 
 /// A single named measurement attached to a service or component.

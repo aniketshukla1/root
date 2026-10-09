@@ -161,7 +161,7 @@ function series(
  * screen that offered twelve types while the app ships seventeen would be
  * designing against a smaller product than the one that exists.
  */
-const METRIC_KINDS = ["docker", "podman", "kubernetes", "linux_host", "nfs",
+const METRIC_KINDS = ["this_machine", "docker", "podman", "kubernetes", "linux_host", "nfs",
   "postgres", "mysql", "mongodb", "clickhouse",
   "redis", "memcached",
   "etcd", "consul", "zookeeper",
@@ -188,6 +188,7 @@ const KIND_LABELS: Record<string, string> = {
   haproxy: "HAProxy",
   http_endpoint: "HTTP endpoint",
   linux_host: "Linux host",
+  this_machine: "This computer",
   nfs: "NFS exports",
 };
 
@@ -201,7 +202,7 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
   category:
     ["docker", "podman"].includes(kind) ? "Containers"
     : kind === "kubernetes" ? "Orchestration"
-    : kind === "linux_host" ? "Hosts"
+    : kind === "linux_host" || kind === "this_machine" ? "Hosts"
     : kind === "nfs" ? "Storage"
     : ["postgres", "mysql", "mongodb", "clickhouse"].includes(kind) ? "Databases"
     : ["redis", "memcached"].includes(kind) ? "Caching"
@@ -212,9 +213,9 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
     : kind === "prometheus" ? "Observability"
     : "Web & endpoints",
   blurb: "",
-  endpoint: { key: "endpoint", label: "Endpoint", kind: "text", required: true, advanced: false },
+  endpoint: { key: "endpoint", label: "Endpoint", kind: "text", required: kind !== "this_machine", advanced: false },
   fields: [],
-  defaultPollSecs: 15,
+  defaultPollSecs: kind === "this_machine" ? 5 : 15,
   capabilities: { logs: true, actions: [], diagnostics: [] },
 }));
 
@@ -1127,6 +1128,17 @@ export function saveProfile(profile: ConnectionProfile): AppConfig {
   if (at >= 0) SAVED[at] = profile;
   else SAVED.push(profile);
   return { ...CONFIG, profiles: [...SAVED] };
+}
+
+export function saveLlmSettings(settings: AppConfig["llm"]): AppConfig {
+  // An empty model is the provider's default, as the backend fills it.
+  const fallback = { anthropic: "claude-sonnet-4-5", open_ai_compatible: "gpt-4o", ollama: "llama3.1" };
+  CONFIG.llm = {
+    ...settings,
+    model: settings.model.trim() || fallback[settings.provider],
+    hasApiKey: settings.provider !== "ollama",
+  };
+  return currentConfig();
 }
 
 export function deleteProfile(profileId: string): AppConfig {

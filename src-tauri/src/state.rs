@@ -498,6 +498,7 @@ fn format_metric(value: f64, unit: crate::model::MetricUnit) -> String {
         Millis => format!("{value:.0}ms"),
         Seconds => format!("{value:.1}s"),
         PerSecond => format!("{value:.1}/s"),
+        BytesPerSecond => format!("{}/s", format_metric(value, Bytes)),
         Count => format!("{value:.0}"),
     }
 }

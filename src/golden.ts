@@ -49,7 +49,9 @@ export function signalOf(metric: { key: string; label: string; unit: MetricUnit 
   if (/lag/.test(text) && metric.unit === "seconds") return "latency";
   // A hit ratio is how well a cache copes with its size, not how busy it is.
   if (/hit/.test(text)) return "saturation";
-  if (metric.unit === "per_second" || TRAFFIC.test(text)) return "traffic";
+  if (metric.unit === "per_second" || metric.unit === "bytes_per_second" || TRAFFIC.test(text)) {
+    return "traffic";
+  }
   if (metric.unit === "percent" || SATURATION.test(text)) return "saturation";
   return "other";
 }

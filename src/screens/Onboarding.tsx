@@ -1,9 +1,20 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { api, errorMessage } from "../api";
 import type { Catalog } from "../catalog";
-import type { AppConfig, ServiceDescriptor } from "../types";
+import type { AppConfig, LlmProviderKind, LlmSettings, ServiceDescriptor } from "../types";
 import { blankProfile, ProfileForm } from "./Settings";
-import { Button, cx, Empty, Input, PanelHeader, RootMark, ServiceMark } from "../ui/primitives";
+import {
+  Button,
+  cx,
+  Empty,
+  Input,
+  PanelHeader,
+  RootMark,
+  Segmented,
+  Select,
+  ServiceMark,
+} from "../ui/primitives";
 import { CheckIcon, SearchIcon } from "../ui/icons";
 import { DemoLauncher } from "../ui/demo";
 
@@ -32,6 +43,23 @@ export function Onboarding({
 }) {
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<ServiceDescriptor | null>(null);
+  const [watching, setWatching] = useState(false);
+  const [watchError, setWatchError] = useState<string>();
+  const thisMachine = catalog.has("this_machine") ? catalog.get("this_machine") : null;
+
+  // One click to real data: a connection to the machine root is running on,
+  // saved like any other, so the estate starts polling it at once.
+  const watchThisComputer = async () => {
+    if (!thisMachine) return;
+    setWatching(true);
+    setWatchError(undefined);
+    try {
+      onConfigChange(await api.saveProfile({ ...blankProfile(thisMachine), name: "This computer" }));
+    } catch (e) {
+      setWatchError(errorMessage(e));
+      setWatching(false);
+    }
+  };
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -79,9 +107,34 @@ export function Onboarding({
 
       <div className="flex min-h-0 flex-1 justify-center overflow-y-auto p-6">
         <div className="flex w-full max-w-[960px] flex-col">
+          {/* The fastest way to real data needs nothing typed: the machine
+              root is running on. Ahead of the demo, because real beats
+              simulated whenever it is this cheap. */}
+          {thisMachine && (
+            <section
+              className="panel hue mb-4 flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center"
+              style={{ "--hue": "var(--color-ok)" } as React.CSSProperties}
+            >
+              <ServiceMark descriptor={thisMachine} size={28} />
+              <div className="min-w-0 flex-1">
+                <div className="text-base text-ink">Watch this computer</div>
+                <p className="mt-0.5 text-2xs leading-snug text-ink-4">
+                  CPU, memory, every disk, network and the busiest processes, read directly from
+                  the machine root runs on. Nothing to install and nothing to type.
+                </p>
+                {watchError && <p className="mt-1 text-2xs text-crit">{watchError}</p>}
+              </div>
+              <Button variant="primary" loading={watching} onClick={() => void watchThisComputer()}>
+                Start watching
+              </Button>
+            </section>
+          )}
+
+          <AssistantSetup onConfigChange={onConfigChange} />
+
           {/* Nothing to connect yet is the commonest first run, and the
               estate is where every screen earns its keep — so the demo comes
-              first, ahead of the catalogue, rather than after it. */}
+              ahead of the catalogue rather than after it. */}
           <div className="mb-8">
             <DemoLauncher config={null} onConfigChange={onConfigChange} />
           </div>
@@ -182,6 +235,132 @@ export function Onboarding({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The assistant, set up before anyone has to find Settings: an Ollama already
+ * running here is offered in one click, and otherwise a key can be pasted.
+ * Optional — every screen works without a model.
+ */
+function AssistantSetup({ onConfigChange }: { onConfigChange: (config: AppConfig) => void }) {
+  // undefined while asking; null when no Ollama answered.
+  const [ollama, setOllama] = useState<string[] | null | undefined>(undefined);
+  const [model, setModel] = useState("");
+  const [provider, setProvider] = useState<LlmProviderKind>("anthropic");
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState<string | null>(null);
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let live = true;
+    api
+      .detectOllama()
+      .then((models) => {
+        if (!live) return;
+        setOllama(models);
+        if (models && models.length > 0) setModel(models[0]);
+      })
+      .catch(() => live && setOllama(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // An empty model asks the backend for the provider's own default, so this
+  // screen keeps no second copy of the defaults.
+  const save = async (choice: Pick<LlmSettings, "provider" | "model">, apiKey?: string) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const current = (await api.getConfig()).llm;
+      const config = await api.saveLlmSettings({ ...current, ...choice, baseUrl: null }, apiKey);
+      onConfigChange(config);
+      setReady(`${config.llm.provider === "ollama" ? "Ollama" : "your key"} · ${config.llm.model}`);
+      setKey("");
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel mb-8 px-4 py-3.5">
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <span className="text-base text-ink">Set up the assistant</span>
+        <span className="text-2xs text-ink-4">optional — every screen works without one</span>
+      </div>
+      {ready ? (
+        <p className="mt-2 text-xs text-ink-2">
+          <span style={{ color: "var(--color-ok)" }}>Ready</span> — {ready}. Change it any time in
+          Settings.
+        </p>
+      ) : (
+        <div className="mt-3 flex flex-col gap-2.5">
+          {ollama === undefined ? (
+            <p className="text-2xs text-ink-4">Looking for Ollama on this machine…</p>
+          ) : ollama && ollama.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-ink-2">Ollama is running here.</span>
+              <Select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                size="sm"
+                aria-label="Ollama model"
+              >
+                {ollama.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                variant="primary"
+                loading={busy}
+                onClick={() => void save({ provider: "ollama", model })}
+              >
+                Use Ollama
+              </Button>
+              <span className="text-2xs text-ink-4">nothing leaves this machine</span>
+            </div>
+          ) : (
+            <p className="text-2xs text-ink-4">No Ollama answered on localhost:11434.</p>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-ink-2">Or a key:</span>
+            <Segmented
+              label="Provider"
+              value={provider}
+              onChange={setProvider}
+              options={[
+                { value: "anthropic", label: "Anthropic" },
+                { value: "open_ai_compatible", label: "OpenAI-compatible" },
+              ]}
+            />
+            <Input
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder="Paste an API key"
+              size="sm"
+              className="w-56"
+              aria-label="API key"
+              autoComplete="off"
+            />
+            <Button
+              disabled={!key.trim()}
+              loading={busy}
+              onClick={() => void save({ provider, model: "" }, key.trim())}
+            >
+              Save key
+            </Button>
+          </div>
+          {error && <p className="text-2xs text-crit">{error}</p>}
+        </div>
+      )}
+    </section>
   );
 }
 

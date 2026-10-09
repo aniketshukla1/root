@@ -252,6 +252,41 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             },
         },
         ServiceDescriptor {
+            kind: ServiceKind::ThisMachine,
+            label: "This computer".to_string(),
+            monogram: "PC".to_string(),
+            accent: 28,
+            category: "Hosts".to_string(),
+            blurb: "The machine root runs on, read directly: CPU, memory, every disk, network \
+                    and the busiest processes. Nothing to install and nothing to enter."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Machine", FieldKind::Text)
+                .placeholder("this computer")
+                .help("Nothing to enter: root reads the machine it is running on."),
+            username: None,
+            credential: None,
+            fields: {
+                let mut fields = vec![
+                    FieldSpec::new("diskWarn", "Disk warning", FieldKind::Number)
+                        .default(serde_json::json!(90))
+                        .range(1.0, 100.0)
+                        .help("Percent full, on the fullest disk rather than the average."),
+                    FieldSpec::new("memoryWarn", "Memory warning", FieldKind::Number)
+                        .default(serde_json::json!(90))
+                        .range(1.0, 100.0)
+                        .help("Percent of memory in use, counting reclaimable memory as free."),
+                ];
+                fields.extend(shared_fields(true));
+                fields
+            },
+            default_poll_secs: 5,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
             kind: ServiceKind::LinuxHost,
             label: "Linux host".to_string(),
             monogram: "LX".to_string(),

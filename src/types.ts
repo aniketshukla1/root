@@ -12,7 +12,14 @@ export type ServiceKind = string;
 export type Health = "unknown" | "healthy" | "degraded" | "down";
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 export type AlertSeverity = "info" | "warning" | "critical";
-export type MetricUnit = "count" | "percent" | "bytes" | "millis" | "seconds" | "per_second";
+export type MetricUnit =
+  | "count"
+  | "percent"
+  | "bytes"
+  | "millis"
+  | "seconds"
+  | "per_second"
+  | "bytes_per_second";
 
 // ------------------------------------------------------------------ registry
 

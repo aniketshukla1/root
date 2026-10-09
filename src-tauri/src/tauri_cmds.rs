@@ -417,6 +417,11 @@ pub async fn list_models(state: Shared<'_>) -> Result<Vec<String>> {
 }
 
 #[tauri::command]
+pub async fn detect_ollama() -> Result<Option<Vec<String>>> {
+    commands::detect_ollama().await
+}
+
+#[tauri::command]
 pub async fn send_message(state: Shared<'_>, conversation_id: String, message: String) -> Result<AgentTurn> {
     commands::send_message(&state, conversation_id, message).await
 }

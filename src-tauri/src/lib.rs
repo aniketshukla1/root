@@ -277,6 +277,7 @@ pub fn run() {
             tauri_cmds::test_snapshot_write,
             tauri_cmds::save_llm_settings,
             tauri_cmds::list_models,
+            tauri_cmds::detect_ollama,
             tauri_cmds::send_message,
             tauri_cmds::explain_component,
             tauri_cmds::explain_incident,

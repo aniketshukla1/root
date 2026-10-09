@@ -55,7 +55,7 @@ const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 /// container host most of them are overlays, tmpfs and squashfs images that
 /// are full by design. A read-only squashfs at 100% is not an incident; it is
 /// what a squashfs is.
-const IGNORED_FILESYSTEMS: &[&str] = &[
+pub(crate) const IGNORED_FILESYSTEMS: &[&str] = &[
     "tmpfs", "devtmpfs", "overlay", "squashfs", "ramfs", "iso9660", "autofs", "cgroup", "cgroup2",
     "proc", "sysfs", "devpts", "fuse.lxcfs", "nsfs", "efivarfs", "debugfs", "tracefs",
 ];

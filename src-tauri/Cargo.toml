@@ -120,6 +120,7 @@ rdkafka = { version = "0.39", default-features = false, features = [
     "libz",
     "ssl-vendored",
 ] }
+sysinfo = { version = "0.39.6", default-features = false, features = ["system", "disk", "network"] }
 
 [dev-dependencies]
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

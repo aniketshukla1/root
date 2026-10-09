@@ -55,6 +55,11 @@ export class Catalog {
     return this.byKind.get(kind) ?? synthesizeDescriptor(kind);
   }
 
+  /** Whether the backend publishes this kind, rather than a synthesized stand-in. */
+  has(kind: ServiceKind): boolean {
+    return this.byKind.has(kind);
+  }
+
   label(kind: ServiceKind): string {
     return this.get(kind).label;
   }

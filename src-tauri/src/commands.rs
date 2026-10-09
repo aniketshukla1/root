@@ -2252,6 +2252,12 @@ pub async fn save_llm_settings(
     api_key: Option<String>,
 ) -> Result<crate::config::AppConfig> {
     let mut settings = settings;
+    // No model named means the provider's own default — so a caller that
+    // only picks a provider (onboarding, pasting a key) never has to keep a
+    // second copy of the defaults that could drift from this one.
+    if settings.model.trim().is_empty() {
+        settings.model = settings.provider.default_model().to_string();
+    }
 
     match api_key {
         Some(value) if value.is_empty() => {
@@ -2281,6 +2287,22 @@ pub async fn list_models(state: &Arc<AppState>) -> Result<Vec<String>> {
     let settings = state.config.read().await.llm.clone();
     let api_key = secrets::get_secret(settings.provider.secret_key()).await?;
     build_provider(&settings, api_key)?.list_models().await
+}
+
+/// The models of an Ollama running at its default address, for onboarding to
+/// offer in one click. `None` when nothing answers within a second and a half
+/// — the common case, and not an error: most machines have no Ollama.
+pub async fn detect_ollama() -> Result<Option<Vec<String>>> {
+    let settings = crate::config::LlmSettings {
+        provider: crate::config::LlmProviderKind::Ollama,
+        model: crate::config::LlmProviderKind::Ollama.default_model().to_string(),
+        ..Default::default()
+    };
+    let provider = build_provider(&settings, None)?;
+    match tokio::time::timeout(std::time::Duration::from_millis(1500), provider.list_models()).await {
+        Ok(Ok(models)) => Ok(Some(models)),
+        _ => Ok(None),
+    }
 }
 
 pub async fn send_message(
@@ -2685,6 +2707,7 @@ fn unit_value(v: f64, unit: crate::model::MetricUnit) -> String {
                 format!("{:.0} MB", v / 1e6)
             }
         }
+        U::BytesPerSecond => format!("{}/s", unit_value(v, U::Bytes)),
     }
 }
 

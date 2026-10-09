@@ -34,6 +34,7 @@ pub mod tomcat;
 pub mod traefik;
 pub mod zookeeper;
 pub mod redis;
+pub mod this_machine;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -288,6 +289,7 @@ pub async fn build_collector(
         }
         ServiceKind::Aws => Arc::new(aws::AwsCollector::new(profile, secret).await?),
         ServiceKind::LinuxHost => Arc::new(linux_host::LinuxHostCollector::new(profile, secret)?),
+        ServiceKind::ThisMachine => Arc::new(this_machine::ThisMachineCollector::new(profile)?),
         ServiceKind::Nfs => Arc::new(nfs::NfsCollector::new(profile, secret)?),
         ServiceKind::Jenkins => Arc::new(jenkins::JenkinsCollector::new(profile, secret)?),
         ServiceKind::Elasticsearch => {

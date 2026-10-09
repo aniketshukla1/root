@@ -531,7 +531,11 @@ export function TimeSeries({
           // Wide enough for the longest label at this size, and no wider.
           size: (_u, values) =>
             values ? Math.max(...values.map((v) => String(v).length)) * 6.2 + 14 : 40,
-          ...(unit === "bytes" ? { incrs: BYTE_INCRS } : unit === "seconds" ? { incrs: SECOND_INCRS } : {}),
+          ...(unit === "bytes" || unit === "bytes_per_second"
+            ? { incrs: BYTE_INCRS }
+            : unit === "seconds"
+              ? { incrs: SECOND_INCRS }
+              : {}),
           values: (_u, splits) => splits.map((v) => formatMetricValue(v, unit)),
         },
       ],

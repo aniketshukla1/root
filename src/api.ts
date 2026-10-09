@@ -104,6 +104,8 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   }),
   secret_store_available: () => true,
   list_models: () => ["claude-opus-5", "claude-sonnet-5"],
+  detect_ollama: () => ["llama3.1", "qwen2.5-coder"],
+  save_llm_settings: ({ settings }) => fixtures.saveLlmSettings(settings as never),
   // A HealthSnapshot, not a string: the form reads snapshot.summary and
   // snapshot.health, and a string here rendered as a shrug.
   test_profile: ({ profile }) => {
@@ -508,6 +510,8 @@ export const api = {
     invoke<AppConfig>("save_llm_settings", { settings, apiKey: apiKey ?? null }),
 
   listModels: () => invoke<string[]>("list_models"),
+  /** Models on an Ollama at its default address, or null when none answers. */
+  detectOllama: () => invoke<string[] | null>("detect_ollama"),
 
   /**
    * A short reading of one failing component. Cached in the backend by the

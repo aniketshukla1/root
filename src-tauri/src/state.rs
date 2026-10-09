@@ -228,6 +228,10 @@ impl AlertStore {
                     existing.last_seen = now;
                     existing.detail = alert.detail;
                     existing.severity = alert.severity;
+                    // A roll-up's title carries its count ("6 active
+                    // queries"), so it moves while the condition persists.
+                    existing.title = alert.title;
+                    existing.component = alert.component;
                 }
                 Some(existing) => {
                     // Previously resolved and now firing again: reopen it, but
@@ -238,6 +242,8 @@ impl AlertStore {
                     existing.last_seen = now;
                     existing.detail = alert.detail;
                     existing.severity = alert.severity;
+                    existing.title = alert.title;
+                    existing.component = alert.component;
                     newly_raised.push(existing.clone());
                 }
                 None => {
@@ -393,24 +399,68 @@ pub fn alerts_from_snapshot(snapshot: &HealthSnapshot) -> Vec<Alert> {
         ));
     }
 
+    let severity_of = |health: Health| match health {
+        Health::Down => AlertSeverity::Critical,
+        _ => AlertSeverity::Warning,
+    };
+
     // Walk every section's rows. The fingerprint carries the section id so two
     // entities that happen to share a name in different sections — a Jenkins
     // job and an agent, say — never collide into one alert.
     for section in &snapshot.sections {
-        for row in &section.rows {
-            let severity = match row.health {
-                Health::Down => AlertSeverity::Critical,
-                Health::Degraded => AlertSeverity::Warning,
-                _ => continue,
-            };
-            alerts.push(make(
-                format!("{}:{}:{}", snapshot.profile_id, section.id, row.id),
-                severity,
-                format!("{} · {}", snapshot.profile_name, row.name),
-                row.summary.clone(),
-                Some(row.name.clone()),
-            ));
+        let problems: Vec<&crate::model::Row> = section.rows.iter().filter(|r| r.is_problem()).collect();
+        let Some(first) = problems.first() else {
+            continue;
+        };
+
+        // A tracked section holds bounded, long-lived things — a container, a
+        // node, a job — and each is worth an alert of its own. An untracked
+        // one holds things that come and go: running queries, pods, warning
+        // events, traces. One alert per row there was the noise: a single bad
+        // deploy raised an alert per long query, each opening and resolving as
+        // the pids churned. Those roll up to one alert for the section, and
+        // the rows stay on screen as its detail.
+        if section.tracked {
+            for row in problems {
+                alerts.push(make(
+                    format!("{}:{}:{}", snapshot.profile_id, section.id, row.id),
+                    severity_of(row.health),
+                    format!("{} · {}", snapshot.profile_name, row.name),
+                    row.summary.clone(),
+                    Some(row.name.clone()),
+                ));
+            }
+            continue;
         }
+
+        let worst = problems.iter().map(|r| r.health).max().unwrap_or(Health::Degraded);
+        let (title, detail, component) = if problems.len() == 1 {
+            (
+                format!("{} · {}", snapshot.profile_name, first.name),
+                first.summary.clone(),
+                Some(first.name.clone()),
+            )
+        } else {
+            (
+                format!(
+                    "{} · {} {}",
+                    snapshot.profile_name,
+                    problems.len(),
+                    section.label.to_lowercase()
+                ),
+                format!("{} — and {} more", first.summary, problems.len() - 1),
+                None,
+            )
+        };
+        // `profile:section` — the UI matches a section's rows to this alert by
+        // the same shape, so the two must change together.
+        alerts.push(make(
+            format!("{}:{}", snapshot.profile_id, section.id),
+            severity_of(worst),
+            title,
+            detail,
+            component,
+        ));
     }
 
     // Down by its own account with nothing more specific to blame — a Kafka
@@ -804,7 +854,8 @@ mod tests {
                 .rows(vec![
                     Row::new("c1", "checkout-api-2", Health::Down).summary("Exited (137) 4 seconds ago"),
                     Row::new("c2", "checkout-api-1", Health::Degraded).summary("Up 2 minutes (unhealthy)"),
-                ]),
+                ])
+                .tracked(),
         );
 
         let alerts = alerts_from_snapshot(&snap);
@@ -812,6 +863,40 @@ mod tests {
         assert!(alerts.iter().all(|a| !a.fingerprint.ends_with(":unreachable")));
         assert!(alerts.iter().any(|a| a.severity == AlertSeverity::Critical
             && a.component.as_deref() == Some("checkout-api-2")));
+    }
+
+    #[test]
+    fn rows_that_come_and_go_roll_up_to_one_alert_per_section() {
+        let queries = |n: usize| {
+            let mut snap = snapshot(Health::Degraded);
+            snap.sections.push(
+                Section::new("active_queries", "Active queries", vec![ColumnSpec::text("pid", "PID").primary()])
+                    .rows(
+                        (0..n)
+                            .map(|i| {
+                                Row::new(format!("query:{i}"), format!("pid {i}"), Health::Degraded)
+                                    .summary(format!("running {i}s"))
+                            })
+                            .collect(),
+                    ),
+            );
+            snap
+        };
+
+        let six = alerts_from_snapshot(&queries(6));
+        assert_eq!(six.len(), 1, "one alert for the section, not one per query");
+        assert_eq!(six[0].title, "prod docker · 6 active queries");
+        assert_eq!(six[0].fingerprint, "p1:active_queries");
+
+        // The same alert as the count moves: it updates in place rather than
+        // resolving one alert and raising another.
+        let mut store = AlertStore::default();
+        store.reconcile("p1", six);
+        let raised = store.reconcile("p1", alerts_from_snapshot(&queries(1)));
+        assert!(raised.is_empty());
+        let all = store.all();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].title, "prod docker · pid 0");
     }
 
     #[test]

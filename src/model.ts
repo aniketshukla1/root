@@ -294,7 +294,12 @@ export function buildModel(
     const issues: Issue[] = entities
       .filter((e) => isProblem(e.health))
       .map((entity) => {
-        const alert = alerts.find((a) => matchesAlert(a, entity.name));
+        // A section whose rows come and go (running queries, pods, events)
+        // raises one alert for the whole section, fingerprinted
+        // `profile:section` by the backend; its rows belong to that alert.
+        const alert =
+          alerts.find((a) => matchesAlert(a, entity.name)) ??
+          alerts.find((a) => a.fingerprint === `${snapshot.profileId}:${entity.sectionId}`);
         return {
           ...entity,
           priority: entity.health === "down" ? 1 : 2,

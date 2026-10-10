@@ -114,6 +114,14 @@ pub fn step_for(range_secs: i64) -> i64 {
     minimum.max(MIN_STEP_SECS)
 }
 
+fn authed(request: reqwest::RequestBuilder, auth: &Auth) -> reqwest::RequestBuilder {
+    match (&auth.username, &auth.secret) {
+        (Some(user), secret) => request.basic_auth(user, secret.as_ref()),
+        (None, Some(token)) => request.bearer_auth(token),
+        (None, None) => request,
+    }
+}
+
 /// Run a range query and return the raw matrix.
 async fn matrix(
     client: &reqwest::Client,
@@ -134,13 +142,7 @@ async fn matrix(
         ("step", step.to_string()),
     ]);
 
-    let request = match (&auth.username, &auth.secret) {
-        (Some(user), secret) => request.basic_auth(user, secret.as_ref()),
-        (None, Some(token)) => request.bearer_auth(token),
-        (None, None) => request,
-    };
-
-    let response = request
+    let response = authed(request, auth)
         .send()
         .await
         .map_err(|e| AppError::Collector(format!("{base} did not answer: {e}")))?;
@@ -207,8 +209,9 @@ pub async fn range(
     Ok(result[0].values.iter().filter_map(|sample| sample.point()).collect())
 }
 
-/// Every series a query matches, each with its label set, up to `cap` — what
-/// a dashboard panel or Explore draws, where many lines is the point.
+/// Every series a query matches, each with its label set — what a dashboard
+/// panel or Explore draws, where many lines is the point. The caller decides
+/// how many to draw, knowing how many there were.
 pub async fn range_all(
     client: &reqwest::Client,
     base: &str,
@@ -216,19 +219,76 @@ pub async fn range_all(
     expr: &str,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-    cap: usize,
 ) -> Result<Vec<(String, Vec<Point>)>> {
-    let result = matrix(client, base, auth, expr, start, end).await?;
-    Ok(result
+    Ok(labelled(matrix(client, base, auth, expr, start, end).await?))
+}
+
+fn labelled(result: Vec<SeriesResult>) -> Vec<(String, Vec<Point>)> {
+    result
         .iter()
-        .take(cap)
         .map(|s| {
             (
                 render_labels(&s.metric),
                 s.values.iter().filter_map(|sample| sample.point()).collect(),
             )
         })
-        .collect())
+        .collect()
+}
+
+/// The series in a response someone else fetched: Loki answers a LogQL
+/// metric query — `rate({app="x"}[5m])` — in Prometheus' own matrix shape.
+pub fn series_in(response: serde_json::Value) -> Result<Vec<(String, Vec<Point>)>> {
+    let parsed: ApiResponse = serde_json::from_value(response)
+        .map_err(|e| AppError::Collector(format!("not a matrix response: {e}")))?;
+    Ok(labelled(parsed.data.map(|d| d.result).unwrap_or_default()))
+}
+
+/// Label names, or one label's values — `__name__` is the metric names — for
+/// a query editor's autocomplete.
+pub async fn label_values(
+    client: &reqwest::Client,
+    base: &str,
+    auth: &Auth,
+    label: Option<&str>,
+) -> Result<Vec<String>> {
+    let path = match label {
+        None => "/api/v1/labels".to_string(),
+        Some(label) if is_label_name(label) => format!("/api/v1/label/{label}/values"),
+        // The name goes into the URL path, so only what Prometheus itself
+        // allows in a label name gets that far.
+        Some(label) => return Err(AppError::Collector(format!("`{label}` is not a label name"))),
+    };
+    let url = format!("{}{path}", base.trim_end_matches('/'));
+    let response = authed(client.get(&url), auth)
+        .send()
+        .await
+        .map_err(|e| AppError::Collector(format!("{base} did not answer: {e}")))?;
+    let status = response.status();
+    let parsed: NamesResponse = response.json().await.map_err(|_| {
+        AppError::Collector(format!("{base} returned {status} and not a list of names"))
+    })?;
+    if parsed.status != "success" {
+        return Err(AppError::Collector(
+            parsed.error.unwrap_or_else(|| format!("{path} failed with {status}")),
+        ));
+    }
+    Ok(parsed.data)
+}
+
+fn is_label_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+#[derive(Debug, Deserialize)]
+struct NamesResponse {
+    status: String,
+    #[serde(default)]
+    data: Vec<String>,
+    error: Option<String>,
 }
 
 fn render_labels(labels: &std::collections::HashMap<String, String>) -> String {
@@ -295,6 +355,29 @@ impl Sample {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_loki_matrix_reads_like_a_prometheus_one() {
+        let response = serde_json::json!({
+            "status": "success",
+            "data": { "resultType": "matrix", "result": [
+                { "metric": { "app": "orders", "level": "error" }, "values": [[1789095229.5, "3"], [1789095289.5, "NaN"]] }
+            ]}
+        });
+        let series = series_in(response).unwrap();
+        assert_eq!(series.len(), 1);
+        assert_eq!(series[0].0, "{app=\"orders\",level=\"error\"}");
+        assert_eq!(series[0].1.len(), 1, "NaN is a gap, not a reading");
+    }
+
+    #[test]
+    fn only_a_label_name_reaches_a_url_path() {
+        assert!(is_label_name("__name__"));
+        assert!(is_label_name("instance"));
+        assert!(!is_label_name("../admin"));
+        assert!(!is_label_name("9lives"));
+        assert!(!is_label_name(""));
+    }
 
     fn sample(t: f64, v: &str) -> Sample {
         Sample(t, v.to_string())

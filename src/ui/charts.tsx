@@ -188,6 +188,8 @@ export interface Series {
   warnAbove?: number;
   /** Shown before the label in the legend, such as the service's mark. */
   icon?: ReactNode;
+  /** A reference line rather than a reading — the same query a day earlier. */
+  dashed?: boolean;
 }
 
 /** A series' samples as numbers, parsed once per points array however often
@@ -310,6 +312,7 @@ export function TimeSeries({
   onHoverTime,
   onBrush,
   legendExtra,
+  axisWidth,
 }: {
   series: Series[];
   unit: MetricUnit;
@@ -323,6 +326,8 @@ export function TimeSeries({
   onBrush?: (range: Domain) => void;
   /** One more legend column after the stats, for what only the caller knows. */
   legendExtra?: { label: string; render: (series: Series) => ReactNode };
+  /** A fixed value-axis width, so charts stacked above each other share one time axis. */
+  axisWidth?: number;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const host = useRef<HTMLDivElement>(null);
@@ -360,8 +365,9 @@ export function TimeSeries({
     height,
     unit,
     theme,
-    plotted.map((s) => `${s.key}|${s.color}|${s.warnAbove ?? ""}`).join(","),
+    plotted.map((s) => `${s.key}|${s.color}|${s.warnAbove ?? ""}|${s.dashed ? "d" : ""}`).join(","),
     (annotations?.length ?? 0) > 0,
+    axisWidth ?? "",
   ].join("/");
 
   // Where there is data at all: panning stops at its edges.
@@ -429,7 +435,8 @@ export function TimeSeries({
         spanGaps: true,
         points: { show: false },
         width: 6,
-        stroke: (u) => limitStroke(u, s.warnAbove, withAlpha(color, glow), withAlpha(warn, glowOver)),
+        stroke: (u) =>
+          limitStroke(u, s.warnAbove, withAlpha(color, s.dashed ? 0 : glow), withAlpha(warn, s.dashed ? 0 : glowOver)),
         ...(single
           ? {
               fill: (u: uPlot) => {
@@ -448,7 +455,8 @@ export function TimeSeries({
         spanGaps: true,
         points: { show: false },
         width: 2,
-        stroke: (u) => limitStroke(u, s.warnAbove, color, warn),
+        ...(s.dashed ? { dash: [5, 4] } : {}),
+        stroke: (u) => limitStroke(u, s.warnAbove, s.dashed ? withAlpha(color, 0.6) : color, warn),
       });
     }
 
@@ -529,8 +537,9 @@ export function TimeSeries({
           // left a 104px card with a single label.
           space: (_u, _axis, _min, _max, dim) => Math.max(18, dim / 4),
           // Wide enough for the longest label at this size, and no wider.
-          size: (_u, values) =>
-            values ? Math.max(...values.map((v) => String(v).length)) * 6.2 + 14 : 40,
+          size:
+            axisWidth ??
+            ((_u, values) => (values ? Math.max(...values.map((v) => String(v).length)) * 6.2 + 14 : 40)),
           ...(unit === "bytes" || unit === "bytes_per_second"
             ? { incrs: BYTE_INCRS }
             : unit === "seconds"

@@ -442,6 +442,28 @@ pub async fn query_prometheus(
 }
 
 #[tauri::command]
+pub async fn explore(
+    state: Shared<'_>,
+    profile_id: String,
+    language: String,
+    query: String,
+    start: i64,
+    end: i64,
+) -> Result<commands::ExploreResult> {
+    commands::explore(&state, profile_id, language, query, start, end).await
+}
+
+#[tauri::command]
+pub async fn explore_suggest(
+    state: Shared<'_>,
+    profile_id: String,
+    language: String,
+    label: Option<String>,
+) -> Result<Vec<String>> {
+    commands::explore_suggest(&state, profile_id, language, label).await
+}
+
+#[tauri::command]
 pub async fn send_message(state: Shared<'_>, conversation_id: String, message: String) -> Result<AgentTurn> {
     commands::send_message(&state, conversation_id, message).await
 }

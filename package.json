@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "check:charts": "node --experimental-strip-types --no-warnings scripts/check-plot-math.ts",
     "check:golden": "node --experimental-strip-types --no-warnings scripts/check-golden.ts",
-    "check:dashboards": "node --experimental-strip-types --no-warnings scripts/check-dashboards.ts"
+    "check:dashboards": "node --experimental-strip-types --no-warnings scripts/check-dashboards.ts",
+    "check:explore": "node --experimental-strip-types --no-warnings scripts/check-explore.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

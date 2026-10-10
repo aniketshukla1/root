@@ -51,6 +51,7 @@ import { Correlate } from "./screens/Correlate";
 import { Logs } from "./screens/Logs";
 import { Metrics } from "./screens/Metrics";
 import { Dashboards } from "./screens/Dashboards";
+import { Explore } from "./screens/Explore";
 import * as remote from "./remote";
 import { Onboarding } from "./screens/Onboarding";
 import { ServerSignIn } from "./screens/ServerSignIn";
@@ -847,6 +848,17 @@ export default function App() {
             syncedAt={dashboard?.generatedAt}
             onNavigate={setView}
             onRefresh={refreshAll}
+            onAsk={askAssistant}
+          />
+        )}
+
+        {view.name === "explore" && (
+          <Explore
+            key={JSON.stringify(view.seed ?? null)}
+            model={model}
+            catalog={catalog}
+            seed={view.seed}
+            onNavigate={setView}
             onAsk={askAssistant}
           />
         )}

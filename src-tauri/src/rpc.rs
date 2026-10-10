@@ -375,6 +375,20 @@ pub async fn dispatch(state: &Arc<AppState>, command: &str, args: Value) -> Resu
             let minutes: Option<i64> = field(&args, "minutes")?;
             ok(commands::query_prometheus(state, profile_id, expr, minutes).await?)
         }
+        "explore" => {
+            let profile_id: String = field(&args, "profileId")?;
+            let language: String = field(&args, "language")?;
+            let query: String = field(&args, "query")?;
+            let start: i64 = field(&args, "start")?;
+            let end: i64 = field(&args, "end")?;
+            ok(commands::explore(state, profile_id, language, query, start, end).await?)
+        }
+        "explore_suggest" => {
+            let profile_id: String = field(&args, "profileId")?;
+            let language: String = field(&args, "language")?;
+            let label: Option<String> = field(&args, "label")?;
+            ok(commands::explore_suggest(state, profile_id, language, label).await?)
+        }
         "send_message" => {
             let conversation_id: String = field(&args, "conversationId")?;
             let message: String = field(&args, "message")?;
@@ -413,7 +427,7 @@ pub async fn dispatch(state: &Arc<AppState>, command: &str, args: Value) -> Resu
 
 /// Every command this dispatch knows.
 pub fn known() -> &'static [&'static str] {
-    &["get_alert_history", "get_flapping", "get_change_history", "explain_window", "explain_lines", "explain_alert", "get_history_stats", "get_dashboard", "refresh_connection", "acknowledge_alert", "run_row_action", "query_logs", "clear_logs", "log_patterns", "log_histogram", "correlate", "get_build_console", "get_trace", "get_profile", "get_ingest_settings", "save_ingest_settings", "rotate_ingest_token", "get_notifications", "save_notification_channel", "delete_notification_channel", "test_notification_channel", "get_alert_notices", "get_demo_status", "start_demo", "stop_demo", "trigger_demo_story", "run_prediction", "preview_prediction_evidence", "get_prediction_settings", "save_prediction_settings", "get_mcp_settings", "save_mcp_settings", "rotate_mcp_token", "get_change_events", "get_metric_history", "get_topology", "get_team", "save_team_server", "sign_in", "sign_out", "get_workspace", "get_incidents", "get_health_runs", "get_component_history", "get_config_documents", "get_findings", "get_long_history", "clear_claims", "get_runtime_report", "run_scenarios", "list_scenarios", "run_backtest", "record_verdict", "record_recall", "get_verdicts", "get_judged_incidents", "get_scorecard", "get_capacity_risks", "get_all_metric_history", "get_service_catalog", "get_config", "secret_store_available", "save_profile", "delete_profile", "test_profile", "test_snapshot_write", "save_llm_settings", "list_models", "detect_ollama", "save_dashboard", "delete_dashboard", "query_prometheus", "send_message", "explain_component", "explain_incident", "resolve_confirmation", "pending_confirmations", "get_conversation", "clear_conversation"]
+    &["get_alert_history", "get_flapping", "get_change_history", "explain_window", "explain_lines", "explain_alert", "get_history_stats", "get_dashboard", "refresh_connection", "acknowledge_alert", "run_row_action", "query_logs", "clear_logs", "log_patterns", "log_histogram", "correlate", "get_build_console", "get_trace", "get_profile", "get_ingest_settings", "save_ingest_settings", "rotate_ingest_token", "get_notifications", "save_notification_channel", "delete_notification_channel", "test_notification_channel", "get_alert_notices", "get_demo_status", "start_demo", "stop_demo", "trigger_demo_story", "run_prediction", "preview_prediction_evidence", "get_prediction_settings", "save_prediction_settings", "get_mcp_settings", "save_mcp_settings", "rotate_mcp_token", "get_change_events", "get_metric_history", "get_topology", "get_team", "save_team_server", "sign_in", "sign_out", "get_workspace", "get_incidents", "get_health_runs", "get_component_history", "get_config_documents", "get_findings", "get_long_history", "clear_claims", "get_runtime_report", "run_scenarios", "list_scenarios", "run_backtest", "record_verdict", "record_recall", "get_verdicts", "get_judged_incidents", "get_scorecard", "get_capacity_risks", "get_all_metric_history", "get_service_catalog", "get_config", "secret_store_available", "save_profile", "delete_profile", "test_profile", "test_snapshot_write", "save_llm_settings", "list_models", "detect_ollama", "save_dashboard", "delete_dashboard", "query_prometheus", "explore", "explore_suggest", "send_message", "explain_component", "explain_incident", "resolve_confirmation", "pending_confirmations", "get_conversation", "clear_conversation"]
 }
 
 #[cfg(test)]
@@ -425,7 +439,7 @@ mod tests {
         // The two surfaces are generated from the same list and must not
         // drift. A command added to one and forgotten in the other is a
         // feature that works on the desktop and 404s in a browser.
-        assert_eq!(known().len(), 84);
+        assert_eq!(known().len(), 86);
     }
 
     #[test]

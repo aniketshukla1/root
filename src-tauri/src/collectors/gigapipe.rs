@@ -394,6 +394,43 @@ impl WireSpan {
 /// the useful half; it can also answer with an HTML error page, which is not.
 /// Taking the first line and capping it keeps the first case intact without
 /// pasting a document into the conversation.
+fn stream_lines(data: &StreamsData, profile_id: &str, profile_name: &str) -> Vec<LogEvent> {
+    let mut out = Vec::new();
+    for stream in &data.result {
+        let source = source_from_labels(&stream.stream);
+        for entry in &stream.values {
+            // `[timestamp, line]`. Anything else is a payload shape this
+            // does not understand, and guessing at it would put a
+            // mislabelled line in the operator's stream.
+            let (Some(raw_ts), Some(line)) = (entry.first(), entry.get(1)) else {
+                continue;
+            };
+            let Some(timestamp) = parse_nanos(raw_ts) else {
+                continue;
+            };
+            out.push(LogEvent::new(
+                profile_id,
+                profile_name,
+                ServiceKind::Gigapipe,
+                &source,
+                level_from_labels(&stream.stream, line),
+                line.clone(),
+                timestamp,
+            ));
+        }
+    }
+    out
+}
+
+/// The lines in a LogQL answer fetched through the read API — Explore's —
+/// in whatever order the store sent them. A metric query has none; its
+/// matrix is for `promquery::series_in`.
+pub fn lines_in(response: &serde_json::Value, profile_id: &str, profile_name: &str) -> Vec<LogEvent> {
+    serde_json::from_value::<StreamsData>(response["data"].clone())
+        .map(|data| stream_lines(&data, profile_id, profile_name))
+        .unwrap_or_default()
+}
+
 fn first_line(body: &str, limit: usize) -> String {
     let line = body.trim().lines().next().unwrap_or_default().trim();
     if line.is_empty() {
@@ -1527,30 +1564,7 @@ impl Collector for GigapipeCollector {
             return Ok(out);
         };
 
-        for stream in &data.result {
-            let source = source_from_labels(&stream.stream);
-            for entry in &stream.values {
-                // `[timestamp, line]`. Anything else is a payload shape this
-                // does not understand, and guessing at it would put a
-                // mislabelled line in the operator's stream.
-                let (Some(raw_ts), Some(line)) = (entry.first(), entry.get(1)) else {
-                    continue;
-                };
-                let Some(timestamp) = parse_nanos(raw_ts) else {
-                    continue;
-                };
-                out.push(LogEvent::new(
-                    &self.profile_id,
-                    &self.profile_name,
-                    ServiceKind::Gigapipe,
-                    &source,
-                    level_from_labels(&stream.stream, line),
-                    line.clone(),
-                    timestamp,
-                ));
-            }
-        }
-
+        out.extend(stream_lines(&data, &self.profile_id, &self.profile_name));
         out.sort_by_key(|event| event.timestamp);
         out.truncate(want);
         Ok(out)

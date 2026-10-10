@@ -33,6 +33,7 @@ import type {
   ConnectionProfile,
   Correlation,
   Dashboard,
+  ExploreResult,
   DashboardState,
   GroupingReason,
   Health,
@@ -43,6 +44,7 @@ import type {
   LogLevel,
   MetricSeries,
   Point,
+  TraceSummary,
   CapacityRisk,
   ConfigDocument,
   FamilyScore,
@@ -168,7 +170,7 @@ const METRIC_KINDS = ["this_machine", "docker", "podman", "kubernetes", "linux_h
   "etcd", "consul", "zookeeper",
   "kafka", "rabbitmq", "nats",
   "nginx", "apache", "tomcat", "haproxy", "traefik", "jenkins",
-  "elasticsearch", "prometheus", "http_endpoint"];
+  "elasticsearch", "prometheus", "http_endpoint", "gigapipe"];
 
 /**
  * The registry's own labels, for the kinds where capitalising the id gets it
@@ -191,6 +193,7 @@ const KIND_LABELS: Record<string, string> = {
   linux_host: "Linux host",
   this_machine: "This computer",
   nfs: "NFS exports",
+  gigapipe: "Gigapipe",
 };
 
 export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
@@ -211,7 +214,7 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
     : ["kafka", "rabbitmq", "nats"].includes(kind) ? "Messaging"
     : kind === "jenkins" ? "CI/CD"
     : kind === "elasticsearch" ? "Search & analytics"
-    : kind === "prometheus" ? "Observability"
+    : kind === "prometheus" || kind === "gigapipe" ? "Observability"
     : "Web & endpoints",
   blurb: "",
   endpoint: { key: "endpoint", label: "Endpoint", kind: "text", required: kind !== "this_machine", advanced: false },
@@ -265,6 +268,7 @@ const BASE_ESTATE: Spec[] = [
   ["billing-mongo", "billing-mongo", "mongodb", "healthy", "primary healthy · 2 secondaries", "billing", 3],
   ["metrics-store", "metrics-store", "prometheus", "healthy", "42 targets up · 0 down", "platform", 42],
   ["status-page", "status-page", "http_endpoint", "healthy", "200 in 42ms · body matched", "platform", 1],
+  ["telemetry", "telemetry", "gigapipe", "healthy", "logs, metrics and traces · 1.2k lines/s", "platform", 3],
 ];
 
 /** Health overrides per scenario; anything unnamed keeps its base health. */
@@ -323,6 +327,7 @@ const METRICS: Record<string, [string, string, number, string, number?][]> = {
   "billing-mongo": [["conns", "Connections", 88, "count"], ["uptime", "Uptime", 1_234_567, "seconds"]],
   "metrics-store": [["targets", "Targets up", 42, "count"]],
   "status-page": [["latency", "Latency", 42, "millis", 800]],
+  telemetry: [["ingest", "Lines in", 1200, "per_second"]],
 };
 
 /**
@@ -344,6 +349,7 @@ const INVENTORY: Record<string, [section: string, label: string, count: number][
   mongodb: [["members", "Members", 3]],
   prometheus: [["targets", "Targets", 42]],
   http_endpoint: [["endpoint", "Endpoint", 1]],
+  gigapipe: [["signals", "Signals", 3]],
 };
 
 function rowsFor(spec: Spec): HealthSnapshot["sections"] {
@@ -732,6 +738,7 @@ export function healthRuns(): Record<string, import("./types").HealthRun[]> {
     "billing-mongo": runs([["healthy", 0, 1]]),
     "metrics-store": runs([["healthy", 0, 1]]),
     "status-page": runs([["healthy", 0, 1]]),
+    telemetry: runs([["healthy", 0, 1]]),
   };
 
   // A connection the scenario moved gets runs that agree with where it moved
@@ -1175,6 +1182,105 @@ export function promqlSeries(expr: string): MetricSeries[] {
       latest: values[values.length - 1],
     };
   });
+}
+
+const DAY_MS = 86_400_000;
+
+/** Any window, for Explore: the preview has no store to ask. */
+function windowSeries(seed: number, base: number, from: number, to: number, n = 120): Point[] {
+  const r = seeded(seed);
+  let v = base;
+  return Array.from({ length: n }, (_, i) => {
+    v = Math.max(base * 0.2, v + (r() - 0.5) * base * 0.12);
+    return { t: new Date(from + ((to - from) * i) / (n - 1)).toISOString(), v: Number(v.toFixed(2)) };
+  });
+}
+
+const LINE_TEMPLATES: [LogLevel, string, string][] = [
+  ["info", "orders-api", "GET /api/orders 200 in 42ms trace_id=4bf92f3577b34da6a3ce929d0e0e4736"],
+  ["info", "orders-api", "order placed id=81723 total=129.00"],
+  ["warn", "payments-db", "slow statement took 1.2s: SELECT * FROM ledger WHERE account_id = $1"],
+  ["error", "checkout-web", "POST /api/checkout 502 upstream connect error trace_id=a3ce929d0e0e47364bf92f3577b34da6"],
+  ["debug", "checkout-web", "cart recalculated items=3"],
+  ["info", "checkout-web", "GET /healthz 200 in 3ms"],
+  ["error", "orders-api", "payment declined: card_expired order=81731"],
+];
+
+/** Lines across the window, newest first, filtered the way the query reads. */
+function fixtureLines(query: string, from: number, to: number): LogEvent[] {
+  const r = seeded(Math.floor(from / 60_000));
+  const contains = [...query.matchAll(/\|=\s*"([^"]*)"/g)].map((m) => m[1]);
+  const level = /level\s*=\s*"(\w+)"/.exec(query)?.[1];
+  const app = /(?:app|service_name)\s*=\s*"([^"]+)"/.exec(query)?.[1];
+  const lines: LogEvent[] = [];
+  for (let i = 0; i < 240; i += 1) {
+    const [lvl, source, message] = LINE_TEMPLATES[Math.floor(r() * LINE_TEMPLATES.length)];
+    if (level && lvl !== level) continue;
+    if (app && source !== app) continue;
+    if (contains.some((c) => !message.includes(c))) continue;
+    const at = to - r() * (to - from);
+    lines.push({
+      id: `explore-${i}`, profileId: "telemetry", profileName: "telemetry", kind: "gigapipe",
+      source, level: lvl, message, timestamp: new Date(at).toISOString(), stream: "runtime",
+    });
+  }
+  return lines.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+}
+
+function fixtureTraces(from: number, to: number): TraceSummary[] {
+  const r = seeded(Math.floor(from / 60_000) + 7);
+  const roots: [string, string][] = [["checkout-web", "POST /checkout"], ["orders-api", "GET /api/orders"], ["orders-api", "POST /api/orders"], ["edge-proxy", "GET /"]];
+  return Array.from({ length: 40 }, () => {
+    const [rootService, rootName] = roots[Math.floor(r() * roots.length)];
+    const slow = r() > 0.85;
+    return {
+      traceId: Array.from({ length: 32 }, () => "0123456789abcdef"[Math.floor(r() * 16)]).join(""),
+      rootService, rootName,
+      startedAt: new Date(to - r() * (to - from)).toISOString(),
+      durationMs: Math.round((slow ? 900 : 40) + r() * (slow ? 1800 : 260)),
+      errorCount: r() > 0.9 ? 1 + Math.floor(r() * 3) : 0,
+    };
+  }).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+export function exploreResult(language: string, query: string, start: number, end: number): ExploreResult {
+  if (end <= start) throw new Error("the window ends before it starts");
+  if (language === "traces") return { series: [], matched: 0, lines: [], traces: fixtureTraces(start, end) };
+  if (!query.trim()) throw new Error("bad_data: the query is empty");
+  const metric = language === "promql" || /\b(rate|count_over_time|bytes_rate|bytes_over_time|sum_over_time|avg_over_time)\s*\(/.test(query);
+  if (!metric) return { series: [], matched: 0, lines: fixtureLines(query, start, end), traces: [] };
+  const day = Math.floor(start / DAY_MS);
+  const labels = language === "promql"
+    ? ['{instance="web-1:9100",job="node"}', '{instance="web-2:9100",job="node"}', '{instance="web-3:9100",job="node"}']
+    : ['{app="orders-api"}', '{app="checkout-web"}'];
+  const series = labels.map((label, i) => {
+    const points = windowSeries(day * 7 + i, 30 + i * 18, start, end);
+    const values = points.map((p) => p.v);
+    return {
+      key: label, label, unit: "count" as const, points,
+      min: Math.min(...values), max: Math.max(...values), latest: values[values.length - 1],
+    };
+  });
+  return { series, matched: series.length, lines: [], traces: [] };
+}
+
+const SUGGESTIONS: Record<string, string[]> = {
+  "": ["__name__", "app", "code", "instance", "job", "level", "method", "service_name"],
+  __name__: ["go_goroutines", "http_request_duration_seconds_bucket", "http_requests_total", "node_cpu_seconds_total",
+    "node_filesystem_avail_bytes", "node_memory_MemAvailable_bytes", "node_network_receive_bytes_total",
+    "process_resident_memory_bytes", "up"],
+  app: ["checkout-web", "orders-api", "payments-db"],
+  code: ["200", "404", "500", "502"],
+  instance: ["web-1:9100", "web-2:9100", "web-3:9100"],
+  job: ["node", "orders-api", "prometheus"],
+  level: ["debug", "info", "warn", "error"],
+  method: ["GET", "POST"],
+  service_name: ["checkout-web", "orders-api", "payments-db"],
+};
+
+export function exploreSuggest(language: string, label?: string | null): string[] {
+  if (language === "logql" && !label) return ["app", "level", "service_name"];
+  return SUGGESTIONS[label ?? ""] ?? [];
 }
 
 export function currentConfig(): AppConfig {

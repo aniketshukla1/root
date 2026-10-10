@@ -30,6 +30,9 @@ import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { Sparkline, TimeSeries, useWidth, type Domain, type Series } from "../ui/charts";
 import { Button, cx, Empty, Input, Segmented, Select, ServiceMark } from "../ui/primitives";
 
+/** Connections a PromQL panel can run on: Gigapipe serves Prometheus' API too. */
+const SPEAKS_PROMQL = new Set(["prometheus", "gigapipe"]);
+
 /** One grid row, in pixels; a panel `h` rows tall is h of these plus the gaps. */
 const ROW_PX = 80;
 const GAP_PX = 12;
@@ -454,6 +457,22 @@ function DashboardView({
                   <span className="min-w-0 flex-1 truncate text-xs text-ink-3" title={panel.title}>
                     {panel.title}
                   </span>
+                  {!editing && panel.query.source === "promql" && panel.query.profileId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (panel.query.source !== "promql") return;
+                        shared.onNavigate({
+                          name: "explore",
+                          seed: { profileId: panel.query.profileId, language: "promql", query: panel.query.expr },
+                        });
+                      }}
+                      className="shrink-0 rounded-sm px-1 text-2xs text-ink-4 hover:bg-raised hover:text-ink"
+                      title="Open this query in Explore"
+                    >
+                      Explore
+                    </button>
+                  )}
                   {editing && (
                     <PanelControls
                       onResize={(dw, dh) =>
@@ -615,7 +634,7 @@ function PanelBody({
   );
 
   if (!profileId) {
-    return <Hint>{panel.query.source === "promql" ? "Pick a Prometheus connection for this panel." : "No service selected."}</Hint>;
+    return <Hint>{panel.query.source === "promql" ? "Pick a connection for this panel to run on." : "No service selected."}</Hint>;
   }
 
   let found: MetricSeries[];
@@ -760,7 +779,7 @@ function PanelEditor({
   const [kind, setKind] = useState(initial.kind);
   const [unit, setUnit] = useState<MetricUnit | "">(initial.unit ?? "");
   const [query, setQuery] = useState<PanelQuery>(initial.query);
-  const prometheus = model.services.filter((s) => s.snapshot.kind === "prometheus");
+  const prometheus = model.services.filter((s) => SPEAKS_PROMQL.has(s.snapshot.kind));
 
   const metricOwner: ServiceView | undefined =
     query.source === "metric"
@@ -841,9 +860,9 @@ function PanelEditor({
           <div className="flex flex-col gap-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-2xs text-ink-4">
-                Prometheus connection
+                Runs on
                 <Select value={query.profileId} onChange={(e) => setQuery({ ...query, profileId: e.target.value })}>
-                  {prometheus.length === 0 && <option value="">No Prometheus connection yet</option>}
+                  {prometheus.length === 0 && <option value="">No Prometheus or Gigapipe connection yet</option>}
                   {prometheus.map((s) => (
                     <option key={s.snapshot.profileId} value={s.snapshot.profileId}>
                       {s.snapshot.profileName}
@@ -913,7 +932,7 @@ function ImportDialog({
   onImported: (config: AppConfig, dashboardId: string) => void;
   onCancel: () => void;
 }) {
-  const prometheus = model.services.filter((s) => s.snapshot.kind === "prometheus");
+  const prometheus = model.services.filter((s) => SPEAKS_PROMQL.has(s.snapshot.kind));
   const [text, setText] = useState("");
   const [prom, setProm] = useState(prometheus[0]?.snapshot.profileId ?? "");
   const [busy, setBusy] = useState(false);
@@ -973,7 +992,7 @@ function ImportDialog({
           <label className="ml-auto flex items-center gap-1.5 text-2xs text-ink-4">
             PromQL runs on
             <Select size="sm" value={prom} onChange={(e) => setProm(e.target.value)} aria-label="Prometheus connection">
-              <option value="">{prometheus.length === 0 ? "No Prometheus connection yet" : "Choose later"}</option>
+              <option value="">{prometheus.length === 0 ? "No Prometheus or Gigapipe connection yet" : "Choose later"}</option>
               {prometheus.map((s) => (
                 <option key={s.snapshot.profileId} value={s.snapshot.profileId}>
                   {s.snapshot.profileName}

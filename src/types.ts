@@ -166,6 +166,28 @@ export interface ServiceTime {
   errorCount: number;
 }
 
+export type ExploreLanguage = "promql" | "logql" | "traces";
+
+/** One row of a trace search, before anyone asks for the spans. */
+export interface TraceSummary {
+  traceId: string;
+  rootService: string;
+  rootName: string;
+  startedAt: string;
+  durationMs: number;
+  /** Absent when the store did not say; not the same as no errors. */
+  errorCount?: number;
+}
+
+/** What one Explore query answered; only what its language produces is filled. */
+export interface ExploreResult {
+  series: MetricSeries[];
+  /** Every series with data; `series` holds the first eight. */
+  matched: number;
+  lines: LogEvent[];
+  traces: TraceSummary[];
+}
+
 export interface Trace {
   traceId: string;
   rootService: string;

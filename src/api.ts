@@ -127,6 +127,9 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   save_dashboard: ({ dashboard }) => fixtures.saveDashboard(dashboard as never),
   delete_dashboard: ({ dashboardId }) => fixtures.deleteDashboard(dashboardId as string),
   query_prometheus: ({ expr }) => fixtures.promqlSeries(expr as string),
+  explore: ({ language, query, start, end }) =>
+    fixtures.exploreResult(language as string, query as string, start as number, end as number),
+  explore_suggest: ({ language, label }) => fixtures.exploreSuggest(language as string, label as string | null),
   explain_component: ({ profileId, sectionId, rowId }) =>
     fixtures.componentReading(profileId as string, sectionId as string, rowId as string),
   send_message: ({ conversationId, message }) =>
@@ -192,6 +195,8 @@ import type {
   Correlation,
   Dashboard,
   DashboardState,
+  ExploreLanguage,
+  ExploreResult,
   HealthRun,
   HealthSnapshot,
   HistogramBucket,
@@ -264,6 +269,14 @@ export const api = {
   /** A PromQL range query against a Prometheus connection, up to eight series. */
   queryPrometheus: (profileId: string, expr: string, minutes?: number) =>
     invoke<MetricSeries[]>("query_prometheus", { profileId, expr, minutes: minutes ?? null }),
+
+  /** One Explore query over an absolute window, in epoch milliseconds. */
+  explore: (profileId: string, language: ExploreLanguage, query: string, start: number, end: number) =>
+    invoke<ExploreResult>("explore", { profileId, language, query, start, end }),
+
+  /** Label names, or one label's values (`__name__`: metric names), for autocomplete. */
+  exploreSuggest: (profileId: string, language: ExploreLanguage, label?: string) =>
+    invoke<string[]>("explore_suggest", { profileId, language, label: label ?? null }),
 
   /**
    * Every past firing of every condition on one connection.

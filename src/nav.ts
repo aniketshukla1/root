@@ -1,3 +1,5 @@
+import type { ExploreLanguage } from "./types";
+
 /** Every destination in the app. Drill-downs carry their own target. */
 export type View =
   | { name: "overview" }
@@ -7,6 +9,8 @@ export type View =
   | { name: "dashboards" }
   /** `variables` arrive from a shared link; `edit` opens a new one ready to build. */
   | { name: "dashboard"; dashboardId: string; variables?: Record<string, string>; edit?: boolean }
+  /** `seed` opens on a query another screen sent over. */
+  | { name: "explore"; seed?: { profileId: string; language: ExploreLanguage; query: string } }
   | { name: "logs" }
   | { name: "assistant" }
   /** Is root any good yet — precision from findings, recall from incidents. */

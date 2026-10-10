@@ -67,6 +67,14 @@ export const DashboardsIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** A compass: go and look. */
+export const ExploreIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M15.5 8.5l-2 5-5 2 2-5z" />
+  </Icon>
+);
+
 export const LogsIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 5h16M4 10h10M4 15h16M4 20h7" />

@@ -281,6 +281,8 @@ pub fn run() {
             tauri_cmds::save_dashboard,
             tauri_cmds::delete_dashboard,
             tauri_cmds::query_prometheus,
+            tauri_cmds::explore,
+            tauri_cmds::explore_suggest,
             tauri_cmds::send_message,
             tauri_cmds::explain_component,
             tauri_cmds::explain_incident,

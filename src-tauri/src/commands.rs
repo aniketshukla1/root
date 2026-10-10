@@ -2325,15 +2325,18 @@ pub async fn delete_dashboard(state: &Arc<AppState>, dashboard_id: String) -> Re
     Ok(state.config.read().await.clone())
 }
 
-/// Series a panel draws when it carries PromQL: every series the expression
-/// matches, up to the palette's eight, each labelled by its label set.
-pub async fn query_prometheus(
-    state: &Arc<AppState>,
-    profile_id: String,
-    expr: String,
-    minutes: Option<i64>,
-) -> Result<Vec<MetricSeries>> {
-    let server = state
+/// How many series one query draws: the categorical palette's length. More
+/// lines than colours is a query that wants a `by`, and Explore says so.
+const QUERY_SERIES_CAP: usize = 8;
+/// Lines one LogQL query brings back to Explore, newest first.
+const EXPLORE_LINE_CAP: usize = 1000;
+/// Traces one window lists in Explore.
+const EXPLORE_TRACE_CAP: usize = 200;
+/// Names one autocomplete list carries; the editor filters as you type.
+const SUGGEST_CAP: usize = 5000;
+
+async fn connection(state: &Arc<AppState>, profile_id: &str) -> Result<ConnectionProfile> {
+    state
         .config
         .read()
         .await
@@ -2341,31 +2344,40 @@ pub async fn query_prometheus(
         .iter()
         .find(|p| p.id == profile_id)
         .cloned()
-        .ok_or_else(|| AppError::Collector("no such connection".into()))?;
-    if server.kind != crate::model::ServiceKind::Prometheus {
+        .ok_or_else(|| AppError::Collector("no such connection".into()))
+}
+
+/// The client and credentials for PromQL against a connection that speaks
+/// it: Prometheus, or Gigapipe, which serves the same API at its root.
+async fn promql_client(server: &ConnectionProfile) -> Result<(reqwest::Client, crate::promquery::Auth)> {
+    use crate::model::ServiceKind;
+    if !matches!(server.kind, ServiceKind::Prometheus | ServiceKind::Gigapipe) {
         return Err(AppError::Collector(format!(
-            "{} is not a Prometheus connection, so it cannot run PromQL",
+            "{} is not a Prometheus or Gigapipe connection, so it cannot run PromQL",
             server.name
         )));
     }
     let auth = crate::promquery::Auth {
-        username: server.username.clone(),
-        secret: crate::secrets::get_secret(&server.secret_key()).await.unwrap_or(None),
+        username: server.username.clone().filter(|u| !u.is_empty()),
+        secret: secrets::get_secret(&server.secret_key()).await.unwrap_or(None),
     };
-    let client = crate::collectors::http_client(
-        server.options.bool("insecureTls"),
-        std::time::Duration::from_secs(30),
-    )?;
-    let end = chrono::Utc::now();
-    let start = end - chrono::Duration::minutes(minutes.unwrap_or(60).clamp(1, STORE_MAX_MINUTES));
-    let found = crate::promquery::range_all(&client, &server.endpoint, &auth, &expr, start, end, 8).await?;
-    Ok(found
+    let client = crate::collectors::http_client(server.options.insecure_tls(), std::time::Duration::from_secs(30))?;
+    Ok((client, auth))
+}
+
+/// Labelled series as charts take them — the first `QUERY_SERIES_CAP`, with
+/// how many had data. PromQL carries no unit; the panel or the person
+/// supplies one.
+fn query_series(found: Vec<(String, Vec<crate::history::Point>)>, expr: &str) -> (Vec<MetricSeries>, usize) {
+    let found: Vec<_> = found.into_iter().filter(|(_, points)| !points.is_empty()).collect();
+    let matched = found.len();
+    let series = found
         .into_iter()
-        .filter(|(_, points)| !points.is_empty())
+        .take(QUERY_SERIES_CAP)
         .map(|(labels, points)| {
             let values: Vec<f64> = points.iter().map(|p| p.v).collect();
             MetricSeries {
-                label: if labels == "{}" { expr.clone() } else { labels.clone() },
+                label: if labels == "{}" { expr.to_string() } else { labels.clone() },
                 key: labels,
                 unit: crate::model::MetricUnit::Count,
                 warn_above: None,
@@ -2377,7 +2389,138 @@ pub async fn query_prometheus(
                 points,
             }
         })
-        .collect())
+        .collect();
+    (series, matched)
+}
+
+/// Series a panel draws when it carries PromQL: every series the expression
+/// matches, up to the palette's eight, each labelled by its label set.
+pub async fn query_prometheus(
+    state: &Arc<AppState>,
+    profile_id: String,
+    expr: String,
+    minutes: Option<i64>,
+) -> Result<Vec<MetricSeries>> {
+    let server = connection(state, &profile_id).await?;
+    let (client, auth) = promql_client(&server).await?;
+    let end = chrono::Utc::now();
+    let start = end - chrono::Duration::minutes(minutes.unwrap_or(60).clamp(1, STORE_MAX_MINUTES));
+    let found = crate::promquery::range_all(&client, &server.endpoint, &auth, &expr, start, end).await?;
+    Ok(query_series(found, &expr).0)
+}
+
+/// What Explore asked one connection, and the answer: series for PromQL or
+/// a LogQL metric query, lines for a LogQL stream selector, traces for a
+/// trace search. `matched` counts every series, so "8 of 23" can be said.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExploreResult {
+    pub series: Vec<MetricSeries>,
+    pub matched: usize,
+    pub lines: Vec<LogEvent>,
+    pub traces: Vec<crate::traces::TraceSummary>,
+}
+
+/// One query from Explore over an absolute window, in milliseconds since the
+/// epoch. PromQL runs on Prometheus and Gigapipe; LogQL and the trace list
+/// on Gigapipe.
+pub async fn explore(
+    state: &Arc<AppState>,
+    profile_id: String,
+    language: String,
+    query: String,
+    start_ms: i64,
+    end_ms: i64,
+) -> Result<ExploreResult> {
+    use crate::collectors::{DetailQuery, GigapipeRead};
+    let (Some(start), Some(end)) = (
+        chrono::DateTime::from_timestamp_millis(start_ms),
+        chrono::DateTime::from_timestamp_millis(end_ms),
+    ) else {
+        return Err(AppError::Collector("that window is not a time range".into()));
+    };
+    if end <= start {
+        return Err(AppError::Collector("the window ends before it starts".into()));
+    }
+    let server = connection(state, &profile_id).await?;
+    if language == "promql" {
+        let (client, auth) = promql_client(&server).await?;
+        let found = crate::promquery::range_all(&client, &server.endpoint, &auth, &query, start, end).await?;
+        let (series, matched) = query_series(found, &query);
+        return Ok(ExploreResult { series, matched, ..Default::default() });
+    }
+    if server.kind != crate::model::ServiceKind::Gigapipe {
+        return Err(AppError::Collector(format!(
+            "{} keeps no logs or traces root can query: LogQL and traces need a Gigapipe connection",
+            server.name
+        )));
+    }
+    let collector = state.collector(&profile_id).await?;
+    match language.as_str() {
+        "logql" => {
+            let nanos = |t: chrono::DateTime<chrono::Utc>| t.timestamp_nanos_opt().unwrap_or(0).to_string();
+            let response = collector
+                .detail(&DetailQuery::GigapipeRead(GigapipeRead::LokiQuery {
+                    query: query.clone(),
+                    start: Some(nanos(start)),
+                    end: Some(nanos(end)),
+                    limit: Some(EXPLORE_LINE_CAP.to_string()),
+                }))
+                .await?;
+            if response["data"]["resultType"] == "streams" {
+                let mut lines = crate::collectors::gigapipe::lines_in(&response, &server.id, &server.name);
+                // Newest first, as anyone reading a tail expects.
+                lines.sort_by_key(|line| std::cmp::Reverse(line.timestamp));
+                lines.truncate(EXPLORE_LINE_CAP);
+                Ok(ExploreResult { lines, ..Default::default() })
+            } else {
+                let (series, matched) = query_series(crate::promquery::series_in(response)?, &query);
+                Ok(ExploreResult { series, matched, ..Default::default() })
+            }
+        }
+        "traces" => {
+            let response = collector
+                .detail(&DetailQuery::TracesInWindow { from: start, to: end, limit: EXPLORE_TRACE_CAP })
+                .await?;
+            let traces = serde_json::from_value(response).map_err(|e| {
+                AppError::Collector(format!("the trace search answered in a shape root cannot read: {e}"))
+            })?;
+            Ok(ExploreResult { traces, ..Default::default() })
+        }
+        other => Err(AppError::Collector(format!(
+            "Explore speaks promql, logql and traces, not `{other}`"
+        ))),
+    }
+}
+
+/// Names for Explore's autocomplete: label names when `label` is absent,
+/// else that label's values — `__name__` gives PromQL's metric names.
+pub async fn explore_suggest(
+    state: &Arc<AppState>,
+    profile_id: String,
+    language: String,
+    label: Option<String>,
+) -> Result<Vec<String>> {
+    use crate::collectors::{DetailQuery, GigapipeRead};
+    let server = connection(state, &profile_id).await?;
+    let mut names = if language == "logql" {
+        if server.kind != crate::model::ServiceKind::Gigapipe {
+            return Err(AppError::Collector(format!("{} has no LogQL labels to list", server.name)));
+        }
+        let read = match label {
+            None => GigapipeRead::LokiLabels { start: None, end: None },
+            Some(label) => GigapipeRead::LokiLabelValues { label, start: None, end: None },
+        };
+        let response = state.collector(&profile_id).await?.detail(&DetailQuery::GigapipeRead(read)).await?;
+        serde_json::from_value::<Vec<String>>(response["data"].clone()).unwrap_or_default()
+    } else {
+        let (client, auth) = promql_client(&server).await?;
+        crate::promquery::label_values(&client, &server.endpoint, &auth, label.as_deref()).await?
+    };
+    names.sort();
+    names.dedup();
+    names.truncate(SUGGEST_CAP);
+    Ok(names)
 }
 
 /// The models of an Ollama running at its default address, for onboarding to
@@ -3517,6 +3660,29 @@ mod window_tests {
 #[cfg(test)]
 mod dashboard_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn explore_refuses_what_a_connection_cannot_answer() {
+        let dir = std::env::temp_dir().join(format!("root-explore-{}", uuid::Uuid::new_v4()));
+        let mut config = crate::config::AppConfig::default();
+        config.profiles.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "cache", "name": "session-cache", "kind": "redis", "endpoint": "redis://localhost:6379"
+            }))
+            .unwrap(),
+        );
+        let state = Arc::new(AppState::new(config, dir.join("config.json")));
+        let now = chrono::Utc::now().timestamp_millis();
+
+        let backwards = explore(&state, "cache".into(), "promql".into(), "up".into(), now, now - 1).await;
+        assert!(backwards.unwrap_err().to_string().contains("ends before it starts"));
+        let promql = explore(&state, "cache".into(), "promql".into(), "up".into(), now - 60_000, now).await;
+        assert!(promql.unwrap_err().to_string().contains("cannot run PromQL"));
+        let logql = explore(&state, "cache".into(), "logql".into(), "{app=\"x\"}".into(), now - 60_000, now).await;
+        assert!(logql.unwrap_err().to_string().contains("need a Gigapipe connection"));
+        let missing = explore_suggest(&state, "nope".into(), "promql".into(), None).await;
+        assert!(missing.unwrap_err().to_string().contains("no such connection"));
+    }
 
     fn dashboard(title: &str, width: u8) -> crate::config::Dashboard {
         serde_json::from_value(serde_json::json!({

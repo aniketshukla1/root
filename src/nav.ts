@@ -4,6 +4,9 @@ export type View =
   | { name: "services" }
   | { name: "alerts" }
   | { name: "metrics" }
+  | { name: "dashboards" }
+  /** `variables` arrive from a shared link; `edit` opens a new one ready to build. */
+  | { name: "dashboard"; dashboardId: string; variables?: Record<string, string>; edit?: boolean }
   | { name: "logs" }
   | { name: "assistant" }
   /** Is root any good yet — precision from findings, recall from incidents. */
@@ -38,5 +41,20 @@ export function rootOf(view: View): string {
   )
     return "services";
   if (view.name === "correlate") return "logs";
+  if (view.name === "dashboard") return "dashboards";
   return view.name;
+}
+
+/**
+ * A shared dashboard link, `#dashboard=<id>&service=…`, as the view it names.
+ * Read once before the first render and taken out of the address bar, so a
+ * reload after moving elsewhere lands where the person is, not on the link.
+ */
+export function claimDashboardLink(): View | null {
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const dashboardId = params.get("dashboard");
+  if (!dashboardId) return null;
+  params.delete("dashboard");
+  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  return { name: "dashboard", dashboardId, variables: Object.fromEntries(params) };
 }

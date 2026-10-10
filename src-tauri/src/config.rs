@@ -332,6 +332,59 @@ pub struct AppConfig {
     /// The live demo, while one is running. See [`crate::sim`].
     #[serde(default)]
     pub demo: DemoSettings,
+    /// Dashboards people built. In the config rather than a file of their
+    /// own so a server's are shared with everyone who signs in to it.
+    #[serde(default)]
+    pub dashboards: Vec<Dashboard>,
+}
+
+/// Most panels one dashboard may hold — a guard on what a request can store,
+/// generous for anything a person arranges by hand.
+pub const MAX_PANELS: usize = 60;
+
+/// A dashboard: panels on a twelve-column grid, in reading order.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Dashboard {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub panels: Vec<DashboardPanel>,
+    /// Default values for the variables panels refer to: `service`, narrowed
+    /// by `environment` and `team`. A link can override them.
+    #[serde(default)]
+    pub variables: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardPanel {
+    pub id: String,
+    pub title: String,
+    /// `timeseries` or `stat`.
+    pub kind: String,
+    /// Width in columns of twelve, and height in rows.
+    pub w: u8,
+    pub h: u8,
+    pub query: PanelQuery,
+    /// How to read the values when the query cannot say: PromQL returns bare
+    /// numbers. Absent means the series' own unit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<crate::model::MetricUnit>,
+}
+
+/// What a panel draws. A connection id may be `$service`, resolved by the
+/// dashboard's variable at view time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "source", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum PanelQuery {
+    /// A metric root already collects, from the connection's own history.
+    Metric { profile_id: String, metric_key: String },
+    /// A PromQL expression run against a Prometheus connection — how a
+    /// Grafana panel imports.
+    Promql { profile_id: String, expr: String },
 }
 
 /// A simulated estate, running in place of — or beside — a real one.

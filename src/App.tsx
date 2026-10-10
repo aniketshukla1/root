@@ -9,7 +9,7 @@ import { buildModel } from "./model";
 import { leadIncident } from "./incident";
 import type { Entity, Issue } from "./model";
 import type { ExplainTarget } from "./explain";
-import type { View } from "./nav";
+import { claimDashboardLink, type View } from "./nav";
 import type {
   Alert,
   AppConfig,
@@ -50,6 +50,7 @@ import { ComponentDetail } from "./screens/ComponentDetail";
 import { Correlate } from "./screens/Correlate";
 import { Logs } from "./screens/Logs";
 import { Metrics } from "./screens/Metrics";
+import { Dashboards } from "./screens/Dashboards";
 import * as remote from "./remote";
 import { Onboarding } from "./screens/Onboarding";
 import { ServerSignIn } from "./screens/ServerSignIn";
@@ -96,8 +97,20 @@ const SPLASH_BEAT_MS = 350;
 /** Until the first fetch lands, an estate with no declared edges — not a lie. */
 const EMPTY_TOPOLOGY: TopologyView = { dependsOn: {}, dependents: {}, roots: [] };
 
+/** Before the first render, so StrictMode's second pass cannot miss it. */
+const LINKED_VIEW = claimDashboardLink();
+
 export default function App() {
-  const [view, setView] = useState<View>({ name: "overview" });
+  const [view, setView] = useState<View>(LINKED_VIEW ?? { name: "overview" });
+  // A link pasted into a tab that already has root open changes only the hash.
+  useEffect(() => {
+    const follow = () => {
+      const linked = claimDashboardLink();
+      if (linked) setView(linked);
+    };
+    window.addEventListener("hashchange", follow);
+    return () => window.removeEventListener("hashchange", follow);
+  }, []);
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem("root-sidebar-collapsed") === "true";
@@ -831,6 +844,23 @@ export default function App() {
             catalog={catalog}
             minutes={minutes}
             onMinutesChange={setMinutes}
+            syncedAt={dashboard?.generatedAt}
+            onNavigate={setView}
+            onRefresh={refreshAll}
+            onAsk={askAssistant}
+          />
+        )}
+
+        {(view.name === "dashboards" || view.name === "dashboard") && (
+          <Dashboards
+            view={view}
+            config={config}
+            model={model}
+            catalog={catalog}
+            history={history}
+            minutes={minutes}
+            onMinutesChange={setMinutes}
+            onConfigChange={onConfigChange}
             syncedAt={dashboard?.generatedAt}
             onNavigate={setView}
             onRefresh={refreshAll}

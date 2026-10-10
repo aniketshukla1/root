@@ -422,6 +422,26 @@ pub async fn detect_ollama() -> Result<Option<Vec<String>>> {
 }
 
 #[tauri::command]
+pub async fn save_dashboard(state: Shared<'_>, dashboard: crate::config::Dashboard) -> Result<crate::config::AppConfig> {
+    commands::save_dashboard(&state, dashboard).await
+}
+
+#[tauri::command]
+pub async fn delete_dashboard(state: Shared<'_>, dashboard_id: String) -> Result<crate::config::AppConfig> {
+    commands::delete_dashboard(&state, dashboard_id).await
+}
+
+#[tauri::command]
+pub async fn query_prometheus(
+    state: Shared<'_>,
+    profile_id: String,
+    expr: String,
+    minutes: Option<i64>,
+) -> Result<Vec<crate::history::MetricSeries>> {
+    commands::query_prometheus(&state, profile_id, expr, minutes).await
+}
+
+#[tauri::command]
 pub async fn send_message(state: Shared<'_>, conversation_id: String, message: String) -> Result<AgentTurn> {
     commands::send_message(&state, conversation_id, message).await
 }

@@ -1135,6 +1135,34 @@ export interface AppConfig {
   team: { serverUrl?: string; account?: Account };
   /** The live demo, while one is running. */
   demo?: DemoSettings;
+  /** Dashboards people built, shared by everyone on a server. */
+  dashboards?: Dashboard[];
+}
+
+/** What a dashboard panel draws. A connection id may be `$service`. */
+export type PanelQuery =
+  | { source: "metric"; profileId: string; metricKey: string }
+  | { source: "promql"; profileId: string; expr: string };
+
+export interface DashboardPanel {
+  id: string;
+  title: string;
+  kind: "timeseries" | "stat";
+  /** Width in columns of twelve, and height in rows. */
+  w: number;
+  h: number;
+  query: PanelQuery;
+  /** How to read the values; PromQL returns bare numbers. Absent: the series' own. */
+  unit?: MetricUnit;
+}
+
+export interface Dashboard {
+  id: string;
+  title: string;
+  panels: DashboardPanel[];
+  /** Default values for `environment`, `team` and `service`. */
+  variables: Record<string, string>;
+  updatedAt?: string;
 }
 
 export interface DemoSettings {

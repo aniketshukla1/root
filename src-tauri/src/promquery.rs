@@ -114,15 +114,15 @@ pub fn step_for(range_secs: i64) -> i64 {
     minimum.max(MIN_STEP_SECS)
 }
 
-/// Fetch one metric's history over `[start, end]`.
-pub async fn range(
+/// Run a range query and return the raw matrix.
+async fn matrix(
     client: &reqwest::Client,
     base: &str,
     auth: &Auth,
     expr: &str,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-) -> Result<Vec<Point>> {
+) -> Result<Vec<SeriesResult>> {
     let range_secs = (end - start).num_seconds().max(1);
     let step = step_for(range_secs);
 
@@ -173,14 +173,26 @@ pub async fn range(
         .data
         .ok_or_else(|| AppError::Collector("no data in the response".to_string()))?;
 
-    if data.result.is_empty() {
+    Ok(data.result)
+}
+
+/// Fetch one metric's history over `[start, end]`.
+pub async fn range(
+    client: &reqwest::Client,
+    base: &str,
+    auth: &Auth,
+    expr: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<Vec<Point>> {
+    let result = matrix(client, base, auth, expr, start, end).await?;
+    if result.is_empty() {
         return Ok(Vec::new());
     }
-    if data.result.len() > MAX_SERIES {
+    if result.len() > MAX_SERIES {
         // Naming the label sets is the whole value of this error: it shows the
         // operator which dimension they forgot to pin.
-        let found = data
-            .result
+        let found = result
             .iter()
             .take(4)
             .map(|s| render_labels(&s.metric))
@@ -189,14 +201,33 @@ pub async fn range(
         return Err(AppError::Collector(format!(
             "that query matches {} series, so there is no single number to forecast — \
              narrow it with a label selector. Found: {found}",
-            data.result.len()
+            result.len()
         )));
     }
+    Ok(result[0].values.iter().filter_map(|sample| sample.point()).collect())
+}
 
-    Ok(data.result[0]
-        .values
+/// Every series a query matches, each with its label set, up to `cap` — what
+/// a dashboard panel or Explore draws, where many lines is the point.
+pub async fn range_all(
+    client: &reqwest::Client,
+    base: &str,
+    auth: &Auth,
+    expr: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    cap: usize,
+) -> Result<Vec<(String, Vec<Point>)>> {
+    let result = matrix(client, base, auth, expr, start, end).await?;
+    Ok(result
         .iter()
-        .filter_map(|sample| sample.point())
+        .take(cap)
+        .map(|s| {
+            (
+                render_labels(&s.metric),
+                s.values.iter().filter_map(|sample| sample.point()).collect(),
+            )
+        })
         .collect())
 }
 

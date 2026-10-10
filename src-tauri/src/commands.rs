@@ -2289,6 +2289,97 @@ pub async fn list_models(state: &Arc<AppState>) -> Result<Vec<String>> {
     build_provider(&settings, api_key)?.list_models().await
 }
 
+/// Save a dashboard, or replace the one with the same id.
+pub async fn save_dashboard(
+    state: &Arc<AppState>,
+    mut dashboard: crate::config::Dashboard,
+) -> Result<crate::config::AppConfig> {
+    if dashboard.title.trim().is_empty() {
+        return Err(AppError::Config("the dashboard needs a title".to_string()));
+    }
+    if dashboard.panels.len() > crate::config::MAX_PANELS {
+        return Err(AppError::Config(format!(
+            "a dashboard holds at most {} panels",
+            crate::config::MAX_PANELS
+        )));
+    }
+    for panel in &mut dashboard.panels {
+        panel.w = panel.w.clamp(1, 12);
+        panel.h = panel.h.clamp(1, 6);
+    }
+    dashboard.updated_at = Some(chrono::Utc::now());
+    {
+        let mut config = state.config.write().await;
+        match config.dashboards.iter_mut().find(|d| d.id == dashboard.id) {
+            Some(existing) => *existing = dashboard,
+            None => config.dashboards.push(dashboard),
+        }
+    }
+    state.save_config().await?;
+    Ok(state.config.read().await.clone())
+}
+
+pub async fn delete_dashboard(state: &Arc<AppState>, dashboard_id: String) -> Result<crate::config::AppConfig> {
+    state.config.write().await.dashboards.retain(|d| d.id != dashboard_id);
+    state.save_config().await?;
+    Ok(state.config.read().await.clone())
+}
+
+/// Series a panel draws when it carries PromQL: every series the expression
+/// matches, up to the palette's eight, each labelled by its label set.
+pub async fn query_prometheus(
+    state: &Arc<AppState>,
+    profile_id: String,
+    expr: String,
+    minutes: Option<i64>,
+) -> Result<Vec<MetricSeries>> {
+    let server = state
+        .config
+        .read()
+        .await
+        .profiles
+        .iter()
+        .find(|p| p.id == profile_id)
+        .cloned()
+        .ok_or_else(|| AppError::Collector("no such connection".into()))?;
+    if server.kind != crate::model::ServiceKind::Prometheus {
+        return Err(AppError::Collector(format!(
+            "{} is not a Prometheus connection, so it cannot run PromQL",
+            server.name
+        )));
+    }
+    let auth = crate::promquery::Auth {
+        username: server.username.clone(),
+        secret: crate::secrets::get_secret(&server.secret_key()).await.unwrap_or(None),
+    };
+    let client = crate::collectors::http_client(
+        server.options.bool("insecureTls"),
+        std::time::Duration::from_secs(30),
+    )?;
+    let end = chrono::Utc::now();
+    let start = end - chrono::Duration::minutes(minutes.unwrap_or(60).clamp(1, STORE_MAX_MINUTES));
+    let found = crate::promquery::range_all(&client, &server.endpoint, &auth, &expr, start, end, 8).await?;
+    Ok(found
+        .into_iter()
+        .filter(|(_, points)| !points.is_empty())
+        .map(|(labels, points)| {
+            let values: Vec<f64> = points.iter().map(|p| p.v).collect();
+            MetricSeries {
+                label: if labels == "{}" { expr.clone() } else { labels.clone() },
+                key: labels,
+                unit: crate::model::MetricUnit::Count,
+                warn_above: None,
+                change_pct: None,
+                min: values.iter().copied().fold(f64::INFINITY, f64::min),
+                max: values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                latest: *values.last().unwrap_or(&0.0),
+                trend: None,
+                points,
+            }
+        })
+        .collect())
+}
+
 /// The models of an Ollama running at its default address, for onboarding to
 /// offer in one click. `None` when nothing answers within a second and a half
 /// — the common case, and not an error: most machines have no Ollama.
@@ -3420,5 +3511,45 @@ mod window_tests {
         ));
         let err = explain_alert(&state, "nope".into()).await.expect_err("unknown alert");
         assert!(err.to_string().contains("no longer tracked"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod dashboard_tests {
+    use super::*;
+
+    fn dashboard(title: &str, width: u8) -> crate::config::Dashboard {
+        serde_json::from_value(serde_json::json!({
+            "id": "d1",
+            "title": title,
+            "panels": [
+                { "id": "p1", "title": "CPU", "kind": "timeseries", "w": width, "h": 2,
+                  "query": { "source": "metric", "profileId": "$service", "metricKey": "cpu" } },
+                { "id": "p2", "title": "Requests", "kind": "timeseries", "w": 6, "h": 2,
+                  "query": { "source": "promql", "profileId": "prom", "expr": "sum(rate(http_requests_total[5m]))" } }
+            ],
+            "variables": { "service": "orders-api" }
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_dashboard_saves_replaces_and_deletes() {
+        let dir = std::env::temp_dir().join(format!("root-dash-{}", uuid::Uuid::new_v4()));
+        let state = Arc::new(AppState::new(crate::config::AppConfig::default(), dir.join("config.json")));
+
+        let config = save_dashboard(&state, dashboard("Checkout", 40)).await.unwrap();
+        assert_eq!(config.dashboards.len(), 1);
+        assert_eq!(config.dashboards[0].panels[0].w, 12, "a width past the grid is clamped to it");
+        assert!(config.dashboards[0].updated_at.is_some());
+
+        let config = save_dashboard(&state, dashboard("Checkout API", 6)).await.unwrap();
+        assert_eq!(config.dashboards.len(), 1, "the same id replaces, it does not duplicate");
+        assert_eq!(config.dashboards[0].title, "Checkout API");
+
+        assert!(save_dashboard(&state, dashboard("  ", 6)).await.is_err(), "a title is required");
+
+        let config = delete_dashboard(&state, "d1".into()).await.unwrap();
+        assert!(config.dashboards.is_empty());
     }
 }

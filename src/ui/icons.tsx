@@ -57,6 +57,16 @@ export const MetricsIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** Four panels of unequal size: a board somebody arranged. */
+export const DashboardsIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="3" width="8" height="10" rx="1.5" />
+    <rect x="13" y="3" width="8" height="6" rx="1.5" />
+    <rect x="13" y="11" width="8" height="10" rx="1.5" />
+    <rect x="3" y="15" width="8" height="6" rx="1.5" />
+  </Icon>
+);
+
 export const LogsIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 5h16M4 10h10M4 15h16M4 20h7" />

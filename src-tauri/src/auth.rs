@@ -135,6 +135,9 @@ pub const MUTATING: &[&str] = &[
     "start_demo",
     "stop_demo",
     "trigger_demo_story",
+    // A dashboard is shared by everyone on the server.
+    "save_dashboard",
+    "delete_dashboard",
 ];
 
 /// Whether a role may run a command.

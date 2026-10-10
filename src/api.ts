@@ -124,6 +124,9 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   save_profile: ({ profile }) => fixtures.saveProfile(profile as never),
   delete_profile: ({ profileId }) => fixtures.deleteProfile(profileId as string),
+  save_dashboard: ({ dashboard }) => fixtures.saveDashboard(dashboard as never),
+  delete_dashboard: ({ dashboardId }) => fixtures.deleteDashboard(dashboardId as string),
+  query_prometheus: ({ expr }) => fixtures.promqlSeries(expr as string),
   explain_component: ({ profileId, sectionId, rowId }) =>
     fixtures.componentReading(profileId as string, sectionId as string, rowId as string),
   send_message: ({ conversationId, message }) =>
@@ -187,6 +190,7 @@ import type {
   SuiteResult,
   Verdict,
   Correlation,
+  Dashboard,
   DashboardState,
   HealthRun,
   HealthSnapshot,
@@ -251,6 +255,15 @@ export const api = {
 
   getMetricHistory: (profileId: string, minutes?: number) =>
     invoke<MetricSeries[]>("get_metric_history", { profileId, minutes: minutes ?? null }),
+
+  /** Insert or replace by id; returns the whole config, as profile saves do. */
+  saveDashboard: (dashboard: Dashboard) => invoke<AppConfig>("save_dashboard", { dashboard }),
+
+  deleteDashboard: (dashboardId: string) => invoke<AppConfig>("delete_dashboard", { dashboardId }),
+
+  /** A PromQL range query against a Prometheus connection, up to eight series. */
+  queryPrometheus: (profileId: string, expr: string, minutes?: number) =>
+    invoke<MetricSeries[]>("query_prometheus", { profileId, expr, minutes: minutes ?? null }),
 
   /**
    * Every past firing of every condition on one connection.

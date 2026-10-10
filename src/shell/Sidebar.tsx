@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   LogsIcon,
   MetricsIcon,
+  DashboardsIcon,
   OverviewIcon,
   SearchIcon,
   ServicesIcon,
@@ -83,6 +84,7 @@ export function Sidebar({
             : "warn",
     },
     { key: "metrics", label: "Metrics", icon: MetricsIcon, view: { name: "metrics" } },
+    { key: "dashboards", label: "Dashboards", icon: DashboardsIcon, view: { name: "dashboards" } },
     { key: "logs", label: "Logs", icon: LogsIcon, view: { name: "logs" } },
     { key: "assistant", label: "Assistant", icon: AssistantIcon, view: { name: "assistant" } },
     // Last in the list rather than promoted: it is how the tool is doing, not

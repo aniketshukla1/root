@@ -32,6 +32,7 @@ import type {
   Confidence,
   ConnectionProfile,
   Correlation,
+  Dashboard,
   DashboardState,
   GroupingReason,
   Health,
@@ -1145,6 +1146,35 @@ export function deleteProfile(profileId: string): AppConfig {
   const at = SAVED.findIndex((p) => p.id === profileId);
   if (at >= 0) SAVED.splice(at, 1);
   return { ...CONFIG, profiles: [...SAVED] };
+}
+
+export function saveDashboard(dashboard: Dashboard): AppConfig {
+  if (!dashboard.title.trim()) throw new Error("A dashboard needs a title.");
+  const others = (CONFIG.dashboards ?? []).filter((d) => d.id !== dashboard.id);
+  CONFIG.dashboards = [...others, { ...dashboard, updatedAt: new Date().toISOString() }];
+  return currentConfig();
+}
+
+export function deleteDashboard(dashboardId: string): AppConfig {
+  CONFIG.dashboards = (CONFIG.dashboards ?? []).filter((d) => d.id !== dashboardId);
+  return currentConfig();
+}
+
+/** Two labelled series whatever the query: enough to draw a legend. */
+export function promqlSeries(expr: string): MetricSeries[] {
+  return ['{instance="web-1"}', '{instance="web-2"}'].map((label, i) => {
+    const points = series(SAMPLES, 900 + i, 40 + i * 25, i === 0 ? "rise" : "flat");
+    const values = points.map((p) => p.v);
+    return {
+      key: `${expr}#${i}`,
+      label,
+      unit: "count",
+      points,
+      min: Math.min(...values),
+      max: Math.max(...values),
+      latest: values[values.length - 1],
+    };
+  });
 }
 
 export function currentConfig(): AppConfig {

@@ -2325,6 +2325,62 @@ pub async fn delete_dashboard(state: &Arc<AppState>, dashboard_id: String) -> Re
     Ok(state.config.read().await.clone())
 }
 
+/// Insert or replace an alert rule by id. An edited rule starts its "for"
+/// wait again: the old condition holding says nothing about the new one.
+pub async fn save_alert_rule(
+    state: &Arc<AppState>,
+    rule: crate::rules::AlertRule,
+) -> Result<crate::config::AppConfig> {
+    crate::rules::validate_rule(&rule)?;
+    {
+        let mut config = state.config.write().await;
+        if !config.profiles.iter().any(|p| p.id == rule.condition.profile_id()) {
+            return Err(AppError::Config("That connection no longer exists.".into()));
+        }
+        state.rule_pending.lock().await.forget(&rule.id);
+        match config.alert_rules.iter_mut().find(|r| r.id == rule.id) {
+            Some(slot) => *slot = rule,
+            None => config.alert_rules.push(rule),
+        }
+    }
+    state.save_config().await?;
+    Ok(state.config.read().await.clone())
+}
+
+pub async fn delete_alert_rule(state: &Arc<AppState>, rule_id: String) -> Result<crate::config::AppConfig> {
+    state.config.write().await.alert_rules.retain(|r| r.id != rule_id);
+    state.rule_pending.lock().await.forget(&rule_id);
+    state.save_config().await?;
+    Ok(state.config.read().await.clone())
+}
+
+/// What a rule would have done over the last week, before anyone saves it.
+pub async fn preview_alert_rule(
+    state: &Arc<AppState>,
+    rule: crate::rules::AlertRule,
+) -> Result<crate::rules::RulePreview> {
+    crate::rules::preview(state, &rule, chrono::Utc::now()).await
+}
+
+/// Insert or replace a silence by id; silences already over are dropped.
+pub async fn save_silence(state: &Arc<AppState>, silence: crate::rules::Silence) -> Result<crate::config::AppConfig> {
+    let now = chrono::Utc::now();
+    crate::rules::validate_silence(&silence, now)?;
+    {
+        let mut config = state.config.write().await;
+        config.silences.retain(|s| s.ends_at > now && s.id != silence.id);
+        config.silences.push(silence);
+    }
+    state.save_config().await?;
+    Ok(state.config.read().await.clone())
+}
+
+pub async fn delete_silence(state: &Arc<AppState>, silence_id: String) -> Result<crate::config::AppConfig> {
+    state.config.write().await.silences.retain(|s| s.id != silence_id);
+    state.save_config().await?;
+    Ok(state.config.read().await.clone())
+}
+
 /// How many series one query draws: the categorical palette's length. More
 /// lines than colours is a query that wants a `by`, and Explore says so.
 const QUERY_SERIES_CAP: usize = 8;
@@ -3660,6 +3716,44 @@ mod window_tests {
 #[cfg(test)]
 mod dashboard_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_rule_and_its_silence_save_and_delete_in_the_shape_the_ui_sends() {
+        let dir = std::env::temp_dir().join(format!("root-rules-{}", uuid::Uuid::new_v4()));
+        let mut config = crate::config::AppConfig::default();
+        config.profiles.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "cache", "name": "session-cache", "kind": "redis", "endpoint": "redis://localhost:6379"
+            }))
+            .unwrap(),
+        );
+        let state = Arc::new(AppState::new(config, dir.join("config.json")));
+        let rule: crate::rules::AlertRule = serde_json::from_value(serde_json::json!({
+            "id": "r1", "name": "Hit rate low", "severity": "warning", "labels": { "team": "platform" },
+            "condition": { "source": "metric", "profileId": "cache", "metricKey": "hit", "op": "below", "threshold": 95.0 },
+            "forSecs": 300
+        }))
+        .unwrap();
+        assert_eq!(save_alert_rule(&state, rule.clone()).await.unwrap().alert_rules.len(), 1);
+        assert_eq!(save_alert_rule(&state, rule.clone()).await.unwrap().alert_rules.len(), 1, "same id replaces");
+
+        let now = chrono::Utc::now();
+        let silence: crate::rules::Silence = serde_json::from_value(serde_json::json!({
+            "id": "s1", "ruleId": "r1", "startsAt": now, "endsAt": now + chrono::Duration::hours(1), "comment": "fix deploying"
+        }))
+        .unwrap();
+        assert_eq!(save_silence(&state, silence).await.unwrap().silences.len(), 1);
+
+        let orphan: crate::rules::AlertRule = serde_json::from_value(serde_json::json!({
+            "id": "r2", "name": "Gone", "severity": "critical",
+            "condition": { "source": "log", "profileId": "gone", "pattern": "panic", "windowSecs": 300, "op": "above", "threshold": 0.0 }
+        }))
+        .unwrap();
+        assert!(save_alert_rule(&state, orphan).await.is_err(), "a rule on a connection that is not there");
+
+        assert!(delete_alert_rule(&state, "r1".into()).await.unwrap().alert_rules.is_empty());
+        assert!(delete_silence(&state, "s1".into()).await.unwrap().silences.is_empty());
+    }
 
     #[tokio::test]
     async fn explore_refuses_what_a_connection_cannot_answer() {

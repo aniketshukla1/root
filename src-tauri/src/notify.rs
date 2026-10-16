@@ -1101,18 +1101,19 @@ pub async fn sweep(state: &Arc<AppState>, client: &reqwest::Client) {
 /// An invented outage must never reach a real channel. The demo plays one
 /// every twelve minutes; routed like the rest, each would page whoever is on
 /// call for a checkout service that does not exist.
+///
+/// Nor a silenced one: a silence exists to keep a known condition — a
+/// maintenance window, a fix in progress — off everyone's phone.
 async fn real_alerts(state: &Arc<AppState>) -> Vec<Alert> {
-    let simulated: std::collections::HashSet<String> = state
-        .config
-        .read()
-        .await
-        .profiles
-        .iter()
-        .filter(|p| p.simulated)
-        .map(|p| p.id.clone())
-        .collect();
+    let (simulated, silences) = {
+        let config = state.config.read().await;
+        let simulated: std::collections::HashSet<String> =
+            config.profiles.iter().filter(|p| p.simulated).map(|p| p.id.clone()).collect();
+        (simulated, config.silences.clone())
+    };
+    let now = Utc::now();
     let mut alerts = state.alerts.read().await.all();
-    alerts.retain(|a| !simulated.contains(&a.profile_id));
+    alerts.retain(|a| !simulated.contains(&a.profile_id) && !silences.iter().any(|s| s.covers(a, now)));
     alerts
 }
 

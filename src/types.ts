@@ -166,6 +166,51 @@ export interface ServiceTime {
   errorCount: number;
 }
 
+export type RuleOp = "above" | "below";
+
+export type RuleCondition =
+  | { source: "metric"; profileId: string; metricKey: string; op: RuleOp; threshold: number }
+  /** A pattern between slashes is a regular expression; anything else a case-insensitive substring. */
+  | { source: "log"; profileId: string; pattern: string; windowSecs: number; op: RuleOp; threshold: number };
+
+/** An alert someone wrote, beside the ones collectors raise. Its alerts carry the fingerprint `rule:<id>`. */
+export interface AlertRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  severity: AlertSeverity;
+  labels: Record<string, string>;
+  condition: RuleCondition;
+  /** How long the condition must hold before the alert fires. */
+  forSecs: number;
+}
+
+/** Mutes matching alerts while it runs; one that starts later is a maintenance window. */
+export interface Silence {
+  id: string;
+  ruleId?: string;
+  profileId?: string;
+  fingerprint?: string;
+  startsAt: string;
+  endsAt: string;
+  comment: string;
+}
+
+export interface Firing {
+  start: string;
+  end: string;
+  peak: number;
+  /** Still firing at the end of the history. */
+  ongoing: boolean;
+}
+
+/** What a rule would have done over the last week of history. */
+export interface RulePreview {
+  series: MetricSeries | null;
+  firings: Firing[];
+  summary: string;
+}
+
 export type ExploreLanguage = "promql" | "logql" | "traces";
 
 /** One row of a trace search, before anyone asks for the spans. */
@@ -413,6 +458,8 @@ export interface DashboardState {
    * not been taught about predictions cannot show one by accident.
    */
   predictions: Alert[];
+  /** When each silenced alert's silence ends, by fingerprint; listed, kept off every channel. */
+  silenced?: Record<string, string>;
   overallHealth: Health;
   servicesTotal: number;
   servicesHealthy: number;
@@ -1159,6 +1206,8 @@ export interface AppConfig {
   demo?: DemoSettings;
   /** Dashboards people built, shared by everyone on a server. */
   dashboards?: Dashboard[];
+  alertRules?: AlertRule[];
+  silences?: Silence[];
 }
 
 /** What a dashboard panel draws. A connection id may be `$service`. */

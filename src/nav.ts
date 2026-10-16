@@ -5,6 +5,8 @@ export type View =
   | { name: "overview" }
   | { name: "services" }
   | { name: "alerts" }
+  /** Alert rules people write, their previews, and silences. */
+  | { name: "rules" }
   | { name: "metrics" }
   | { name: "dashboards" }
   /** `variables` arrive from a shared link; `edit` opens a new one ready to build. */
@@ -46,6 +48,7 @@ export function rootOf(view: View): string {
     return "services";
   if (view.name === "correlate") return "logs";
   if (view.name === "dashboard") return "dashboards";
+  if (view.name === "rules") return "alerts";
   return view.name;
 }
 

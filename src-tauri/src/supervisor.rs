@@ -221,7 +221,8 @@ async fn launch(state: Arc<AppState>, profile: ConnectionProfile) {
                         }
                     }
 
-                    let derived = alerts_from_snapshot(&snapshot);
+                    let mut derived = alerts_from_snapshot(&snapshot);
+                    derived.extend(crate::rules::for_snapshot(&state, &snapshot).await);
                     let (raised, current) = {
                         let mut store = state.alerts.write().await;
                         let raised = store.reconcile(&profile.id, derived);
@@ -315,7 +316,8 @@ pub async fn poll_once(state: &Arc<AppState>, profile_id: &str) -> Result<crate:
     if !observed.is_empty() {
         state.changes.write().await.record(observed);
     }
-    let derived = alerts_from_snapshot(&snapshot);
+    let mut derived = alerts_from_snapshot(&snapshot);
+    derived.extend(crate::rules::for_snapshot(state, &snapshot).await);
     state.alerts.write().await.reconcile(profile_id, derived);
     Ok(snapshot)
 }

@@ -427,6 +427,31 @@ pub async fn save_dashboard(state: Shared<'_>, dashboard: crate::config::Dashboa
 }
 
 #[tauri::command]
+pub async fn save_alert_rule(state: Shared<'_>, rule: crate::rules::AlertRule) -> Result<crate::config::AppConfig> {
+    commands::save_alert_rule(&state, rule).await
+}
+
+#[tauri::command]
+pub async fn delete_alert_rule(state: Shared<'_>, rule_id: String) -> Result<crate::config::AppConfig> {
+    commands::delete_alert_rule(&state, rule_id).await
+}
+
+#[tauri::command]
+pub async fn preview_alert_rule(state: Shared<'_>, rule: crate::rules::AlertRule) -> Result<crate::rules::RulePreview> {
+    commands::preview_alert_rule(&state, rule).await
+}
+
+#[tauri::command]
+pub async fn save_silence(state: Shared<'_>, silence: crate::rules::Silence) -> Result<crate::config::AppConfig> {
+    commands::save_silence(&state, silence).await
+}
+
+#[tauri::command]
+pub async fn delete_silence(state: Shared<'_>, silence_id: String) -> Result<crate::config::AppConfig> {
+    commands::delete_silence(&state, silence_id).await
+}
+
+#[tauri::command]
 pub async fn delete_dashboard(state: Shared<'_>, dashboard_id: String) -> Result<crate::config::AppConfig> {
     commands::delete_dashboard(&state, dashboard_id).await
 }

@@ -125,6 +125,11 @@ impl LogBuffer {
             .collect()
     }
 
+    /// Oldest first.
+    pub fn iter(&self) -> impl Iterator<Item = &LogEvent> {
+        self.entries.iter()
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -481,7 +486,7 @@ pub fn alerts_from_snapshot(snapshot: &HealthSnapshot) -> Vec<Alert> {
     alerts
 }
 
-fn format_metric(value: f64, unit: crate::model::MetricUnit) -> String {
+pub(crate) fn format_metric(value: f64, unit: crate::model::MetricUnit) -> String {
     use crate::model::MetricUnit::*;
     match unit {
         Percent => format!("{value:.1}%"),
@@ -530,6 +535,8 @@ pub struct AppState {
     /// What the assistant says it found, so its claims can be rated beside the
     /// rules instead of disappearing into a conversation.
     pub claims: RwLock<crate::claims::ClaimStore>,
+    /// Since when each alert rule's condition has held, for its "for 5m".
+    pub rule_pending: Mutex<crate::rules::Pending>,
     /// Last log timestamp seen per profile, so each poll only asks for new lines.
     pub watermarks: RwLock<HashMap<String, DateTime<Utc>>>,
     /// Rolling metric history feeding sparklines, charts, and trend questions.
@@ -604,6 +611,7 @@ impl AppState {
             alerts: RwLock::new(AlertStore::default()),
             changes: RwLock::new(crate::changes::ChangeStore::new()),
             claims: RwLock::new(crate::claims::ClaimStore::default()),
+            rule_pending: Mutex::new(crate::rules::Pending::default()),
             watermarks: RwLock::new(HashMap::new()),
             history: RwLock::new(HistoryStore::default()),
             conversations: RwLock::new(HashMap::new()),
@@ -738,9 +746,11 @@ impl AppState {
             .unwrap_or(Health::Unknown);
 
         let store = self.alerts.read().await;
+        let alerts = store.all();
         DashboardState {
             snapshots,
-            alerts: store.all(),
+            silenced: crate::rules::silenced(&alerts, &config.silences, Utc::now()),
+            alerts,
             predictions: store.predictions(),
             overall_health,
             services_total,

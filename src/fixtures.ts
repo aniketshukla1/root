@@ -31,6 +31,7 @@ import type {
   ChangeEvent,
   Confidence,
   ConnectionProfile,
+  AlertRule,
   Correlation,
   Dashboard,
   ExploreResult,
@@ -45,6 +46,9 @@ import type {
   MetricSeries,
   Point,
   TraceSummary,
+  Silence,
+  RulePreview,
+  Firing,
   CapacityRisk,
   ConfigDocument,
   FamilyScore,
@@ -1281,6 +1285,115 @@ const SUGGESTIONS: Record<string, string[]> = {
 export function exploreSuggest(language: string, label?: string | null): string[] {
   if (language === "logql" && !label) return ["app", "level", "service_name"];
   return SUGGESTIONS[label ?? ""] ?? [];
+}
+
+/** The dashboard as of now: silences start and end on the clock. */
+export function dashboardNow(): DashboardState {
+  const now = Date.now();
+  const silenced: Record<string, string> = {};
+  for (const alert of DASHBOARD.alerts) {
+    for (const s of CONFIG.silences ?? []) {
+      const live = Date.parse(s.startsAt) <= now && now < Date.parse(s.endsAt);
+      const covers =
+        (!s.ruleId || alert.fingerprint === `rule:${s.ruleId}`) &&
+        (!s.profileId || alert.profileId === s.profileId) &&
+        (!s.fingerprint || alert.fingerprint === s.fingerprint);
+      if (live && covers && (!silenced[alert.fingerprint] || silenced[alert.fingerprint] < s.endsAt)) {
+        silenced[alert.fingerprint] = s.endsAt;
+      }
+    }
+  }
+  return { ...DASHBOARD, silenced };
+}
+
+export function saveAlertRule(rule: AlertRule): AppConfig {
+  if (!rule.name.trim()) throw new Error("A rule needs a name.");
+  CONFIG.alertRules = [...(CONFIG.alertRules ?? []).filter((r) => r.id !== rule.id), rule];
+  return currentConfig();
+}
+
+export function deleteAlertRule(ruleId: string): AppConfig {
+  CONFIG.alertRules = (CONFIG.alertRules ?? []).filter((r) => r.id !== ruleId);
+  return currentConfig();
+}
+
+export function saveSilence(silence: Silence): AppConfig {
+  if (Date.parse(silence.endsAt) <= Date.parse(silence.startsAt)) throw new Error("A silence has to end after it starts.");
+  const now = Date.now();
+  CONFIG.silences = [
+    ...(CONFIG.silences ?? []).filter((s) => s.id !== silence.id && Date.parse(s.endsAt) > now),
+    silence,
+  ];
+  return currentConfig();
+}
+
+export function deleteSilence(silenceId: string): AppConfig {
+  CONFIG.silences = (CONFIG.silences ?? []).filter((s) => s.id !== silenceId);
+  return currentConfig();
+}
+
+function spanWords(minutes: number): string {
+  const m = Math.round(minutes);
+  const parts: [number, string][] = [[Math.floor(m / 1440), "d"], [Math.floor((m % 1440) / 60), "h"], [m % 60, "m"]];
+  return parts.filter(([n]) => n > 0).map(([n, u]) => `${n}${u}`).join(" ") || "0m";
+}
+
+/** A week of the rule's metric, and where it would have fired; the preview has no archive. */
+export function previewAlertRule(rule: AlertRule): RulePreview {
+  const now = Date.now();
+  const from = now - 7 * DAY_MS;
+  const { condition } = rule;
+  const base =
+    condition.source === "metric"
+      ? (METRICS[condition.profileId]?.find(([key]) => key === condition.metricKey)?.[2] ?? 10)
+      : 3;
+  const unit =
+    condition.source === "metric"
+      ? ((METRICS[condition.profileId]?.find(([key]) => key === condition.metricKey)?.[3] ?? "count") as MetricUnit)
+      : "count";
+  const points = windowSeries(base * 7 + 1, base, from, now, 7 * 24 * 6);
+  const holds = (v: number) => (condition.op === "above" ? v > condition.threshold : v < condition.threshold);
+  const firings: Firing[] = [];
+  let since: number | null = null;
+  let open: Firing | null = null;
+  for (const p of points) {
+    const t = Date.parse(p.t);
+    if (!holds(p.v)) {
+      since = null;
+      if (open) {
+        open.end = p.t;
+        firings.push(open);
+      }
+      open = null;
+      continue;
+    }
+    since ??= t;
+    if (open) {
+      open.end = p.t;
+      open.peak = condition.op === "above" ? Math.max(open.peak, p.v) : Math.min(open.peak, p.v);
+    }
+    else if (t - since >= rule.forSecs * 1000) open = { start: p.t, end: p.t, peak: p.v, ongoing: false };
+  }
+  if (open) firings.push({ start: open.start, end: open.end, peak: open.peak, ongoing: true });
+  const values = points.map((p) => p.v);
+  const minutes = firings.reduce((sum, f) => sum + (Date.parse(f.end) - Date.parse(f.start)) / 60_000, 0);
+  return {
+    series: {
+      key: rule.id,
+      label: condition.source === "metric" ? condition.metricKey : `Lines matching “${condition.pattern}”`,
+      unit,
+      warnAbove: condition.op === "above" ? condition.threshold : undefined,
+      points,
+      min: Math.min(...values),
+      max: Math.max(...values),
+      latest: values[values.length - 1],
+    },
+    firings,
+    summary:
+      firings.length === 0
+        ? "Would not have fired in the last 7 days."
+        : `Would have fired ${firings.length} time${firings.length === 1 ? "" : "s"} in the last 7 days, for ${spanWords(minutes)} in all${firings[firings.length - 1]?.ongoing ? ", and would be firing now" : ""}.`,
+  };
 }
 
 export function currentConfig(): AppConfig {

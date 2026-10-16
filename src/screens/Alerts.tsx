@@ -58,6 +58,7 @@ interface AlertGroup {
 
 export function Alerts({
   alerts,
+  silenced,
   incidents,
   model,
   catalog,
@@ -69,6 +70,8 @@ export function Alerts({
   onExplain,
 }: {
   alerts: Alert[];
+  /** When each silenced alert's silence ends, by fingerprint. */
+  silenced?: Record<string, string>;
   incidents: Incident[];
   model: EstateModel;
   catalog: Catalog;
@@ -342,6 +345,9 @@ export function Alerts({
             title: key === "none" ? "No grouping" : `Group by ${GROUP_LABELS[key].toLowerCase()}`,
           }))}
         />
+        <Button variant="ghost" onClick={() => onNavigate({ name: "rules" })} title="Rules you write, and silences">
+          Rules
+        </Button>
         <Button
           onClick={() => void explainAll()}
           disabled={bulk !== null || visible.length === 0}
@@ -638,6 +644,11 @@ export function Alerts({
                               {alert.title}
                             </span>
                             {alert.acknowledged && alert.active && <Tag>Acked</Tag>}
+                            {alert.active && silenced?.[alert.fingerprint] && (
+                              <Tag title="Listed, but kept off every channel">
+                                Silenced until {formatDateTime(silenced[alert.fingerprint])}
+                              </Tag>
+                            )}
                             {!alert.active && <Tag color="var(--color-ok)">Resolved</Tag>}
                           </div>
                           <p className="truncate text-2xs text-ink-4" title={alert.detail}>

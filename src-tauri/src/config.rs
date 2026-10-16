@@ -336,6 +336,10 @@ pub struct AppConfig {
     /// own so a server's are shared with everyone who signs in to it.
     #[serde(default)]
     pub dashboards: Vec<Dashboard>,
+    /// Alerts people write, beside the ones collectors raise.
+    pub alert_rules: Vec<crate::rules::AlertRule>,
+    /// Silences and maintenance windows; the expired ones are dropped on save.
+    pub silences: Vec<crate::rules::Silence>,
 }
 
 /// Most panels one dashboard may hold — a guard on what a request can store,

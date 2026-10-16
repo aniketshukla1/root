@@ -11,7 +11,7 @@ import * as remote from "./remote";
  * present, so this branch is never taken.
  */
 const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
-  get_dashboard: () => fixtures.DASHBOARD,
+  get_dashboard: () => fixtures.dashboardNow(),
   get_service_catalog: () => fixtures.DESCRIPTORS,
   get_config: () => fixtures.currentConfig(),
   get_team: () => fixtures.team(),
@@ -130,6 +130,11 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   explore: ({ language, query, start, end }) =>
     fixtures.exploreResult(language as string, query as string, start as number, end as number),
   explore_suggest: ({ language, label }) => fixtures.exploreSuggest(language as string, label as string | null),
+  save_alert_rule: ({ rule }) => fixtures.saveAlertRule(rule as never),
+  delete_alert_rule: ({ ruleId }) => fixtures.deleteAlertRule(ruleId as string),
+  preview_alert_rule: ({ rule }) => fixtures.previewAlertRule(rule as never),
+  save_silence: ({ silence }) => fixtures.saveSilence(silence as never),
+  delete_silence: ({ silenceId }) => fixtures.deleteSilence(silenceId as string),
   explain_component: ({ profileId, sectionId, rowId }) =>
     fixtures.componentReading(profileId as string, sectionId as string, rowId as string),
   send_message: ({ conversationId, message }) =>
@@ -193,10 +198,13 @@ import type {
   SuiteResult,
   Verdict,
   Correlation,
+  AlertRule,
   Dashboard,
   DashboardState,
   ExploreLanguage,
   ExploreResult,
+  RulePreview,
+  Silence,
   HealthRun,
   HealthSnapshot,
   HistogramBucket,
@@ -273,6 +281,19 @@ export const api = {
   /** One Explore query over an absolute window, in epoch milliseconds. */
   explore: (profileId: string, language: ExploreLanguage, query: string, start: number, end: number) =>
     invoke<ExploreResult>("explore", { profileId, language, query, start, end }),
+
+  /** Insert or replace an alert rule by id; returns the whole config. */
+  saveAlertRule: (rule: AlertRule) => invoke<AppConfig>("save_alert_rule", { rule }),
+
+  deleteAlertRule: (ruleId: string) => invoke<AppConfig>("delete_alert_rule", { ruleId }),
+
+  /** What a rule would have done over the last week, before it is saved. */
+  previewAlertRule: (rule: AlertRule) => invoke<RulePreview>("preview_alert_rule", { rule }),
+
+  /** A silence, or a maintenance window when it starts later; expired ones are dropped. */
+  saveSilence: (silence: Silence) => invoke<AppConfig>("save_silence", { silence }),
+
+  deleteSilence: (silenceId: string) => invoke<AppConfig>("delete_silence", { silenceId }),
 
   /** Label names, or one label's values (`__name__`: metric names), for autocomplete. */
   exploreSuggest: (profileId: string, language: ExploreLanguage, label?: string) =>

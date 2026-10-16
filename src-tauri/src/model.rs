@@ -889,6 +889,10 @@ pub struct DashboardState {
     /// an operator reads at three in the morning.
     #[serde(default)]
     pub predictions: Vec<Alert>,
+    /// When each silenced alert's silence ends, by fingerprint. Silenced
+    /// alerts stay listed; they are only kept off every channel.
+    #[serde(default)]
+    pub silenced: std::collections::HashMap<String, DateTime<Utc>>,
     pub overall_health: Health,
     pub services_total: usize,
     pub services_healthy: usize,

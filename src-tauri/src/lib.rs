@@ -44,6 +44,7 @@ pub mod promquery;
 pub mod rca;
 pub mod registry;
 pub mod rpc;
+pub mod rules;
 pub mod server;
 pub mod runtime;
 pub mod scenarios;
@@ -283,6 +284,11 @@ pub fn run() {
             tauri_cmds::query_prometheus,
             tauri_cmds::explore,
             tauri_cmds::explore_suggest,
+            tauri_cmds::save_alert_rule,
+            tauri_cmds::delete_alert_rule,
+            tauri_cmds::preview_alert_rule,
+            tauri_cmds::save_silence,
+            tauri_cmds::delete_silence,
             tauri_cmds::send_message,
             tauri_cmds::explain_component,
             tauri_cmds::explain_incident,

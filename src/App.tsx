@@ -52,6 +52,7 @@ import { Logs } from "./screens/Logs";
 import { Metrics } from "./screens/Metrics";
 import { Dashboards } from "./screens/Dashboards";
 import { Explore } from "./screens/Explore";
+import { AlertRules } from "./screens/AlertRules";
 import * as remote from "./remote";
 import { Onboarding } from "./screens/Onboarding";
 import { ServerSignIn } from "./screens/ServerSignIn";
@@ -826,6 +827,7 @@ export default function App() {
         {view.name === "alerts" && (
           <Alerts
             alerts={dashboard?.alerts ?? []}
+            silenced={dashboard?.silenced}
             incidents={incidents}
             model={model}
             catalog={catalog}
@@ -846,6 +848,20 @@ export default function App() {
             minutes={minutes}
             onMinutesChange={setMinutes}
             syncedAt={dashboard?.generatedAt}
+            onNavigate={setView}
+            onRefresh={refreshAll}
+            onAsk={askAssistant}
+          />
+        )}
+
+        {view.name === "rules" && (
+          <AlertRules
+            config={config}
+            model={model}
+            catalog={catalog}
+            alerts={dashboard?.alerts ?? []}
+            syncedAt={dashboard?.generatedAt}
+            onConfigChange={onConfigChange}
             onNavigate={setView}
             onRefresh={refreshAll}
             onAsk={askAssistant}

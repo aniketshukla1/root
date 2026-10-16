@@ -138,6 +138,11 @@ pub const MUTATING: &[&str] = &[
     // A dashboard is shared by everyone on the server.
     "save_dashboard",
     "delete_dashboard",
+    // So is what pages them, and what keeps a page quiet.
+    "save_alert_rule",
+    "delete_alert_rule",
+    "save_silence",
+    "delete_silence",
 ];
 
 /// Whether a role may run a command.

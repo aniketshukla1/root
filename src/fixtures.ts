@@ -48,6 +48,7 @@ import type {
   TraceSummary,
   Silence,
   RulePreview,
+  ServiceMap,
   Firing,
   CapacityRisk,
   ConfigDocument,
@@ -1311,6 +1312,24 @@ const SUGGESTIONS: Record<string, string[]> = {
 export function exploreSuggest(language: string, label?: string | null): string[] {
   if (language === "logql" && !label) return ["app", "level", "service_name"];
   return SUGGESTIONS[label ?? ""] ?? [];
+}
+
+/** Calls the sampled traces saw; the failing path fails only where the scenario does. */
+export function serviceMap(): ServiceMap {
+  const failing = SCENARIO === "incident" || SCENARIO === "triage" || SCENARIO === "storm";
+  return {
+    traces: 60,
+    unknown: ["stripe-api"],
+    edges: [
+      { from: "edge-proxy", to: "checkout-web", calls: 1240, errors: 3, meanMs: 180 },
+      { from: "checkout-web", to: "orders-api", calls: 830, errors: failing ? 61 : 0, meanMs: 95 },
+      { from: "orders-api", to: "payments-db", calls: 610, errors: failing ? 44 : 0, meanMs: 42 },
+      { from: "orders-api", to: "session-cache", calls: 940, errors: 0, meanMs: 2 },
+      { from: "orders-api", to: "events-bus", calls: 320, errors: 0, meanMs: 6 },
+      { from: "search-cluster", to: "events-bus", calls: 150, errors: 0, meanMs: 9 },
+      { from: "status-page", to: "edge-proxy", calls: 60, errors: 0, meanMs: 30 },
+    ],
+  };
 }
 
 /** The dashboard as of now: silences start and end on the clock. */

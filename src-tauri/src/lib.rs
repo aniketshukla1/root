@@ -284,6 +284,7 @@ pub fn run() {
             tauri_cmds::query_prometheus,
             tauri_cmds::explore,
             tauri_cmds::explore_suggest,
+            tauri_cmds::get_service_map,
             tauri_cmds::save_alert_rule,
             tauri_cmds::delete_alert_rule,
             tauri_cmds::preview_alert_rule,

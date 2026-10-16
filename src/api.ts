@@ -130,6 +130,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   explore: ({ language, query, start, end }) =>
     fixtures.exploreResult(language as string, query as string, start as number, end as number),
   explore_suggest: ({ language, label }) => fixtures.exploreSuggest(language as string, label as string | null),
+  get_service_map: () => fixtures.serviceMap(),
   save_alert_rule: ({ rule }) => fixtures.saveAlertRule(rule as never),
   delete_alert_rule: ({ ruleId }) => fixtures.deleteAlertRule(ruleId as string),
   preview_alert_rule: ({ rule }) => fixtures.previewAlertRule(rule as never),
@@ -204,6 +205,7 @@ import type {
   ExploreLanguage,
   ExploreResult,
   RulePreview,
+  ServiceMap,
   Silence,
   HealthRun,
   HealthSnapshot,
@@ -282,6 +284,9 @@ export const api = {
   /** One Explore query over an absolute window, in epoch milliseconds. */
   explore: (profileId: string, language: ExploreLanguage, query: string, start: number, end: number) =>
     invoke<ExploreResult>("explore", { profileId, language, query, start, end }),
+
+  /** Who calls whom over the last `minutes`, from sampled traces. */
+  getServiceMap: (minutes?: number) => invoke<ServiceMap>("get_service_map", { minutes: minutes ?? null }),
 
   /** Insert or replace an alert rule by id; returns the whole config. */
   saveAlertRule: (rule: AlertRule) => invoke<AppConfig>("save_alert_rule", { rule }),

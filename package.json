@@ -12,7 +12,8 @@
     "check:golden": "node --experimental-strip-types --no-warnings scripts/check-golden.ts",
     "check:dashboards": "node --experimental-strip-types --no-warnings scripts/check-dashboards.ts",
     "check:explore": "node --experimental-strip-types --no-warnings scripts/check-explore.ts",
-    "check:histogram": "node --experimental-strip-types --no-warnings scripts/check-histogram.ts"
+    "check:histogram": "node --experimental-strip-types --no-warnings scripts/check-histogram.ts",
+    "check:servicemap": "node --experimental-strip-types --no-warnings scripts/check-servicemap.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

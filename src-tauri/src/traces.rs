@@ -387,6 +387,39 @@ fn collect_service_time(nodes: &[TraceNode], out: &mut BTreeMap<String, ServiceT
     }
 }
 
+/// One call between services, as a trace records it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Call {
+    pub from: String,
+    pub to: String,
+    pub ms: f64,
+    pub error: bool,
+}
+
+/// The calls between services in one trace: a span whose child ran in another
+/// service is that service calling the other. Spans within one service are
+/// its own business, not an edge on a map.
+pub fn calls(trace: &Trace) -> Vec<Call> {
+    fn walk(node: &TraceNode, out: &mut Vec<Call>) {
+        for child in &node.children {
+            if child.span.service != node.span.service {
+                out.push(Call {
+                    from: node.span.service.clone(),
+                    to: child.span.service.clone(),
+                    ms: child.span.duration_ms,
+                    error: child.span.status == SpanStatus::Error,
+                });
+            }
+            walk(child, out);
+        }
+    }
+    let mut out = Vec::new();
+    for root in &trace.roots {
+        walk(root, &mut out);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,6 +438,28 @@ mod tests {
             attributes: BTreeMap::new(),
             events: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_child_in_another_service_is_a_call_and_one_in_the_same_is_not() {
+        let mut failed = span("d", Some("c"), "payments-db", 30, 12.0);
+        failed.status = SpanStatus::Error;
+        let trace = Trace::assemble(
+            "t1",
+            vec![
+                span("a", None, "checkout-web", 0, 120.0),
+                span("b", Some("a"), "checkout-web", 5, 100.0),
+                span("c", Some("b"), "orders-api", 10, 80.0),
+                failed,
+            ],
+        );
+        assert_eq!(
+            calls(&trace),
+            vec![
+                Call { from: "checkout-web".into(), to: "orders-api".into(), ms: 80.0, error: false },
+                Call { from: "orders-api".into(), to: "payments-db".into(), ms: 12.0, error: true },
+            ]
+        );
     }
 
     #[test]

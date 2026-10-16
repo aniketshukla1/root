@@ -427,6 +427,11 @@ pub async fn save_dashboard(state: Shared<'_>, dashboard: crate::config::Dashboa
 }
 
 #[tauri::command]
+pub async fn get_service_map(state: Shared<'_>, minutes: Option<i64>) -> Result<commands::ServiceMap> {
+    commands::get_service_map(&state, minutes).await
+}
+
+#[tauri::command]
 pub async fn save_alert_rule(state: Shared<'_>, rule: crate::rules::AlertRule) -> Result<crate::config::AppConfig> {
     commands::save_alert_rule(&state, rule).await
 }

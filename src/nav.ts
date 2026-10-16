@@ -4,6 +4,8 @@ import type { ExploreLanguage } from "./types";
 export type View =
   | { name: "overview" }
   | { name: "services" }
+  /** Who calls whom, with health on it and an incident's path drawn over it. */
+  | { name: "map" }
   | { name: "alerts" }
   /** Alert rules people write, their previews, and silences. */
   | { name: "rules" }

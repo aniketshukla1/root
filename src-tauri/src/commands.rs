@@ -2466,6 +2466,113 @@ pub async fn query_prometheus(
     Ok(query_series(found, &expr, max_series.unwrap_or(QUERY_SERIES_CAP).clamp(1, 60)).0)
 }
 
+/// Calls between two connections, as traces saw them: how many in the
+/// sample, how many failed, and how long they took on average.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObservedEdge {
+    pub from: String,
+    pub to: String,
+    pub calls: u64,
+    pub errors: u64,
+    pub mean_ms: f64,
+}
+
+/// Who calls whom, from traces; the declared dependencies are the topology's.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceMap {
+    pub edges: Vec<ObservedEdge>,
+    /// Traces read to build the edges.
+    pub traces: usize,
+    /// Services the traces name that no connection does, so the map can say
+    /// what it cannot place.
+    pub unknown: Vec<String>,
+}
+
+/// Traces assembled per tracing connection for the map: enough to see who
+/// calls whom, few enough to answer in a second or two.
+const MAP_TRACE_CAP: usize = 20;
+
+/// The calls traces show between connections over the last `minutes`. A
+/// service is placed on the connection with its name or id; the rest are
+/// listed as unknown rather than guessed at.
+pub async fn get_service_map(state: &Arc<AppState>, minutes: Option<i64>) -> Result<ServiceMap> {
+    let to = chrono::Utc::now();
+    let from = to - chrono::Duration::minutes(minutes.unwrap_or(30).clamp(5, 24 * 60));
+    let profiles: Vec<(String, String)> = state
+        .config
+        .read()
+        .await
+        .profiles
+        .iter()
+        .filter(|p| p.enabled)
+        .map(|p| (p.id.clone(), p.name.clone()))
+        .collect();
+    let place = |service: &str| {
+        profiles
+            .iter()
+            .find(|(id, name)| name.eq_ignore_ascii_case(service) || id.eq_ignore_ascii_case(service))
+            .map(|(id, _)| id.clone())
+    };
+
+    let mut seen: std::collections::HashMap<(String, String), (u64, u64, f64)> = std::collections::HashMap::new();
+    let mut unknown = std::collections::BTreeSet::new();
+    let mut read = 0;
+    for (id, _) in &profiles {
+        let Ok(collector) = state.collector(id).await else {
+            continue;
+        };
+        // A collector without traces refuses, and refusing is not a failure.
+        let Ok(found) = collector
+            .detail(&crate::collectors::DetailQuery::TracesInWindow { from, to, limit: TRACE_SEARCH_CAP })
+            .await
+        else {
+            continue;
+        };
+        let Ok(summaries) = serde_json::from_value::<Vec<crate::traces::TraceSummary>>(found) else {
+            continue;
+        };
+        for summary in summaries.into_iter().take(MAP_TRACE_CAP) {
+            let Ok(assembled) = collector
+                .detail(&crate::collectors::DetailQuery::Trace { trace_id: summary.trace_id })
+                .await
+            else {
+                continue;
+            };
+            let Ok(trace) = serde_json::from_value::<crate::traces::Trace>(assembled) else {
+                continue;
+            };
+            read += 1;
+            for call in crate::traces::calls(&trace) {
+                match (place(&call.from), place(&call.to)) {
+                    (Some(a), Some(b)) if a != b => {
+                        let edge = seen.entry((a, b)).or_default();
+                        edge.0 += 1;
+                        edge.1 += u64::from(call.error);
+                        edge.2 += call.ms;
+                    }
+                    (a, b) => {
+                        if a.is_none() {
+                            unknown.insert(call.from);
+                        }
+                        if b.is_none() {
+                            unknown.insert(call.to);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut edges: Vec<ObservedEdge> = seen
+        .into_iter()
+        .map(|((from, to), (calls, errors, total))| ObservedEdge { from, to, calls, errors, mean_ms: total / calls as f64 })
+        .collect();
+    edges.sort_by(|a, b| b.calls.cmp(&a.calls).then_with(|| a.from.cmp(&b.from)));
+    Ok(ServiceMap { edges, traces: read, unknown: unknown.into_iter().collect() })
+}
+
 /// What Explore asked one connection, and the answer: series for PromQL or
 /// a LogQL metric query, lines for a LogQL stream selector, traces for a
 /// trace search. `matched` counts every series, so "8 of 23" can be said.

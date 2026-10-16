@@ -211,6 +211,23 @@ export interface RulePreview {
   summary: string;
 }
 
+/** Calls between two connections, as sampled traces saw them. */
+export interface ObservedEdge {
+  from: string;
+  to: string;
+  calls: number;
+  errors: number;
+  meanMs: number;
+}
+
+/** Who calls whom from traces; declared dependencies come from the topology. */
+export interface ServiceMap {
+  edges: ObservedEdge[];
+  traces: number;
+  /** Services the traces name that no connection does. */
+  unknown: string[];
+}
+
 export type ExploreLanguage = "promql" | "logql" | "traces";
 
 /** One row of a trace search, before anyone asks for the spans. */

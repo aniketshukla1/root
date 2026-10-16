@@ -67,6 +67,16 @@ export const DashboardsIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** Three nodes and the calls between them. */
+export const MapIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="5" cy="12" r="2.5" />
+    <circle cx="19" cy="6" r="2.5" />
+    <circle cx="19" cy="18" r="2.5" />
+    <path d="M7.3 11 16.7 7M7.3 13l9.4 4" />
+  </Icon>
+);
+
 /** A compass: go and look. */
 export const ExploreIcon = (p: IconProps) => (
   <Icon {...p}>

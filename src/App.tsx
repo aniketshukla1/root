@@ -53,6 +53,7 @@ import { Metrics } from "./screens/Metrics";
 import { Dashboards } from "./screens/Dashboards";
 import { Explore } from "./screens/Explore";
 import { AlertRules } from "./screens/AlertRules";
+import { ServiceMap } from "./screens/ServiceMap";
 import * as remote from "./remote";
 import { Onboarding } from "./screens/Onboarding";
 import { ServerSignIn } from "./screens/ServerSignIn";
@@ -847,6 +848,20 @@ export default function App() {
             catalog={catalog}
             minutes={minutes}
             onMinutesChange={setMinutes}
+            syncedAt={dashboard?.generatedAt}
+            onNavigate={setView}
+            onRefresh={refreshAll}
+            onAsk={askAssistant}
+          />
+        )}
+
+        {view.name === "map" && (
+          <ServiceMap
+            model={model}
+            catalog={catalog}
+            topology={topology}
+            incidents={incidents}
+            healthRuns={healthRuns}
             syncedAt={dashboard?.generatedAt}
             onNavigate={setView}
             onRefresh={refreshAll}

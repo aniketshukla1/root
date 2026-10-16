@@ -229,6 +229,27 @@ function align(columns: Column[]): uPlot.AlignedData {
   return [x, ...ys.flatMap((y) => [y, y])] as uPlot.AlignedData;
 }
 
+/** Where series `i` is drawn at time `t` once stacked. */
+function stackedAt(u: uPlot, i: number, t: number): number {
+  const at = nearestIndex(u.data[0], t);
+  return (u.data[2 + 2 * i][at] as number | null | undefined) ?? 0;
+}
+
+/** Each series sitting on the ones before it, for a stacked area; a gap
+ *  counts as nothing rather than breaking every layer above it. */
+function stack(data: uPlot.AlignedData): uPlot.AlignedData {
+  const [x, ...ys] = data;
+  const out: number[][] = [];
+  let below = new Array<number>(x.length).fill(0);
+  for (let k = 0; k < ys.length; k += 2) {
+    const own = ys[k + 1] as (number | null | undefined)[];
+    const sum = below.map((b, i) => b + (own[i] ?? 0));
+    out.push(sum, sum);
+    below = sum;
+  }
+  return [x, ...out] as uPlot.AlignedData;
+}
+
 /** A CSS colour as canvas takes it: a custom property is read off `el`. */
 function resolveColor(el: Element, color: string): string {
   const custom = /^var\((--[\w-]+)\)$/.exec(color.trim());
@@ -313,6 +334,8 @@ export function TimeSeries({
   onBrush,
   legendExtra,
   axisWidth,
+  stacked,
+  band,
 }: {
   series: Series[];
   unit: MetricUnit;
@@ -328,6 +351,10 @@ export function TimeSeries({
   legendExtra?: { label: string; render: (series: Series) => ReactNode };
   /** A fixed value-axis width, so charts stacked above each other share one time axis. */
   axisWidth?: number;
+  /** Each series drawn on top of the ones before it, as filled areas. */
+  stacked?: boolean;
+  /** Shade between two series, by key — the upper first: a p50–p99 spread. */
+  band?: [string, string];
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const host = useRef<HTMLDivElement>(null);
@@ -349,14 +376,15 @@ export function TimeSeries({
   const single = plotted.length === 1;
 
   // New data only when a points array actually changed, not on every render.
-  const aligned = useRef<{ columns: Column[]; data: uPlot.AlignedData } | null>(null);
+  const aligned = useRef<{ columns: Column[]; stacked: boolean; data: uPlot.AlignedData } | null>(null);
   if (
     columns.length > 0 &&
     (!aligned.current ||
+      aligned.current.stacked !== Boolean(stacked) ||
       aligned.current.columns.length !== columns.length ||
       aligned.current.columns.some((c, i) => c !== columns[i]))
   ) {
-    aligned.current = { columns, data: align(columns) };
+    aligned.current = { columns, stacked: Boolean(stacked), data: stacked ? stack(align(columns)) : align(columns) };
   }
   const data = aligned.current?.data;
 
@@ -368,6 +396,8 @@ export function TimeSeries({
     plotted.map((s) => `${s.key}|${s.color}|${s.warnAbove ?? ""}|${s.dashed ? "d" : ""}`).join(","),
     (annotations?.length ?? 0) > 0,
     axisWidth ?? "",
+    stacked ? "stacked" : "",
+    band?.join("~") ?? "",
   ].join("/");
 
   // Where there is data at all: panning stops at its edges.
@@ -426,8 +456,12 @@ export function TimeSeries({
     ];
 
     const lines: uPlot.Series[] = [{}];
-    for (const s of plotted) {
+    const bands: uPlot.Band[] = [];
+    for (const [k, s] of plotted.entries()) {
       const color = css(s.color);
+      // Stacked: the bottom layer fills to zero, each one above fills down
+      // to the layer under it — never to zero, or the top would cover all.
+      if (stacked && k > 0) bands.push({ series: [2 + 2 * k, 2 + 2 * (k - 1)], fill: withAlpha(color, 0.32) });
       // The glow: the same line, wide and faint, under it — and the area
       // wash rides on it so the fill never covers the glow.
       lines.push({
@@ -454,7 +488,8 @@ export function TimeSeries({
         scale: "y",
         spanGaps: true,
         points: { show: false },
-        width: 2,
+        width: stacked ? 1.5 : 2,
+        ...(stacked && k === 0 ? { fill: withAlpha(color, 0.32) } : {}),
         ...(s.dashed ? { dash: [5, 4] } : {}),
         stroke: (u) => limitStroke(u, s.warnAbove, s.dashed ? withAlpha(color, 0.6) : color, warn),
       });
@@ -549,6 +584,13 @@ export function TimeSeries({
         },
       ],
       series: lines,
+      bands: (() => {
+        if (!band) return bands;
+        const hi = plotted.findIndex((s) => s.key === band[0]);
+        const lo = plotted.findIndex((s) => s.key === band[1]);
+        if (hi < 0 || lo < 0) return bands;
+        return [...bands, { series: [2 + 2 * hi, 2 + 2 * lo] as [number, number], fill: withAlpha(css(plotted[hi].color), 0.14) }];
+      })(),
       hooks: {
         // Under the lines: the zone past each limit, the limit itself, and
         // a dashed line at each annotated moment.
@@ -728,7 +770,8 @@ export function TimeSeries({
               series: s,
               value: vs[k],
               x: offsetLeft + u.valToPos(ts[k], "x"),
-              y: offsetTop + u.valToPos(vs[k], "y"),
+              // The value read out is the series' own; the dot sits where it is drawn.
+              y: offsetTop + u.valToPos(stacked ? stackedAt(u, i, ts[k]) : vs[k], "y"),
             },
           ];
         })

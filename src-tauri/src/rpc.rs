@@ -393,7 +393,8 @@ pub async fn dispatch(state: &Arc<AppState>, command: &str, args: Value) -> Resu
             let profile_id: String = field(&args, "profileId")?;
             let expr: String = field(&args, "expr")?;
             let minutes: Option<i64> = field(&args, "minutes")?;
-            ok(commands::query_prometheus(state, profile_id, expr, minutes).await?)
+            let max_series: Option<usize> = field(&args, "maxSeries")?;
+            ok(commands::query_prometheus(state, profile_id, expr, minutes, max_series).await?)
         }
         "explore" => {
             let profile_id: String = field(&args, "profileId")?;

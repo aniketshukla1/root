@@ -25,10 +25,53 @@ import { formatMetricValue, formatRelative } from "../format";
 import type { EstateModel, ServiceView } from "../model";
 import type { View } from "../nav";
 import { rangesAcross, type Range } from "../ranges";
-import type { AppConfig, Dashboard, DashboardPanel, MetricSeries, MetricUnit, PanelQuery } from "../types";
+import type { AppConfig, Dashboard, DashboardPanel, HealthRun, MetricSeries, MetricUnit, PanelKind, PanelQuery } from "../types";
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
+import { bucketsFrom, quantile } from "../histogram";
 import { Sparkline, TimeSeries, useWidth, type Domain, type Series } from "../ui/charts";
+import { BarGauge, Heatmap, StateTimeline, statesOf, TopTable, type StateRow, type ValueRow } from "../ui/panels";
 import { Button, cx, Empty, Input, Segmented, Select, ServiceMark } from "../ui/primitives";
+
+const KINDS: { value: PanelKind; label: string }[] = [
+  { value: "timeseries", label: "Time series" },
+  { value: "stacked", label: "Stacked area" },
+  { value: "stat", label: "Stat" },
+  { value: "bargauge", label: "Bar gauge" },
+  { value: "table", label: "Top-N table" },
+  { value: "heatmap", label: "Latency heatmap" },
+  { value: "percentiles", label: "p50 / p95 / p99" },
+  { value: "state", label: "State timeline" },
+];
+
+/** Where each kind can draw from, the default first. */
+const SOURCES: Record<PanelKind, PanelQuery["source"][]> = {
+  timeseries: ["metric", "promql"],
+  stacked: ["promql", "metric"],
+  stat: ["metric", "promql"],
+  bargauge: ["promql", "metric"],
+  table: ["promql", "metric"],
+  heatmap: ["promql"],
+  percentiles: ["promql"],
+  state: ["health", "promql"],
+};
+
+const SOURCE_LABEL: Record<PanelQuery["source"], string> = {
+  metric: "root metric",
+  promql: "PromQL",
+  health: "Connection health",
+};
+
+/** Series a kind asks PromQL for: a histogram's buckets and a top-N want more than eight lines. */
+const SERIES_WANTED: Record<PanelKind, number> = {
+  timeseries: 8,
+  stacked: 8,
+  stat: 1,
+  bargauge: 30,
+  table: 30,
+  heatmap: 60,
+  percentiles: 60,
+  state: 30,
+};
 
 /** Connections a PromQL panel can run on: Gigapipe serves Prometheus' API too. */
 const SPEAKS_PROMQL = new Set(["prometheus", "gigapipe"]);
@@ -44,6 +87,7 @@ interface Shared {
   model: EstateModel;
   catalog: Catalog;
   history: Record<string, MetricSeries[]>;
+  healthRuns: Record<string, HealthRun[]>;
   minutes: number;
   ranges: Range[];
   onMinutesChange: (minutes: number) => void;
@@ -246,7 +290,7 @@ function DashboardView({
     services[0]?.snapshot.profileId ??
     "";
   const resolved = { ...variables, service };
-  const usesService = draft.panels.some((p) => p.query.profileId === "$service");
+  const usesService = draft.panels.some((p) => "profileId" in p.query && p.query.profileId === "$service");
 
   // Half as many columns' worth of space below 900px: a 3-wide panel at 760px
   // would be narrower than its own value.
@@ -489,8 +533,9 @@ function DashboardView({
                 <div className="min-h-0 flex-1 px-2.5 py-1.5">
                   <PanelBody
                     panel={panel}
-                    profileId={resolveProfile(panel.query.profileId, resolved)}
+                    profileId={"profileId" in panel.query ? resolveProfile(panel.query.profileId, resolved) : null}
                     history={history}
+                    healthRuns={shared.healthRuns}
                     catalog={catalog}
                     model={model}
                     minutes={minutes}
@@ -602,6 +647,7 @@ function PanelBody({
   panel,
   profileId,
   history,
+  healthRuns,
   catalog,
   model,
   minutes,
@@ -615,6 +661,7 @@ function PanelBody({
   panel: DashboardPanel;
   profileId: string | null;
   history: Record<string, MetricSeries[]>;
+  healthRuns: Record<string, HealthRun[]>;
   catalog: Catalog;
   model: EstateModel;
   minutes: number;
@@ -625,29 +672,44 @@ function PanelBody({
   onHoverTime: (t: number | null) => void;
   onBrush: (range: Domain) => void;
 }) {
+  const q = panel.query;
   const promql = usePromql(
-    panel.query.source === "promql" ? profileId : null,
-    panel.query.source === "promql" ? panel.query.expr : "",
+    q.source === "promql" ? profileId : null,
+    q.source === "promql" ? q.expr : "",
     minutes,
     tick,
-    panel.query.source === "promql",
+    q.source === "promql",
+    SERIES_WANTED[panel.kind],
   );
+  const nameOf = (id: string) => model.services.find((s) => s.snapshot.profileId === id)?.snapshot.profileName ?? id;
+
+  if (q.source === "health") {
+    const ids = q.profileIds.length > 0 ? q.profileIds : model.services.map((s) => s.snapshot.profileId);
+    const rows: StateRow[] = ids
+      .map((id) => ({
+        key: id,
+        label: nameOf(id),
+        segments: (healthRuns[id] ?? []).map((r) => ({ from: Date.parse(r.from), to: Date.parse(r.to), state: r.health })),
+      }))
+      .filter((r) => r.segments.length > 0);
+    if (rows.length === 0) return <Hint>No health history in this window yet.</Hint>;
+    return <StateTimeline rows={rows} domain={domain} height={height} />;
+  }
 
   if (!profileId) {
-    return <Hint>{panel.query.source === "promql" ? "Pick a connection for this panel to run on." : "No service selected."}</Hint>;
+    return <Hint>{q.source === "promql" ? "Pick a connection for this panel to run on." : "No service selected."}</Hint>;
   }
 
   let found: MetricSeries[];
-  if (panel.query.source === "metric") {
-    const key = panel.query.metricKey;
+  if (q.source === "metric") {
+    const key = q.metricKey;
     found = (history[profileId] ?? []).filter((s) => s.key === key && s.points.length > 1);
     if (found.length === 0) {
       const owner = model.services.find((s) => s.snapshot.profileId === profileId);
-      const name = owner?.snapshot.profileName ?? profileId;
       const metric = owner?.snapshot.metrics.find((m) => m.key === key);
       return (
         <Hint>
-          {metric ? `No history for ${metric.label} on ${name} yet.` : `${name} does not report ${key || "this metric"}.`}
+          {metric ? `No history for ${metric.label} on ${nameOf(profileId)} yet.` : `${nameOf(profileId)} does not report ${key || "this metric"}.`}
         </Hint>
       );
     }
@@ -658,9 +720,14 @@ function PanelBody({
     found = promql.series;
   }
 
+  const names = q.source === "promql" ? shortLabels(found.map((s) => s.label)) : found.map((s) => s.label);
+  const histogram = panel.kind === "heatmap" || panel.kind === "percentiles";
+  // A histogram's bounds are latencies far more often than anything else.
+  const unit = panel.unit ?? (histogram ? "seconds" : found[0].unit);
+  const rows: ValueRow[] = found.map((s, i) => ({ key: s.key, label: names[i], value: s.latest, warnAbove: s.warnAbove, points: s.points }));
+
   if (panel.kind === "stat") {
     const first = found[0];
-    const unit = panel.unit ?? first.unit;
     const over = first.warnAbove !== undefined && first.latest > first.warnAbove;
     return (
       <div className="flex h-full items-end justify-between gap-3">
@@ -671,33 +738,70 @@ function PanelBody({
       </div>
     );
   }
+  if (panel.kind === "bargauge") return <BarGauge rows={rows} unit={unit} height={height} />;
+  if (panel.kind === "table") return <TopTable rows={rows} unit={unit} />;
+  if (panel.kind === "state") {
+    const until = domain[1];
+    return (
+      <StateTimeline rows={found.map((s, i) => ({ key: s.key, label: names[i], segments: statesOf(s.points, until) }))} domain={domain} height={height} />
+    );
+  }
+  if (histogram) {
+    const buckets = bucketsFrom(found);
+    if (buckets.length < 2) {
+      return <Hint>This panel needs a histogram&apos;s buckets: sum by (le) (rate(…_bucket[5m])).</Hint>;
+    }
+    if (panel.kind === "heatmap") return <Heatmap buckets={buckets} unit={unit} domain={domain} height={height} />;
+    const lines: Series[] = (
+      [
+        ["p99", 0.99],
+        ["p95", 0.95],
+        ["p50", 0.5],
+      ] as const
+    ).map(([key, q], i) => ({ key, label: key, color: seriesColor(i), points: quantile(q, buckets) }));
+    return (
+      <TimeSeries
+        series={lines}
+        unit={unit}
+        domain={domain}
+        height={height - (height - legendHeight(3) >= 100 ? legendHeight(3) : 0)}
+        showLegend={height - legendHeight(3) >= 100}
+        band={["p99", "p50"]}
+        hoverTime={hoverTime}
+        onHoverTime={onHoverTime}
+        onBrush={onBrush}
+      />
+    );
+  }
 
-  const names = panel.query.source === "promql" ? shortLabels(found.map((s) => s.label)) : found.map((s) => s.label);
   const series: Series[] = found.map((s, i) => ({
     key: s.key,
     label: names[i],
     color: found.length === 1 ? DATA_INK : seriesColor(i),
     points: s.points,
     warnAbove: s.warnAbove,
-    icon:
-      panel.query.source === "metric" ? undefined : (
-        <ServiceMark descriptor={catalog.get("prometheus")} size={12} />
-      ),
+    icon: q.source === "metric" ? undefined : <ServiceMark descriptor={catalog.get("prometheus")} size={12} />,
   }));
-  // A legend table only where it fits; the tooltip names every line anyway.
-  const legendRows = series.length > 1 && height >= 220 ? series.length + 1 : 0;
+  // A legend table only where it leaves the chart room; the tooltip names every line anyway.
+  const legend = series.length > 1 && height - legendHeight(series.length) >= 100;
   return (
     <TimeSeries
       series={series}
-      unit={panel.unit ?? found[0].unit}
+      unit={unit}
       domain={domain}
-      height={Math.max(60, height - legendRows * 18)}
-      showLegend={legendRows > 0}
+      height={Math.max(60, height - (legend ? legendHeight(series.length) : 0))}
+      showLegend={legend}
+      stacked={panel.kind === "stacked"}
       hoverTime={hoverTime}
       onHoverTime={onHoverTime}
       onBrush={onBrush}
     />
   );
+}
+
+/** A TimeSeries legend's height: its margin and header, then a row per series. */
+function legendHeight(rows: number): number {
+  return 28 + rows * 21;
 }
 
 function Hint({ children, tone }: { children: ReactNode; tone?: "crit" }) {
@@ -708,7 +812,7 @@ function Hint({ children, tone }: { children: ReactNode; tone?: "crit" }) {
   );
 }
 
-function usePromql(profileId: string | null, expr: string, minutes: number, tick: number, enabled: boolean) {
+function usePromql(profileId: string | null, expr: string, minutes: number, tick: number, enabled: boolean, maxSeries: number) {
   const [state, setState] = useState<{ series: MetricSeries[]; loading: boolean; error?: string }>({
     series: [],
     loading: enabled,
@@ -722,13 +826,13 @@ function usePromql(profileId: string | null, expr: string, minutes: number, tick
     let live = true;
     setState((s) => ({ ...s, loading: true }));
     api
-      .queryPrometheus(profileId, expr, minutes)
+      .queryPrometheus(profileId, expr, minutes, maxSeries)
       .then((series) => live && setState({ series, loading: false }))
       .catch((e) => live && setState({ series: [], loading: false, error: errorMessage(e) }));
     return () => {
       live = false;
     };
-  }, [profileId, expr, minutes, tick, enabled]);
+  }, [profileId, expr, minutes, tick, enabled, maxSeries]);
   return state;
 }
 
@@ -776,10 +880,20 @@ function PanelEditor({
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(initial.title);
-  const [kind, setKind] = useState(initial.kind);
+  const [kind, setKind] = useState<PanelKind>(initial.kind);
   const [unit, setUnit] = useState<MetricUnit | "">(initial.unit ?? "");
   const [query, setQuery] = useState<PanelQuery>(initial.query);
   const prometheus = model.services.filter((s) => SPEAKS_PROMQL.has(s.snapshot.kind));
+  const blank = (source: PanelQuery["source"]): PanelQuery =>
+    source === "metric"
+      ? { source, profileId: "$service", metricKey: "" }
+      : source === "promql"
+        ? { source, profileId: prometheus[0]?.snapshot.profileId ?? "", expr: "" }
+        : { source, profileIds: [] };
+  const changeKind = (next: PanelKind) => {
+    setKind(next);
+    if (!SOURCES[next].includes(query.source)) setQuery(blank(SOURCES[next][0]));
+  };
 
   const metricOwner: ServiceView | undefined =
     query.source === "metric"
@@ -787,12 +901,19 @@ function PanelEditor({
       : undefined;
   const metrics = metricOwner?.snapshot.metrics ?? [];
   const valid =
-    query.source === "metric" ? Boolean(query.profileId && query.metricKey) : Boolean(query.profileId && query.expr.trim());
+    query.source === "metric"
+      ? Boolean(query.profileId && query.metricKey)
+      : query.source === "promql"
+        ? Boolean(query.profileId && query.expr.trim())
+        : true;
   // A panel named after what it shows, unless someone typed a name.
   const fallbackTitle =
     query.source === "metric"
       ? (metrics.find((m) => m.key === query.metricKey)?.label ?? "")
-      : query.expr.trim();
+      : query.source === "promql"
+        ? query.expr.trim()
+        : "Connection health";
+  const histogram = kind === "heatmap" || kind === "percentiles";
 
   return (
     <Modal title={initial.title ? "Edit panel" : "Add panel"} onClose={onCancel}>
@@ -801,34 +922,43 @@ function PanelEditor({
           Title
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={fallbackTitle || "Panel title"} />
         </label>
-        <div className="flex flex-wrap items-center gap-3">
-          <Segmented
-            label="Draw as"
-            value={kind}
-            onChange={setKind}
-            options={[
-              { value: "timeseries", label: "Time series" },
-              { value: "stat", label: "Stat" },
-            ]}
-          />
-          <Segmented
-            label="Source"
-            value={query.source}
-            onChange={(source) =>
-              setQuery(
-                source === "metric"
-                  ? { source: "metric", profileId: "$service", metricKey: "" }
-                  : { source: "promql", profileId: prometheus[0]?.snapshot.profileId ?? "", expr: "" },
-              )
-            }
-            options={[
-              { value: "metric", label: "root metric" },
-              { value: "promql", label: "PromQL" },
-            ]}
-          />
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-2xs text-ink-4">
+            Draw as
+            <Select value={kind} onChange={(e) => changeKind(e.target.value as PanelKind)} aria-label="Draw as">
+              {KINDS.map((k) => (
+                <option key={k.value} value={k.value}>
+                  {k.label}
+                </option>
+              ))}
+            </Select>
+          </label>
+          {SOURCES[kind].length > 1 && (
+            <Segmented
+              label="Source"
+              value={query.source}
+              onChange={(source) => setQuery(blank(source))}
+              options={SOURCES[kind].map((source) => ({ value: source, label: SOURCE_LABEL[source] }))}
+            />
+          )}
         </div>
 
-        {query.source === "metric" ? (
+        {query.source === "health" ? (
+          <label className="flex flex-col gap-1 text-2xs text-ink-4">
+            Connections
+            <Select
+              value={query.profileIds[0] ?? ""}
+              onChange={(e) => setQuery({ source: "health", profileIds: e.target.value ? [e.target.value] : [] })}
+            >
+              <option value="">Every connection, a row each</option>
+              {model.services.map((s) => (
+                <option key={s.snapshot.profileId} value={s.snapshot.profileId}>
+                  {s.snapshot.profileName}
+                </option>
+              ))}
+            </Select>
+          </label>
+        ) : query.source === "metric" ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-2xs text-ink-4">
               Connection
@@ -888,9 +1018,16 @@ function PanelEditor({
                 onChange={(e) => setQuery({ ...query, expr: e.target.value })}
                 rows={3}
                 spellCheck={false}
-                placeholder="sum by (instance) (rate(node_cpu_seconds_total{mode!=&quot;idle&quot;}[5m]))"
+                placeholder={
+                  histogram
+                    ? "sum by (le) (rate(http_request_duration_seconds_bucket[5m]))"
+                    : 'sum by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[5m]))'
+                }
                 className="rounded-md border border-line bg-sunk p-2 font-mono text-xs text-ink focus:border-accent focus:outline-none"
               />
+              {histogram && (
+                <span className="text-ink-4">A histogram&apos;s buckets, summed by le — the panel works out the rest.</span>
+              )}
             </label>
           </div>
         )}

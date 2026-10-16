@@ -462,8 +462,9 @@ pub async fn query_prometheus(
     profile_id: String,
     expr: String,
     minutes: Option<i64>,
+    max_series: Option<usize>,
 ) -> Result<Vec<crate::history::MetricSeries>> {
-    commands::query_prometheus(&state, profile_id, expr, minutes).await
+    commands::query_prometheus(&state, profile_id, expr, minutes, max_series).await
 }
 
 #[tauri::command]

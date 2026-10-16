@@ -27,18 +27,45 @@ assert.equal(imported.format, "grafana");
 assert.equal(imported.dashboard.title, "Node exporter");
 assert.deepEqual(
   imported.dashboard.panels.map((p) => [p.title, p.kind, p.w, p.h]),
-  [["Uptime", "stat", 3, 2], ["CPU", "timeseries", 9, 3], ["IO", "timeseries", 6, 3]],
+  [["Uptime", "stat", 3, 2], ["CPU", "timeseries", 9, 3], ["IO", "timeseries", 6, 3], ["Mounts", "table", 6, 3]],
 );
-assert.deepEqual(imported.dashboard.panels.map((p) => p.unit), ["seconds", undefined, "bytes_per_second"]);
+assert.deepEqual(imported.dashboard.panels.map((p) => p.unit), ["seconds", undefined, "bytes_per_second", undefined]);
 const cpu = imported.dashboard.panels[1].query;
 assert.ok(cpu.source === "promql" && cpu.profileId === "prom-1" && cpu.expr.includes("[5m]"), JSON.stringify(cpu));
 assert.ok(imported.dashboard.panels[2].query.source === "promql" && imported.dashboard.panels[2].query.expr.includes("[1m]"));
-assert.equal(imported.skipped.length, 2, imported.skipped.join("; "));
+assert.equal(imported.skipped.length, 1, imported.skipped.join("; "));
+assert.match(imported.skipped[0], /Notes — a text panel/);
+
+// The panel types an SRE reads every day each land on their own kind.
+const daily = parseImport(
+  JSON.stringify({
+    title: "Service",
+    panels: [
+      { type: "timeseries", title: "Latency", gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        targets: [{ expr: "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[$__rate_interval])))" },
+                  { expr: "histogram_quantile(0.5, sum by (le) (rate(http_request_duration_seconds_bucket[$__rate_interval])))" }] },
+      { type: "heatmap", title: "Latency spread", gridPos: { x: 12, y: 0, w: 12, h: 8 },
+        targets: [{ expr: "sum by (le) (increase(http_request_duration_seconds_bucket[$__interval]))" }] },
+      { type: "timeseries", title: "Requests by code", gridPos: { x: 0, y: 8, w: 12, h: 8 },
+        fieldConfig: { defaults: { custom: { stacking: { mode: "normal" } } } }, targets: [{ expr: "sum by (code) (rate(http_requests_total[5m]))" }] },
+      { type: "graph", title: "Legacy stacked", stack: true, gridPos: { x: 12, y: 8, w: 12, h: 8 }, targets: [{ expr: "rate(x[5m])" }] },
+      { type: "bargauge", title: "Disk", gridPos: { x: 0, y: 16, w: 8, h: 6 }, targets: [{ expr: "node_filesystem_avail_bytes" }] },
+      { type: "state-timeline", title: "Up", gridPos: { x: 8, y: 16, w: 16, h: 6 }, targets: [{ expr: "up" }] },
+    ],
+  }),
+  "prom-1",
+);
+assert.deepEqual(
+  daily.dashboard.panels.map((p) => p.kind),
+  ["percentiles", "heatmap", "stacked", "stacked", "bargauge", "state"],
+);
+const latency = daily.dashboard.panels[0].query;
+assert.ok(latency.source === "promql" && latency.expr === "sum by (le) (rate(http_request_duration_seconds_bucket[5m]))", JSON.stringify(latency));
 
 // root's own format round-trips, with fresh ids so an import never overwrites.
 const again = parseImport(exportJson(imported.dashboard), null);
 assert.equal(again.format, "root");
-assert.equal(again.dashboard.panels.length, 3);
+assert.equal(again.dashboard.panels.length, 4);
 assert.notEqual(again.dashboard.id, imported.dashboard.id);
 
 assert.throws(() => parseImport("{nope", null), /not JSON/);

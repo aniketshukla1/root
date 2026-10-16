@@ -275,8 +275,9 @@ export const api = {
   deleteDashboard: (dashboardId: string) => invoke<AppConfig>("delete_dashboard", { dashboardId }),
 
   /** A PromQL range query against a Prometheus connection, up to eight series. */
-  queryPrometheus: (profileId: string, expr: string, minutes?: number) =>
-    invoke<MetricSeries[]>("query_prometheus", { profileId, expr, minutes: minutes ?? null }),
+  /** `maxSeries` past the palette's eight, for panels whose rows are the point: buckets, top-N. */
+  queryPrometheus: (profileId: string, expr: string, minutes?: number, maxSeries?: number) =>
+    invoke<MetricSeries[]>("query_prometheus", { profileId, expr, minutes: minutes ?? null, maxSeries: maxSeries ?? null }),
 
   /** One Explore query over an absolute window, in epoch milliseconds. */
   explore: (profileId: string, language: ExploreLanguage, query: string, start: number, end: number) =>

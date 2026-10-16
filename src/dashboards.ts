@@ -6,7 +6,7 @@
 // them, which is all "arranging" needs to mean for panels a person drags
 // into order — absolute coordinates would only add overlaps to resolve.
 
-import type { Dashboard, DashboardPanel, MetricUnit, PanelQuery } from "./types";
+import type { Dashboard, DashboardPanel, MetricUnit, PanelKind, PanelQuery } from "./types";
 
 export const COLUMNS = 12;
 export const MAX_ROWS = 6;
@@ -124,9 +124,10 @@ interface GrafanaPanel {
   gridPos?: { x?: number; y?: number; w?: number; h?: number };
   targets?: { expr?: string; refId?: string; hide?: boolean }[];
   panels?: GrafanaPanel[];
-  fieldConfig?: { defaults?: { unit?: string } };
-  /** The pre-7 graph panel kept its unit on the left axis. */
+  fieldConfig?: { defaults?: { unit?: string; custom?: { stacking?: { mode?: string } } } };
+  /** The pre-7 graph panel kept its unit on the left axis, and stacked with a flag. */
   yaxes?: { format?: string }[];
+  stack?: boolean;
 }
 
 /** Grafana unit ids root can draw. Anything else stays a plain number. */
@@ -153,8 +154,23 @@ function concrete(expr: string): string {
     .replace(/\$__range|\$\{__range\}/g, "1h");
 }
 
-const STAT_TYPES = new Set(["stat", "singlestat", "gauge", "bargauge"]);
-const SERIES_TYPES = new Set(["timeseries", "graph"]);
+/** Grafana panel types root draws, and as what. */
+const KIND_OF: Record<string, PanelKind> = {
+  stat: "stat",
+  singlestat: "stat",
+  gauge: "stat",
+  bargauge: "bargauge",
+  table: "table",
+  "table-old": "table",
+  heatmap: "heatmap",
+  "state-timeline": "state",
+  "status-history": "state",
+  timeseries: "timeseries",
+  graph: "timeseries",
+};
+
+/** `histogram_quantile(0.99, <buckets>)` → `<buckets>`. */
+const QUANTILE = /^\s*histogram_quantile\(\s*[\d.]+\s*,\s*([\s\S]+)\)\s*$/;
 
 export function fromGrafana(grafana: Record<string, unknown>, prometheusId: string | null): Imported {
   // Collapsed rows carry their panels inside them; expanded rows carry none.
@@ -170,7 +186,8 @@ export function fromGrafana(grafana: Record<string, unknown>, prometheusId: stri
   for (const panel of flat) {
     const title = panel.title?.trim() || "Untitled panel";
     const type = panel.type ?? "graph";
-    if (!STAT_TYPES.has(type) && !SERIES_TYPES.has(type)) {
+    let kind = KIND_OF[type];
+    if (!kind) {
       skipped.push(`${title} — a ${type} panel, which root does not draw yet`);
       continue;
     }
@@ -179,16 +196,26 @@ export function fromGrafana(grafana: Record<string, unknown>, prometheusId: stri
       skipped.push(`${title} — no PromQL query`);
       continue;
     }
+    let expr = concrete(target.expr);
+    // A latency panel is usually histogram_quantile over one histogram, a
+    // target per percentile: root draws all three from the buckets.
+    const inner = QUANTILE.exec(expr);
+    if (kind === "timeseries" && inner) {
+      kind = "percentiles";
+      expr = inner[1].trim();
+    }
+    const stacking = panel.fieldConfig?.defaults?.custom?.stacking?.mode;
+    if (kind === "timeseries" && (stacking === "normal" || stacking === "percent" || panel.stack === true)) kind = "stacked";
     // Grafana's grid is 24 columns, and rows of 30px with 8px between them;
     // root's is 12 columns, and rows of 80px with 12px between. Heights match
     // in pixels: 38h - 8 there against 92h - 12 here.
     panels.push({
       id: newId(),
       title,
-      kind: STAT_TYPES.has(type) ? "stat" : "timeseries",
+      kind,
       w: Math.max(2, Math.min(COLUMNS, Math.round((panel.gridPos?.w ?? 12) / 2))),
       h: Math.max(1, Math.min(MAX_ROWS, Math.round((38 * (panel.gridPos?.h ?? 8) + 4) / 92))),
-      query: { source: "promql", profileId: prometheusId ?? "", expr: concrete(target.expr) },
+      query: { source: "promql", profileId: prometheusId ?? "", expr },
       unit: GRAFANA_UNITS[panel.fieldConfig?.defaults?.unit ?? panel.yaxes?.[0]?.format ?? ""],
     });
   }

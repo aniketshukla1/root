@@ -1213,12 +1213,17 @@ export interface AppConfig {
 /** What a dashboard panel draws. A connection id may be `$service`. */
 export type PanelQuery =
   | { source: "metric"; profileId: string; metricKey: string }
-  | { source: "promql"; profileId: string; expr: string };
+  | { source: "promql"; profileId: string; expr: string }
+  /** Connections' health over time, for a state timeline; none named is all. */
+  | { source: "health"; profileIds: string[] };
+
+/** What a panel draws. Heatmap and percentiles read a PromQL histogram's buckets. */
+export type PanelKind = "timeseries" | "stacked" | "stat" | "bargauge" | "table" | "heatmap" | "percentiles" | "state";
 
 export interface DashboardPanel {
   id: string;
   title: string;
-  kind: "timeseries" | "stat";
+  kind: PanelKind;
   /** Width in columns of twelve, and height in rows. */
   w: number;
   h: number;

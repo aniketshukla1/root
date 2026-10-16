@@ -886,6 +886,7 @@ export default function App() {
             model={model}
             catalog={catalog}
             history={history}
+            healthRuns={healthRuns}
             minutes={minutes}
             onMinutesChange={setMinutes}
             onConfigChange={onConfigChange}

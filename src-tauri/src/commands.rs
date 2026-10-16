@@ -2421,15 +2421,14 @@ async fn promql_client(server: &ConnectionProfile) -> Result<(reqwest::Client, c
     Ok((client, auth))
 }
 
-/// Labelled series as charts take them — the first `QUERY_SERIES_CAP`, with
-/// how many had data. PromQL carries no unit; the panel or the person
-/// supplies one.
-fn query_series(found: Vec<(String, Vec<crate::history::Point>)>, expr: &str) -> (Vec<MetricSeries>, usize) {
+/// Labelled series as charts take them — the first `cap`, with how many had
+/// data. PromQL carries no unit; the panel or the person supplies one.
+fn query_series(found: Vec<(String, Vec<crate::history::Point>)>, expr: &str, cap: usize) -> (Vec<MetricSeries>, usize) {
     let found: Vec<_> = found.into_iter().filter(|(_, points)| !points.is_empty()).collect();
     let matched = found.len();
     let series = found
         .into_iter()
-        .take(QUERY_SERIES_CAP)
+        .take(cap)
         .map(|(labels, points)| {
             let values: Vec<f64> = points.iter().map(|p| p.v).collect();
             MetricSeries {
@@ -2449,20 +2448,22 @@ fn query_series(found: Vec<(String, Vec<crate::history::Point>)>, expr: &str) ->
     (series, matched)
 }
 
-/// Series a panel draws when it carries PromQL: every series the expression
-/// matches, up to the palette's eight, each labelled by its label set.
+/// Series a panel draws when it carries PromQL, each labelled by its label
+/// set: up to the palette's eight for lines, more for the panels whose rows
+/// are the point — a histogram's buckets, a top-N table.
 pub async fn query_prometheus(
     state: &Arc<AppState>,
     profile_id: String,
     expr: String,
     minutes: Option<i64>,
+    max_series: Option<usize>,
 ) -> Result<Vec<MetricSeries>> {
     let server = connection(state, &profile_id).await?;
     let (client, auth) = promql_client(&server).await?;
     let end = chrono::Utc::now();
     let start = end - chrono::Duration::minutes(minutes.unwrap_or(60).clamp(1, STORE_MAX_MINUTES));
     let found = crate::promquery::range_all(&client, &server.endpoint, &auth, &expr, start, end).await?;
-    Ok(query_series(found, &expr).0)
+    Ok(query_series(found, &expr, max_series.unwrap_or(QUERY_SERIES_CAP).clamp(1, 60)).0)
 }
 
 /// What Explore asked one connection, and the answer: series for PromQL or
@@ -2502,7 +2503,7 @@ pub async fn explore(
     if language == "promql" {
         let (client, auth) = promql_client(&server).await?;
         let found = crate::promquery::range_all(&client, &server.endpoint, &auth, &query, start, end).await?;
-        let (series, matched) = query_series(found, &query);
+        let (series, matched) = query_series(found, &query, QUERY_SERIES_CAP);
         return Ok(ExploreResult { series, matched, ..Default::default() });
     }
     if server.kind != crate::model::ServiceKind::Gigapipe {
@@ -2530,7 +2531,7 @@ pub async fn explore(
                 lines.truncate(EXPLORE_LINE_CAP);
                 Ok(ExploreResult { lines, ..Default::default() })
             } else {
-                let (series, matched) = query_series(crate::promquery::series_in(response)?, &query);
+                let (series, matched) = query_series(crate::promquery::series_in(response)?, &query, QUERY_SERIES_CAP);
                 Ok(ExploreResult { series, matched, ..Default::default() })
             }
         }
@@ -3786,7 +3787,9 @@ mod dashboard_tests {
                 { "id": "p1", "title": "CPU", "kind": "timeseries", "w": width, "h": 2,
                   "query": { "source": "metric", "profileId": "$service", "metricKey": "cpu" } },
                 { "id": "p2", "title": "Requests", "kind": "timeseries", "w": 6, "h": 2,
-                  "query": { "source": "promql", "profileId": "prom", "expr": "sum(rate(http_requests_total[5m]))" } }
+                  "query": { "source": "promql", "profileId": "prom", "expr": "sum(rate(http_requests_total[5m]))" } },
+                { "id": "p3", "title": "Health", "kind": "state", "w": 6, "h": 2,
+                  "query": { "source": "health", "profileIds": [] } }
             ],
             "variables": { "service": "orders-api" }
         }))

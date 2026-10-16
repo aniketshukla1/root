@@ -1171,20 +1171,46 @@ export function deleteDashboard(dashboardId: string): AppConfig {
   return currentConfig();
 }
 
-/** Two labelled series whatever the query: enough to draw a legend. */
+/**
+ * What a Prometheus would answer, by the shape of the query: a histogram's
+ * cumulative buckets for `_bucket`, up/down for `up`, otherwise one series
+ * per instance — enough for every panel kind to draw something real.
+ */
 export function promqlSeries(expr: string): MetricSeries[] {
-  return ['{instance="web-1"}', '{instance="web-2"}'].map((label, i) => {
-    const points = series(SAMPLES, 900 + i, 40 + i * 25, i === 0 ? "rise" : "flat");
+  const stats = (key: string, label: string, points: Point[]): MetricSeries => {
     const values = points.map((p) => p.v);
-    return {
-      key: `${expr}#${i}`,
-      label,
-      unit: "count",
-      points,
-      min: Math.min(...values),
-      max: Math.max(...values),
-      latest: values[values.length - 1],
-    };
+    return { key, label, unit: "count", points, min: Math.min(...values), max: Math.max(...values), latest: values[values.length - 1] };
+  };
+  const at = (i: number) => iso((SAMPLES - i) * STEP_MS);
+
+  if (/_bucket\b/.test(expr)) {
+    // Requests per second under each bound; a slow stretch two-thirds in.
+    const bounds = ["0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "+Inf"];
+    const r = seeded(77);
+    const columns = Array.from({ length: SAMPLES }, (_, i) => {
+      const slow = i > SAMPLES * 0.62 && i < SAMPLES * 0.8;
+      const shares = [4, 10, 22, 30, 18, 9, 4, 2, 0.6, 0.4].map((share, b) => share * (slow ? (b >= 5 ? 6 : 0.7) : 1) * (0.8 + r() * 0.4));
+      let running = 0;
+      return shares.map((share) => (running += share));
+    });
+    return bounds.map((le, b) =>
+      stats(`{le="${le}"}`, `{le="${le}"}`, columns.map((cumulative, i) => ({ t: at(i), v: Number(cumulative[b].toFixed(2)) }))),
+    );
+  }
+
+  if (/\bup\b/.test(expr)) {
+    return ["web-1:9100", "web-2:9100", "db-1:9187"].map((instance, k) =>
+      stats(
+        `{instance="${instance}"}`,
+        `{instance="${instance}",job="node"}`,
+        Array.from({ length: SAMPLES }, (_, i) => ({ t: at(i), v: k === 1 && i > SAMPLES * 0.55 && i < SAMPLES * 0.7 ? 0 : 1 })),
+      ),
+    );
+  }
+
+  return ["web-1", "web-2", "web-3", "web-4", "web-5"].map((instance, i) => {
+    const label = `{instance="${instance}"}`;
+    return stats(`${expr}#${i}`, label, series(SAMPLES, 900 + i, 12 + i * 9, i === 0 ? "rise" : "flat"));
   });
 }
 

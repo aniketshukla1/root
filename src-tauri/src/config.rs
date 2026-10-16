@@ -389,6 +389,11 @@ pub enum PanelQuery {
     /// A PromQL expression run against a Prometheus connection — how a
     /// Grafana panel imports.
     Promql { profile_id: String, expr: String },
+    /// Connections' health over time, for a state timeline; none named is all.
+    Health {
+        #[serde(default)]
+        profile_ids: Vec<String>,
+    },
 }
 
 /// A simulated estate, running in place of — or beside — a real one.

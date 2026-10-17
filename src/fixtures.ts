@@ -49,6 +49,8 @@ import type {
   Silence,
   RulePreview,
   ServiceMap,
+  Slo,
+  SloStatus,
   Firing,
   CapacityRisk,
   ConfigDocument,
@@ -658,6 +660,14 @@ export const CONFIG: AppConfig = {
   // Local by default, as the packaged app is until someone points it at a
   // server. `?team=` overrides it; see TEAM_MODE.
   team: {},
+  // Two objectives, so a service page opens on a budget rather than a form.
+  slos: [
+    { id: "slo-orders", profileId: "orders-api", name: "Orders API availability", objective: 99.9, windowDays: 30, indicator: { kind: "up" } },
+    {
+      id: "slo-orders-errors", profileId: "orders-api", name: "Orders API error rate", objective: 99.5, windowDays: 28,
+      indicator: { kind: "metric", metricKey: "error_rate", op: "below", threshold: 2 },
+    },
+  ],
 };
 
 /** One observed deploy in the window, so charts have a marker to render. */
@@ -1312,6 +1322,53 @@ const SUGGESTIONS: Record<string, string[]> = {
 export function exploreSuggest(language: string, label?: string | null): string[] {
   if (language === "logql" && !label) return ["app", "level", "service_name"];
   return SUGGESTIONS[label ?? ""] ?? [];
+}
+
+export function saveSlo(slo: Slo): AppConfig {
+  if (!slo.name.trim()) throw new Error("An objective needs a name.");
+  if (!(slo.objective > 0 && slo.objective < 100)) throw new Error("An objective is a percentage under 100.");
+  CONFIG.slos = [...(CONFIG.slos ?? []).filter((s) => s.id !== slo.id), slo];
+  return currentConfig();
+}
+
+export function deleteSlo(sloId: string): AppConfig {
+  CONFIG.slos = (CONFIG.slos ?? []).filter((s) => s.id !== sloId);
+  return currentConfig();
+}
+
+/**
+ * Objectives measured against the fixture estate: a connection that is down
+ * has overspent, one degraded is burning, the rest are comfortable. The
+ * budget line spends a little every day and most of it in the last hours.
+ */
+export function sloStatus(profileId?: string | null): SloStatus[] {
+  const now = Date.now();
+  return (CONFIG.slos ?? [])
+    .filter((slo) => !profileId || slo.profileId === profileId)
+    .map((slo) => {
+      const health = SNAPSHOTS.find((s) => s.profileId === slo.profileId)?.health ?? "healthy";
+      const allowed = 1 - slo.objective / 100;
+      const spentShare = health === "down" ? 3.8 : health === "degraded" ? 0.7 : 0.2;
+      const from = now - slo.windowDays * DAY_MS;
+      const budget = Array.from({ length: 121 }, (_, i) => {
+        const f = i / 120;
+        // Steady spending through the window, and the incident's share at the end.
+        const late = health === "healthy" ? 0 : Math.max(0, (f - 0.97) / 0.03);
+        const spent = spentShare * (health === "healthy" ? f : 0.15 * f + 0.85 * late);
+        return { t: new Date(from + f * (now - from)).toISOString(), v: Number((100 * (1 - spent)).toFixed(2)) };
+      });
+      return {
+        slo,
+        sli: Number((100 * (1 - allowed * spentShare)).toFixed(3)),
+        covered: 1,
+        remaining: 1 - spentShare,
+        burn1h: health === "down" ? 41.2 : health === "degraded" ? 7.6 : 0.3,
+        burn6h: health === "down" ? 12.4 : health === "degraded" ? 6.3 : 0.4,
+        burn3d: health === "down" ? 2.1 : health === "degraded" ? 1.4 : 0.2,
+        budget,
+        unit: "percent" as const,
+      };
+    });
 }
 
 /** Calls the sampled traces saw; the failing path fails only where the scenario does. */

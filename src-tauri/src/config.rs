@@ -340,6 +340,8 @@ pub struct AppConfig {
     pub alert_rules: Vec<crate::rules::AlertRule>,
     /// Silences and maintenance windows; the expired ones are dropped on save.
     pub silences: Vec<crate::rules::Silence>,
+    /// Objectives per connection, and the error budgets they leave.
+    pub slos: Vec<crate::slo::Slo>,
 }
 
 /// Most panels one dashboard may hold — a guard on what a request can store,

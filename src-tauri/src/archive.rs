@@ -61,6 +61,11 @@ const PRUNE_EVERY_MS: i64 = 10 * 60 * 1000;
 /// twelve hours covers that at a one-minute poll.
 const RESTORE_MS: i64 = 12 * HOUR_MS;
 
+/// Up or not, kept as a series of its own: the rollups then hold availability
+/// per minute and per ten minutes for as long as any metric, which is what a
+/// month-long objective is measured against. Never shown as a metric.
+pub const UP_KEY: &str = "__up";
+
 /// Separates section from row in a component's identity. A control
 /// character, so no section or row name can contain it.
 const ENTITY_SEP: char = '\u{1f}';
@@ -141,6 +146,11 @@ impl Archive {
             .collect();
         for r in entity_readings(snapshot) {
             readings.push((entity_of(r.section, r.row), r.column, r.label, r.unit, r.warn_above, r.value));
+        }
+        // Unknown is not a reading: not knowing is not being down.
+        if snapshot.health != Health::Unknown {
+            let up = if snapshot.health == Health::Down { 0.0 } else { 1.0 };
+            readings.push((String::new(), UP_KEY, "Up", MetricUnit::Count, None, up));
         }
 
         let mut tx = self.pool.begin().await?;
@@ -540,6 +550,11 @@ impl Archive {
             let label: String = row.get("label");
             let unit: MetricUnit = parse(&row.get::<String, _>("unit")).unwrap_or(MetricUnit::Count);
             let warn_above: Option<f64> = row.get("warn_above");
+            if key == UP_KEY {
+                // Health comes back through its own table below.
+                i = j;
+                continue;
+            }
             match entity.split_once(ENTITY_SEP) {
                 None => history.restore_metric(&profile_id, &key, &label, unit, warn_above, points),
                 Some((section, row_id)) => history.restore_entity(

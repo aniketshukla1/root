@@ -32,6 +32,7 @@ import type {
 import { GLOBAL_STREAMS } from "../types";
 import { troubleRegions } from "../meaning";
 import { layersFor } from "../ui/layers";
+import { Reliability } from "../ui/Reliability";
 import { AiNote, type AiState } from "../ui/AiNote";
 import { AlertList } from "../ui/AlertList";
 import {
@@ -63,10 +64,11 @@ import { ChevronDown, ChevronRight, RefreshIcon, SparkleIcon, TimelineIcon } fro
 const HISTOGRAM_BUCKETS = 72;
 const AUTO_REFRESH_MS = 15000;
 
-type SectionKey = "signals" | "series" | "logs" | "changes" | "components" | "history";
+type SectionKey = "signals" | "reliability" | "series" | "logs" | "changes" | "components" | "history";
 
 const DEFAULT_OPEN: Record<SectionKey, boolean> = {
   signals: true,
+  reliability: true,
   series: true,
   logs: true,
   changes: true,
@@ -684,6 +686,17 @@ export function ServiceDashboard({
             })}
           </div>
         )}
+      </Section>
+
+      <Section
+        title="Reliability"
+        subtitle="objectives and their error budgets"
+        open={open.reliability}
+        onToggle={() => toggleSection("reliability")}
+      >
+        <div className="@container p-3">
+          <Reliability profileId={profileId} metrics={service.snapshot.metrics} />
+        </div>
       </Section>
 
       <Section

@@ -427,6 +427,21 @@ pub async fn save_dashboard(state: Shared<'_>, dashboard: crate::config::Dashboa
 }
 
 #[tauri::command]
+pub async fn save_slo(state: Shared<'_>, slo: crate::slo::Slo) -> Result<crate::config::AppConfig> {
+    commands::save_slo(&state, slo).await
+}
+
+#[tauri::command]
+pub async fn delete_slo(state: Shared<'_>, slo_id: String) -> Result<crate::config::AppConfig> {
+    commands::delete_slo(&state, slo_id).await
+}
+
+#[tauri::command]
+pub async fn get_slo_status(state: Shared<'_>, profile_id: Option<String>) -> Result<Vec<crate::slo::SloStatus>> {
+    commands::get_slo_status(&state, profile_id).await
+}
+
+#[tauri::command]
 pub async fn get_service_map(state: Shared<'_>, minutes: Option<i64>) -> Result<commands::ServiceMap> {
     commands::get_service_map(&state, minutes).await
 }

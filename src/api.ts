@@ -131,6 +131,9 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
     fixtures.exploreResult(language as string, query as string, start as number, end as number),
   explore_suggest: ({ language, label }) => fixtures.exploreSuggest(language as string, label as string | null),
   get_service_map: () => fixtures.serviceMap(),
+  get_slo_status: ({ profileId }) => fixtures.sloStatus(profileId as string | null),
+  save_slo: ({ slo }) => fixtures.saveSlo(slo as never),
+  delete_slo: ({ sloId }) => fixtures.deleteSlo(sloId as string),
   save_alert_rule: ({ rule }) => fixtures.saveAlertRule(rule as never),
   delete_alert_rule: ({ ruleId }) => fixtures.deleteAlertRule(ruleId as string),
   preview_alert_rule: ({ rule }) => fixtures.previewAlertRule(rule as never),
@@ -207,6 +210,8 @@ import type {
   RulePreview,
   ServiceMap,
   Silence,
+  Slo,
+  SloStatus,
   HealthRun,
   HealthSnapshot,
   HistogramBucket,
@@ -284,6 +289,13 @@ export const api = {
   /** One Explore query over an absolute window, in epoch milliseconds. */
   explore: (profileId: string, language: ExploreLanguage, query: string, start: number, end: number) =>
     invoke<ExploreResult>("explore", { profileId, language, query, start, end }),
+
+  /** Each objective measured: how good, how much budget is left, how fast it burns. */
+  getSloStatus: (profileId?: string) => invoke<SloStatus[]>("get_slo_status", { profileId: profileId ?? null }),
+
+  saveSlo: (slo: Slo) => invoke<AppConfig>("save_slo", { slo }),
+
+  deleteSlo: (sloId: string) => invoke<AppConfig>("delete_slo", { sloId }),
 
   /** Who calls whom over the last `minutes`, from sampled traces. */
   getServiceMap: (minutes?: number) => invoke<ServiceMap>("get_service_map", { minutes: minutes ?? null }),

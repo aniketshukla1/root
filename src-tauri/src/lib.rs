@@ -46,6 +46,7 @@ pub mod registry;
 pub mod rpc;
 pub mod rules;
 pub mod server;
+pub mod slo;
 pub mod runtime;
 pub mod scenarios;
 pub mod secrets;
@@ -285,6 +286,9 @@ pub fn run() {
             tauri_cmds::explore,
             tauri_cmds::explore_suggest,
             tauri_cmds::get_service_map,
+            tauri_cmds::save_slo,
+            tauri_cmds::delete_slo,
+            tauri_cmds::get_slo_status,
             tauri_cmds::save_alert_rule,
             tauri_cmds::delete_alert_rule,
             tauri_cmds::preview_alert_rule,

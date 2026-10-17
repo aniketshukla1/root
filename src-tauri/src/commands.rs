@@ -2362,6 +2362,34 @@ pub async fn preview_alert_rule(
     crate::rules::preview(state, &rule, chrono::Utc::now()).await
 }
 
+/// Insert or replace an objective by id.
+pub async fn save_slo(state: &Arc<AppState>, slo: crate::slo::Slo) -> Result<crate::config::AppConfig> {
+    crate::slo::validate(&slo)?;
+    {
+        let mut config = state.config.write().await;
+        if !config.profiles.iter().any(|p| p.id == slo.profile_id) {
+            return Err(AppError::Config("That connection no longer exists.".into()));
+        }
+        match config.slos.iter_mut().find(|s| s.id == slo.id) {
+            Some(slot) => *slot = slo,
+            None => config.slos.push(slo),
+        }
+    }
+    state.save_config().await?;
+    Ok(state.config.read().await.clone())
+}
+
+pub async fn delete_slo(state: &Arc<AppState>, slo_id: String) -> Result<crate::config::AppConfig> {
+    state.config.write().await.slos.retain(|s| s.id != slo_id);
+    state.save_config().await?;
+    Ok(state.config.read().await.clone())
+}
+
+/// Each objective measured: how good, how much budget is left, how fast it burns.
+pub async fn get_slo_status(state: &Arc<AppState>, profile_id: Option<String>) -> Result<Vec<crate::slo::SloStatus>> {
+    Ok(crate::slo::status(state, profile_id.as_deref()).await)
+}
+
 /// Insert or replace a silence by id; silences already over are dropped.
 pub async fn save_silence(state: &Arc<AppState>, silence: crate::rules::Silence) -> Result<crate::config::AppConfig> {
     let now = chrono::Utc::now();

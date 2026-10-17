@@ -211,6 +211,39 @@ export interface RulePreview {
   summary: string;
 }
 
+/** Good while the connection is not down, or while a metric is on the right side of a threshold. */
+export type SloIndicator =
+  | { kind: "up" }
+  | { kind: "metric"; metricKey: string; op: RuleOp; threshold: number };
+
+/** How often a connection should be good, over a rolling window. */
+export interface Slo {
+  id: string;
+  profileId: string;
+  name: string;
+  /** Percent of the window that should be good: 99.9. */
+  objective: number;
+  windowDays: number;
+  indicator: SloIndicator;
+}
+
+/** One objective, measured from what root has of its window. */
+export interface SloStatus {
+  slo: Slo;
+  /** Percent good over the window. */
+  sli: number | null;
+  /** How much of the window root has a record for, 0 to 1. */
+  covered: number;
+  /** What is left of the budget as a fraction of it; below zero is overspent. */
+  remaining: number | null;
+  burn1h: number | null;
+  burn6h: number | null;
+  burn3d: number | null;
+  /** The budget left across the window, in percent, for its chart. */
+  budget: Point[];
+  unit: MetricUnit;
+}
+
 /** Calls between two connections, as sampled traces saw them. */
 export interface ObservedEdge {
   from: string;
@@ -1225,6 +1258,7 @@ export interface AppConfig {
   dashboards?: Dashboard[];
   alertRules?: AlertRule[];
   silences?: Silence[];
+  slos?: Slo[];
 }
 
 /** What a dashboard panel draws. A connection id may be `$service`. */

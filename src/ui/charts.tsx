@@ -22,6 +22,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
 import { formatMetricValue, formatTime } from "../format";
+import type { Region } from "../meaning";
 import type { LogLevel, MetricUnit, Point } from "../types";
 import {
   BYTE_INCRS,
@@ -190,6 +191,10 @@ export interface Series {
   icon?: ReactNode;
   /** A reference line rather than a reading — the same query a day earlier. */
   dashed?: boolean;
+  /** Marks at its readings and no line: anomalies, drawn over the series they belong to. */
+  dots?: boolean;
+  /** The edge of a band — a normal range, a forecast cone: faint, and out of the legend and tooltip. */
+  ghost?: boolean;
 }
 
 /** A series' samples as numbers, parsed once per points array however often
@@ -335,7 +340,9 @@ export function TimeSeries({
   legendExtra,
   axisWidth,
   stacked,
-  band,
+  bands: bandPairs,
+  regions,
+  onPointClick,
 }: {
   series: Series[];
   unit: MetricUnit;
@@ -353,8 +360,12 @@ export function TimeSeries({
   axisWidth?: number;
   /** Each series drawn on top of the ones before it, as filled areas. */
   stacked?: boolean;
-  /** Shade between two series, by key — the upper first: a p50–p99 spread. */
-  band?: [string, string];
+  /** Shade between pairs of series, by key, the upper first: a p50–p99 spread, a normal range. */
+  bands?: [string, string][];
+  /** Stretches of time to shade behind everything: when the connection was down. */
+  regions?: Region[];
+  /** A click that is not a drag, at the moment it landed on. */
+  onPointClick?: (t: number) => void;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const host = useRef<HTMLDivElement>(null);
@@ -371,7 +382,8 @@ export function TimeSeries({
   const hover = controlled ? (hoverTime ?? null) : localHover;
   const view: Domain = onBrush ? domain : (zoom ?? domain);
 
-  const plotted = series.filter((s) => s.points.length > 1);
+  // A run of dots can be one dot; a line needs two points.
+  const plotted = series.filter((s) => s.points.length > (s.dots ? 0 : 1));
   const columns = plotted.map((s) => columnOf(s.points));
   const single = plotted.length === 1;
 
@@ -397,7 +409,8 @@ export function TimeSeries({
     (annotations?.length ?? 0) > 0,
     axisWidth ?? "",
     stacked ? "stacked" : "",
-    band?.join("~") ?? "",
+    bandPairs?.map((b) => b.join("~")).join(",") ?? "",
+    plotted.map((s) => (s.dots ? "d" : s.ghost ? "g" : "")).join(""),
   ].join("/");
 
   // Where there is data at all: panning stops at its edges.
@@ -416,6 +429,8 @@ export function TimeSeries({
     width,
     data,
     annotations,
+    regions,
+    pointClick: onPointClick,
     syncing: false,
     hover: (t: number | null) => (controlled ? onHoverTime!(t) : setLocalHover(t)),
     setWindow: (range: Domain) => (onBrush ? onBrush(range) : setZoom(range)),
@@ -429,6 +444,8 @@ export function TimeSeries({
     width,
     data,
     annotations,
+    regions,
+    pointClick: onPointClick,
     hover: (t) => (controlled ? onHoverTime!(t) : setLocalHover(t)),
     setWindow: (range) => (onBrush ? onBrush(range) : setZoom(range)),
   };
@@ -462,6 +479,23 @@ export function TimeSeries({
       // Stacked: the bottom layer fills to zero, each one above fills down
       // to the layer under it — never to zero, or the top would cover all.
       if (stacked && k > 0) bands.push({ series: [2 + 2 * k, 2 + 2 * (k - 1)], fill: withAlpha(color, 0.32) });
+      if (s.dots || s.ghost) {
+        // No glow under either; the slot stays so every series keeps its index.
+        lines.push({ scale: "y", show: true, width: 0, stroke: "transparent", points: { show: false } });
+        lines.push(
+          s.dots
+            ? {
+                label: s.label,
+                scale: "y",
+                width: 0,
+                paths: () => null,
+                points: { show: true, size: 7, width: 1.5, stroke: color, fill: withAlpha(color, 0.35) },
+              }
+            : // A band's edge: the shading says where it is; a drawn edge only adds a jagged line.
+              { label: s.label, scale: "y", spanGaps: true, width: 1, points: { show: false }, stroke: "transparent" },
+        );
+        continue;
+      }
       // The glow: the same line, wide and faint, under it — and the area
       // wash rides on it so the fill never covers the glow.
       lines.push({
@@ -584,13 +618,15 @@ export function TimeSeries({
         },
       ],
       series: lines,
-      bands: (() => {
-        if (!band) return bands;
-        const hi = plotted.findIndex((s) => s.key === band[0]);
-        const lo = plotted.findIndex((s) => s.key === band[1]);
-        if (hi < 0 || lo < 0) return bands;
-        return [...bands, { series: [2 + 2 * hi, 2 + 2 * lo] as [number, number], fill: withAlpha(css(plotted[hi].color), 0.14) }];
-      })(),
+      bands: [
+        ...bands,
+        ...(bandPairs ?? []).flatMap(([upper, lower]) => {
+          const hi = plotted.findIndex((s) => s.key === upper);
+          const lo = plotted.findIndex((s) => s.key === lower);
+          if (hi < 0 || lo < 0) return [];
+          return [{ series: [2 + 2 * hi, 2 + 2 * lo] as [number, number], fill: withAlpha(css(plotted[hi].color), 0.1) }];
+        }),
+      ],
       hooks: {
         // Under the lines: the zone past each limit, the limit itself, and
         // a dashed line at each annotated moment.
@@ -599,6 +635,18 @@ export function TimeSeries({
             const { ctx } = u;
             const { left, top, width: w, height: h } = u.bbox;
             ctx.save();
+            // Trouble behind everything: a wash over the stretch, and a firmer
+            // edge along the top so a short one still reads.
+            for (const region of live.current.regions ?? []) {
+              const x0 = Math.max(left, u.valToPos(region.from, "x", true));
+              const x1 = Math.min(left + w, u.valToPos(region.to, "x", true));
+              if (x1 <= x0) continue;
+              const color = css(region.color);
+              ctx.fillStyle = withAlpha(color, 0.09);
+              ctx.fillRect(x0, top, x1 - x0, h);
+              ctx.fillStyle = withAlpha(color, 0.7);
+              ctx.fillRect(x0, top, x1 - x0, 2 * px);
+            }
             for (const limit of limits) {
               const y = Math.round(u.valToPos(limit, "y", true));
               if (y < top || y > top + h) continue;
@@ -680,10 +728,25 @@ export function TimeSeries({
     };
     u.over.addEventListener("wheel", onWheel, { passive: false });
 
+    // A click that did not move is a question about that moment, not a zoom.
+    let downX = Number.NaN;
+    const onDown = (e: MouseEvent) => {
+      downX = e.clientX;
+    };
+    const onClick = (e: MouseEvent) => {
+      const open = live.current.pointClick;
+      if (!open || Math.abs(e.clientX - downX) > 3) return;
+      open(u.posToVal(e.clientX - u.over.getBoundingClientRect().left, "x"));
+    };
+    u.over.addEventListener("mousedown", onDown);
+    u.over.addEventListener("click", onClick);
+
     plot.current = u;
     return () => {
       cancelAnimationFrame(frame);
       u.over.removeEventListener("wheel", onWheel);
+      u.over.removeEventListener("mousedown", onDown);
+      u.over.removeEventListener("click", onClick);
       u.destroy();
       plot.current = null;
     };
@@ -707,7 +770,7 @@ export function TimeSeries({
 
   useEffect(() => {
     plot.current?.redraw(false, false);
-  }, [annotations]);
+  }, [annotations, regions]);
 
   useEffect(() => {
     const u = plot.current;
@@ -760,7 +823,7 @@ export function TimeSeries({
   const readings =
     showHover && u
       ? plotted.flatMap((s, i) => {
-          if (hidden.has(s.key)) return [];
+          if (hidden.has(s.key) || s.ghost) return [];
           const { ts, vs } = columns[i];
           const k = nearestIndex(ts, hover);
           const tolerance = ((xMax - xMin) / Math.max(1, u.over.clientWidth)) * 6;
@@ -851,6 +914,7 @@ export function TimeSeries({
           </thead>
           <tbody>
             {plotted.map((s, i) => {
+              if (s.ghost || s.dots) return null;
               const stats = windowStats(columns[i].ts, columns[i].vs, [xMin, xMax]);
               const off = hidden.has(s.key);
               const over = stats !== null && s.warnAbove !== undefined && stats.last > s.warnAbove;

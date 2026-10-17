@@ -23,6 +23,7 @@ import {
   Tag,
 } from "../ui/primitives";
 import { SearchIcon } from "../ui/icons";
+import { layersFor } from "../ui/layers";
 
 /**
  * Two ways to look at the same series, and they answer different questions:
@@ -228,6 +229,7 @@ export function Metrics({
               series={series}
               catalog={catalog}
               domain={domain}
+              onMoment={(t) => onNavigate({ name: "correlate", at: new Date(t).toISOString() })}
               onOpen={() =>
                 onNavigate({
                   name: "service",
@@ -262,12 +264,15 @@ function ConnectionMetrics({
   catalog,
   domain,
   onOpen,
+  onMoment,
 }: {
   service: ServiceView;
   series: MetricSeries[];
   catalog: Catalog;
   domain: Domain;
   onOpen: () => void;
+  /** A click on a chart: everything else that happened at that moment. */
+  onMoment: (t: number) => void;
 }) {
   const descriptor = catalog.get(service.snapshot.kind);
   const line = DATA_INK;
@@ -341,21 +346,7 @@ function ConnectionMetrics({
 
                   {/* One series per chart here, so no legend box — the label above
                       names it. */}
-                  <TimeSeries
-                    series={[
-                      {
-                        key: s.key,
-                        label: s.label,
-                        color: line,
-                        points: s.points,
-                        warnAbove: s.warnAbove,
-                      },
-                    ]}
-                    unit={s.unit}
-                    domain={domain}
-                    height={104}
-                    showLegend={false}
-                  />
+                  <MeaningfulChart series={s} color={line} domain={domain} onMoment={onMoment} />
 
                   <div className="mt-1 flex gap-3 text-2xs text-ink-4">
                     <span>
@@ -394,6 +385,33 @@ interface MetricGroup {
   label: string;
   unit: MetricUnit;
   entries: { profileId: string; profileName: string; kind: string; series: MetricSeries }[];
+}
+
+/** One metric with its normal range, its unusual readings and where it is heading. */
+function MeaningfulChart({
+  series: s,
+  color,
+  domain,
+  onMoment,
+}: {
+  series: MetricSeries;
+  color: string;
+  domain: Domain;
+  onMoment: (t: number) => void;
+}) {
+  const layers = useMemo(() => layersFor(s, domain, true), [s, domain]);
+  return (
+    <TimeSeries
+      series={[...layers.under, { key: s.key, label: s.label, color, points: s.points, warnAbove: s.warnAbove }, ...layers.over]}
+      unit={s.unit}
+      domain={layers.domain}
+      height={104}
+      showLegend={false}
+      bands={layers.bands}
+      annotations={layers.limit ? [layers.limit] : undefined}
+      onPointClick={onMoment}
+    />
+  );
 }
 
 function ComparisonChart({

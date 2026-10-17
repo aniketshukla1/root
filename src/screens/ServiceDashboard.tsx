@@ -20,6 +20,7 @@ import { BACKEND_MAX_MINUTES, clampMinutes, describeSpan, rangesFor, spanOf } fr
 import type {
   Alert,
   ChangeEvent,
+  HealthRun,
   HistogramBucket,
   LogEvent,
   MetricSeries,
@@ -29,6 +30,8 @@ import type {
   Section as Inventory,
 } from "../types";
 import { GLOBAL_STREAMS } from "../types";
+import { troubleRegions } from "../meaning";
+import { layersFor } from "../ui/layers";
 import { AiNote, type AiState } from "../ui/AiNote";
 import { AlertList } from "../ui/AlertList";
 import {
@@ -196,6 +199,8 @@ export function ServiceDashboard({
   inventory.current = service.snapshot.sections;
   const [buckets, setBuckets] = useState<HistogramBucket[]>([]);
   const [changes, setChanges] = useState<ChangeEvent[]>([]);
+  /** When this connection was down or degraded, to shade behind its charts. */
+  const [runs, setRuns] = useState<HealthRun[]>([]);
   const [showDeploys, setShowDeploys] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -272,7 +277,7 @@ export function ServiceDashboard({
       // at the ring's edge would report "4 in this window" while the database
       // held forty.
       const deep = retained && minutes > BACKEND_MAX_MINUTES;
-      const [series, histogram, changeEvents, deepChanges, perComponent] = await Promise.all([
+      const [series, histogram, changeEvents, deepChanges, perComponent, healthRuns] = await Promise.all([
         api.getMetricHistory(profileId, minutes),
         api.logHistogram(
           { profileIds: [profileId], streams: GLOBAL_STREAMS },
@@ -284,8 +289,11 @@ export function ServiceDashboard({
           ? api.getChangeHistory(profileId, Math.ceil(minutes / 1440))
           : Promise.resolve([] as PastChange[]),
         componentOverlays(profileId, inventory.current, minutes),
+        // Shading is context, not the chart: without it the charts still stand.
+        api.getHealthRuns(minutes).catch(() => ({}) as Record<string, HealthRun[]>),
       ]);
       setHistory(series);
+      setRuns(healthRuns[profileId] ?? []);
       setOverlays(perComponent);
       setBuckets(histogram);
       setChanges(mergeChanges(changeEvents, deepChanges));
@@ -388,6 +396,16 @@ export function ServiceDashboard({
   }, [past]);
 
   const view: Domain = zoom ?? domain;
+  const regions = useMemo(() => troubleRegions(runs, view), [runs, view[0], view[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+  // What each chart means besides its line; a forecast only while the window ends now.
+  const layers = useMemo(
+    () => new Map(history.map((series) => [series.key, layersFor(series, view, zoom === null)])),
+    [history, view[0], view[1], zoom], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const openMoment = useCallback(
+    (t: number) => onNavigate({ name: "correlate", at: new Date(t).toISOString() }),
+    [onNavigate],
+  );
   const span = useMemo(() => spanOf(history), [history]);
 
   /**
@@ -723,6 +741,7 @@ export function ServiceDashboard({
                         {/* One series per chart, so no legend box — the label names it. */}
                         <TimeSeries
                           series={[
+                            ...(layers.get(series.key)?.under ?? []),
                             {
                               key: series.key,
                               label: series.label,
@@ -730,15 +749,21 @@ export function ServiceDashboard({
                               points: series.points,
                               warnAbove: series.warnAbove,
                             },
+                            ...(layers.get(series.key)?.over ?? []),
                           ]}
                           unit={series.unit}
-                          domain={view}
+                          domain={layers.get(series.key)?.domain ?? view}
                           height={132}
                           showLegend={false}
-                          annotations={annotations}
+                          annotations={
+                            layers.get(series.key)?.limit ? [...annotations, layers.get(series.key)!.limit!] : annotations
+                          }
+                          bands={layers.get(series.key)?.bands}
+                          regions={regions}
                           hoverTime={hoverTime}
                           onHoverTime={setHoverTime}
                           onBrush={setZoom}
+                          onPointClick={openMoment}
                         />
                       </div>
                     );
@@ -771,6 +796,11 @@ export function ServiceDashboard({
               </div>
             )}
             <SteadyStats series={steady} />
+            <p className="text-2xs leading-relaxed text-ink-4">
+              Shaded: the range that is normal for each metric, learned from its last readings; red dots fall outside it.
+              Dashed: where it is heading, to its limit. A red or amber wash: down or degraded. Click a moment for
+              everything else that happened then; drag across a stretch to ask what changed.
+            </p>
           </div>
         )}
       </Section>

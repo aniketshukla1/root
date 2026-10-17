@@ -766,7 +766,7 @@ function PanelBody({
         domain={domain}
         height={height - (height - legendHeight(3) >= 100 ? legendHeight(3) : 0)}
         showLegend={height - legendHeight(3) >= 100}
-        band={["p99", "p50"]}
+        bands={[["p99", "p50"]]}
         hoverTime={hoverTime}
         onHoverTime={onHoverTime}
         onBrush={onBrush}

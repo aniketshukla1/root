@@ -76,11 +76,13 @@ interface Row {
 
 function blankRow(sources: ServiceView[], seed?: ExploreSeed): Row {
   if (seed) return { id: newId(), ...seed, draft: seed.query, runs: 0 };
-  return { id: newId(), profileId: sources[0]?.snapshot.profileId ?? "", language: "promql", draft: "", query: "", runs: 0 };
+  return { id: newId(), profileId: sources[0]?.snapshot.profileId ?? "", language: speaks(sources[0])[0] ?? "promql", draft: "", query: "", runs: 0 };
 }
 
 function speaks(service: ServiceView | undefined): ExploreLanguage[] {
   if (service?.snapshot.kind === "gigapipe") return ["promql", "logql", "traces"];
+  // An OTLP receiver keeps the traces sent to it; its metrics and lines are root's own.
+  if (service?.snapshot.kind === "otlp") return ["traces"];
   return service?.snapshot.kind === "prometheus" ? ["promql"] : [];
 }
 
@@ -334,7 +336,7 @@ function QueryRow({
           aria-label="Connection"
           onChange={(e) => {
             const next = sources.find((s) => s.snapshot.profileId === e.target.value);
-            const language = speaks(next).includes(row.language) ? row.language : "promql";
+            const language = speaks(next).includes(row.language) ? row.language : (speaks(next)[0] ?? "promql");
             onChange({ ...row, profileId: e.target.value, language, query: language === row.language ? row.query : "" });
           }}
         >

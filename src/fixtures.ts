@@ -181,7 +181,7 @@ const METRIC_KINDS = ["this_machine", "docker", "podman", "kubernetes", "linux_h
   "etcd", "consul", "zookeeper",
   "kafka", "rabbitmq", "nats",
   "nginx", "apache", "tomcat", "haproxy", "traefik", "jenkins",
-  "elasticsearch", "prometheus", "http_endpoint", "gigapipe"];
+  "elasticsearch", "prometheus", "http_endpoint", "gigapipe", "otlp"];
 
 /**
  * The registry's own labels, for the kinds where capitalising the id gets it
@@ -205,6 +205,7 @@ const KIND_LABELS: Record<string, string> = {
   this_machine: "This computer",
   nfs: "NFS exports",
   gigapipe: "Gigapipe",
+  otlp: "OpenTelemetry",
 };
 
 export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
@@ -225,7 +226,7 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
     : ["kafka", "rabbitmq", "nats"].includes(kind) ? "Messaging"
     : kind === "jenkins" ? "CI/CD"
     : kind === "elasticsearch" ? "Search & analytics"
-    : kind === "prometheus" || kind === "gigapipe" ? "Observability"
+    : kind === "prometheus" || kind === "gigapipe" || kind === "otlp" ? "Observability"
     : "Web & endpoints",
   blurb: "",
   endpoint: { key: "endpoint", label: "Endpoint", kind: "text", required: kind !== "this_machine", advanced: false },

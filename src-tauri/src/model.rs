@@ -43,6 +43,8 @@ pub enum ServiceKind {
     Kafka,
     Aws,
     Gigapipe,
+    /// Not asked but told: an OTLP/HTTP receiver.
+    Otlp,
 }
 
 impl ServiceKind {
@@ -78,12 +80,14 @@ impl ServiceKind {
         ServiceKind::Kafka,
         ServiceKind::Aws,
         ServiceKind::Gigapipe,
+        ServiceKind::Otlp,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
             ServiceKind::Aws => "AWS",
             ServiceKind::Gigapipe => "Gigapipe",
+            ServiceKind::Otlp => "OpenTelemetry",
             ServiceKind::Docker => "Docker",
             ServiceKind::Podman => "Podman",
             ServiceKind::LinuxHost => "Linux host",

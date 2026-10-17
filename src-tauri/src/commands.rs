@@ -2725,7 +2725,9 @@ pub async fn explore(
         let (series, matched) = query_series(found, &query, QUERY_SERIES_CAP);
         return Ok(ExploreResult { series, matched, ..Default::default() });
     }
-    if server.kind != crate::model::ServiceKind::Gigapipe {
+    // An OTLP receiver keeps the traces sent to it, and only those.
+    let received_traces = server.kind == crate::model::ServiceKind::Otlp && language == "traces";
+    if server.kind != crate::model::ServiceKind::Gigapipe && !received_traces {
         return Err(AppError::Collector(format!(
             "{} keeps no logs or traces root can query: LogQL and traces need a Gigapipe connection",
             server.name

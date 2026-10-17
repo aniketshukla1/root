@@ -287,6 +287,31 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             },
         },
         ServiceDescriptor {
+            kind: ServiceKind::Otlp,
+            label: "OpenTelemetry".to_string(),
+            monogram: "OT".to_string(),
+            accent: 29,
+            category: "Observability".to_string(),
+            blurb: "Receive OTLP from your services — traces, logs and metrics, protobuf or JSON — \
+                    and see them beside everything root watches. Nothing to run in between."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Listen on", FieldKind::Text)
+                .placeholder(crate::collectors::otlp::DEFAULT_ADDRESS)
+                .help("Address and port for OTLP/HTTP. This machine only unless you give another address, which needs a token."),
+            username: None,
+            credential: Some(token(
+                "Token",
+                "Optional on this machine, required beyond it. Exporters send it as a bearer token.",
+            )),
+            fields: shared_fields(false),
+            default_poll_secs: 15,
+            capabilities: Capabilities {
+                logs: true,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
             kind: ServiceKind::LinuxHost,
             label: "Linux host".to_string(),
             monogram: "LX".to_string(),

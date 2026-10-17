@@ -39,6 +39,9 @@ async-trait = "0.1.91"
 futures-util = "0.3.33"
 chrono = { version = "0.4.45", features = ["serde"] }
 uuid = { version = "1.24.0", features = ["v4", "serde"] }
+# OTLP/HTTP: protobuf is what most SDKs send by default, and the Collector gzips.
+prost = { version = "0.13", default-features = false, features = ["derive", "std"] }
+flate2 = "1.1"
 # Local deploy ingest. Only the pieces a single POST route needs — no tower
 # middleware stack, no multipart, no compression.
 # `ws` for the event stream the browser client subscribes to; the desktop app

@@ -17,6 +17,7 @@ pub mod docker;
 pub mod elasticsearch;
 pub mod etcd;
 pub mod gigapipe;
+pub mod otlp;
 pub mod http;
 pub mod jenkins;
 pub mod kafka;
@@ -290,6 +291,7 @@ pub async fn build_collector(
         ServiceKind::Aws => Arc::new(aws::AwsCollector::new(profile, secret).await?),
         ServiceKind::LinuxHost => Arc::new(linux_host::LinuxHostCollector::new(profile, secret)?),
         ServiceKind::ThisMachine => Arc::new(this_machine::ThisMachineCollector::new(profile)?),
+        ServiceKind::Otlp => Arc::new(otlp::OtlpCollector::new(profile, secret)?),
         ServiceKind::Nfs => Arc::new(nfs::NfsCollector::new(profile, secret)?),
         ServiceKind::Jenkins => Arc::new(jenkins::JenkinsCollector::new(profile, secret)?),
         ServiceKind::Elasticsearch => {

@@ -67,6 +67,14 @@ export const DashboardsIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** A flag, planted: something is happening and someone has it. */
+export const IncidentsIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 21V4" />
+    <path d="M5 4h11l-2 4 2 4H5" />
+  </Icon>
+);
+
 /** Three nodes and the calls between them. */
 export const MapIcon = (p: IconProps) => (
   <Icon {...p}>

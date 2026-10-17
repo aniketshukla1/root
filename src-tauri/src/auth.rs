@@ -139,6 +139,9 @@ pub const MUTATING: &[&str] = &[
     "save_dashboard",
     "delete_dashboard",
     // So is what pages them, and what keeps a page quiet.
+    "update_incident",
+    "draft_postmortem",
+    "save_status_page",
     "save_slo",
     "delete_slo",
     "save_alert_rule",

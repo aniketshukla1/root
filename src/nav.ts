@@ -9,6 +9,8 @@ export type View =
   | { name: "alerts" }
   /** Alert rules people write, their previews, and silences. */
   | { name: "rules" }
+  /** Incident records and the status page; `incidentId` opens that one. */
+  | { name: "incidents"; incidentId?: string }
   | { name: "metrics" }
   | { name: "dashboards" }
   /** `variables` arrive from a shared link; `edit` opens a new one ready to build. */

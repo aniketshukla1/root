@@ -51,6 +51,10 @@ import type {
   ServiceMap,
   Slo,
   SloStatus,
+  IncidentChange,
+  IncidentRecord,
+  StatusPageSettings,
+  StatusPageView,
   Firing,
   CapacityRisk,
   ConfigDocument,
@@ -1322,6 +1326,131 @@ const SUGGESTIONS: Record<string, string[]> = {
 export function exploreSuggest(language: string, label?: string | null): string[] {
   if (language === "logql" && !label) return ["app", "level", "service_name"];
   return SUGGESTIONS[label ?? ""] ?? [];
+}
+
+const RECORDS = new Map<string, IncidentRecord>();
+
+/**
+ * The fixture incidents as records — opened when they began, joined by each
+ * member — and one from yesterday, resolved with an update and a postmortem,
+ * so the list has a history and the status page a past.
+ */
+export function incidentLog(): IncidentRecord[] {
+  for (const incident of incidents()) {
+    if (RECORDS.has(incident.id)) continue;
+    const nameOf = (id: string) => SNAPSHOTS.find((s) => s.profileId === id)?.profileName ?? id;
+    RECORDS.set(incident.id, {
+      id: incident.id,
+      title: incident.title,
+      severity: incident.severity,
+      status: "investigating",
+      openedAt: incident.started,
+      profileIds: incident.profileIds,
+      leadProfileId: incident.leadProfileId,
+      timeline: [
+        { at: incident.started, kind: "opened", text: `Opened on ${nameOf(incident.profileIds[0])}` },
+        ...incident.profileIds.slice(1).map((id, i) => ({
+          at: new Date(Date.parse(incident.started) + (i + 1) * 90_000).toISOString(),
+          kind: "joined" as const,
+          text: `${nameOf(id)} joined`,
+        })),
+      ],
+    });
+  }
+  if (!RECORDS.has("inc-yesterday")) {
+    const opened = iso(DAY_MS + 3 * 3_600_000);
+    const resolved = iso(DAY_MS + 2 * 3_600_000);
+    RECORDS.set("inc-yesterday", {
+      id: "inc-yesterday",
+      title: "checkout-web — 5xx on POST /checkout",
+      severity: "critical",
+      status: "resolved",
+      openedAt: opened,
+      resolvedAt: resolved,
+      owner: "Priya",
+      profileIds: ["checkout-web", "edge-proxy"],
+      leadProfileId: "checkout-web",
+      timeline: [
+        { at: opened, kind: "opened", text: "Opened on checkout-web" },
+        { at: iso(DAY_MS + 2.9 * 3_600_000), kind: "owner", text: "Priya took it", author: "Priya" },
+        { at: iso(DAY_MS + 2.7 * 3_600_000), kind: "update", text: "Some checkouts are failing; we are rolling back the 1.9.1 release.", author: "Priya" },
+        { at: iso(DAY_MS + 2.5 * 3_600_000), kind: "note", text: "1.9.1 dropped the retry on the payments call.", author: "Priya" },
+        { at: resolved, kind: "resolved", text: "Every alert in it cleared" },
+        { at: iso(DAY_MS + 1.5 * 3_600_000), kind: "postmortem", text: "Postmortem drafted" },
+      ],
+      postmortem:
+        "## Summary\nCheckouts failed for about an hour after the 1.9.1 release.\n\n## Root cause\nThe release dropped a retry on the payments call.\n\n## Action items\n- Restore the retry, with a test.\n- To confirm: did any order charge twice?",
+    });
+  }
+  return [...RECORDS.values()].sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+}
+
+export function updateIncident(id: string, change: IncidentChange): IncidentRecord {
+  incidentLog();
+  const record = RECORDS.get(id);
+  if (!record) throw new Error("No such incident.");
+  const at = new Date().toISOString();
+  if (change.kind === "status") {
+    if (record.resolvedAt) throw new Error("This incident is already resolved.");
+    record.status = change.status;
+    record.timeline.push({ at, kind: "status", text: `Marked ${change.status}` });
+  } else if (change.kind === "owner") {
+    record.owner = change.owner?.trim() || undefined;
+    record.timeline.push({ at, kind: "owner", text: record.owner ? `${record.owner} took it` : "No longer owned" });
+  } else {
+    if (!change.text.trim()) throw new Error("Write something first.");
+    record.timeline.push({ at, kind: change.kind, text: change.text.trim() });
+  }
+  return { ...record, timeline: [...record.timeline] };
+}
+
+export function draftPostmortem(id: string): IncidentRecord {
+  incidentLog();
+  const record = RECORDS.get(id);
+  if (!record) throw new Error("No such incident.");
+  record.postmortem = [
+    "## Summary",
+    `${record.title}. It began ${new Date(record.openedAt).toLocaleString()} and involved ${record.profileIds.join(", ")}.`,
+    "",
+    "## Timeline",
+    ...record.timeline.map((e) => `- ${new Date(e.at).toLocaleTimeString()} — ${e.text}`),
+    "",
+    "## Root cause",
+    "To confirm: what changed just before the first connection turned?",
+    "",
+    "## Action items",
+    "- To confirm: who owns the follow-up?",
+  ].join("\n");
+  record.timeline.push({ at: new Date().toISOString(), kind: "postmortem", text: "Postmortem drafted" });
+  return { ...record, timeline: [...record.timeline] };
+}
+
+export function saveStatusPage(settings: StatusPageSettings): AppConfig {
+  CONFIG.statusPage = settings;
+  return currentConfig();
+}
+
+export function statusPage(): StatusPageView {
+  const settings = CONFIG.statusPage ?? { enabled: false, title: "", profileIds: [] };
+  const shown = SNAPSHOTS.filter((s) => settings.profileIds.length === 0 || settings.profileIds.includes(s.profileId));
+  const rank: Record<Health, number> = { unknown: -1, healthy: 0, degraded: 1, down: 2 };
+  const ids = new Set(shown.map((s) => s.profileId));
+  return {
+    settings,
+    title: settings.title.trim() || "Service status",
+    overall: shown.reduce<Health>((worst, s) => (rank[s.health] > rank[worst] ? s.health : worst), "healthy"),
+    components: shown.map((s) => ({ name: s.profileName, health: s.health })),
+    incidents: incidentLog()
+      .filter((r) => r.profileIds.some((id) => ids.has(id)))
+      .map((r) => ({
+        title: r.title,
+        status: r.status,
+        openedAt: r.openedAt,
+        resolvedAt: r.resolvedAt ?? null,
+        updates: r.timeline.filter((e) => e.kind === "update").reverse().map(({ author: _author, ...e }) => e),
+      })),
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 export function saveSlo(slo: Slo): AppConfig {

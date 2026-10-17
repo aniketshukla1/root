@@ -2362,6 +2362,90 @@ pub async fn preview_alert_rule(
     crate::rules::preview(state, &rule, chrono::Utc::now()).await
 }
 
+/// Incident records, newest first, brought up to date first.
+pub async fn get_incident_log(state: &Arc<AppState>, limit: Option<usize>) -> Result<Vec<crate::incident_log::IncidentRecord>> {
+    crate::incident_log::sync_now(state).await;
+    Ok(state.incident_log.read().await.recent(limit.unwrap_or(100).clamp(1, 500)))
+}
+
+/// An owner, a status, a note or a public update, entered on the timeline.
+/// `author` comes from the session on a server, never from the caller.
+pub async fn update_incident(
+    state: &Arc<AppState>,
+    incident_id: String,
+    change: crate::incident_log::Change,
+    author: Option<String>,
+) -> Result<crate::incident_log::IncidentRecord> {
+    let mut log = state.incident_log.write().await;
+    let record = log.apply(&incident_id, change, author, chrono::Utc::now())?;
+    log.save(&crate::incident_log::log_path(&state.config_path))?;
+    Ok(record)
+}
+
+/// A blameless postmortem draft from the record and nothing else.
+pub async fn draft_postmortem(state: &Arc<AppState>, incident_id: String) -> Result<crate::incident_log::IncidentRecord> {
+    let names: std::collections::HashMap<String, String> =
+        state.config.read().await.profiles.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
+    let record = state
+        .incident_log
+        .read()
+        .await
+        .get(&incident_id)
+        .cloned()
+        .ok_or_else(|| AppError::Config("No such incident.".into()))?;
+    let grounds = crate::incident_log::postmortem_grounds(&record, &names);
+    let settings = state.config.read().await.llm.clone();
+    let api_key = secrets::get_secret(settings.provider.secret_key()).await?;
+    let provider = build_provider(&settings, api_key)?;
+    let response = provider
+        .complete(crate::llm::CompletionRequest {
+            model: settings.model.clone(),
+            system: crate::incident_log::POSTMORTEM_SYSTEM.to_string(),
+            messages: vec![ChatMessage::user(grounds.join("\n"))],
+            tools: Vec::new(),
+            max_tokens: 1400,
+            temperature: 0.2,
+        })
+        .await?;
+    let text = response.text.trim().to_string();
+    if text.is_empty() {
+        return Err(AppError::Llm("the model returned nothing".to_string()));
+    }
+    let mut log = state.incident_log.write().await;
+    let record = log.set_postmortem(&incident_id, text, chrono::Utc::now())?;
+    log.save(&crate::incident_log::log_path(&state.config_path))?;
+    Ok(record)
+}
+
+/// The status page as it reads now, enabled or not — the app previews it.
+pub async fn get_status_page(state: &Arc<AppState>) -> Result<crate::incident_log::StatusPageView> {
+    let (settings, profiles) = {
+        let config = state.config.read().await;
+        (config.status_page.clone(), config.profiles.iter().map(|p| (p.id.clone(), p.name.clone())).collect::<Vec<_>>())
+    };
+    let components: Vec<(String, String, Health)> = {
+        let snapshots = state.snapshots.read().await;
+        profiles
+            .into_iter()
+            .map(|(id, name)| {
+                let health = snapshots.get(&id).map(|s| s.health).unwrap_or(Health::Unknown);
+                (id, name, health)
+            })
+            .collect()
+    };
+    let records = state.incident_log.read().await.recent(500);
+    Ok(crate::incident_log::status_view(&settings, &components, &records, chrono::Utc::now()))
+}
+
+pub async fn save_status_page(
+    state: &Arc<AppState>,
+    settings: crate::incident_log::StatusPageSettings,
+) -> Result<crate::config::AppConfig> {
+    state.config.write().await.status_page = settings;
+    state.save_config().await?;
+    Ok(state.config.read().await.clone())
+}
+
 /// Insert or replace an objective by id.
 pub async fn save_slo(state: &Arc<AppState>, slo: crate::slo::Slo) -> Result<crate::config::AppConfig> {
     crate::slo::validate(&slo)?;

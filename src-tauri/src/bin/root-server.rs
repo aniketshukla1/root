@@ -168,6 +168,7 @@ async fn run() -> Result<(), String> {
     // The server is where notifications matter most: it is the copy of root
     // that is running at three in the morning.
     inframonitoring_lib::notify::spawn(Arc::clone(&state));
+    inframonitoring_lib::incident_log::spawn(Arc::clone(&state));
 
     supervisor::reload_all(Arc::clone(&state)).await;
 

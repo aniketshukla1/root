@@ -54,6 +54,7 @@ import { Dashboards } from "./screens/Dashboards";
 import { Explore } from "./screens/Explore";
 import { AlertRules } from "./screens/AlertRules";
 import { ServiceMap } from "./screens/ServiceMap";
+import { Incidents } from "./screens/Incidents";
 import * as remote from "./remote";
 import { Onboarding } from "./screens/Onboarding";
 import { ServerSignIn } from "./screens/ServerSignIn";
@@ -851,6 +852,18 @@ export default function App() {
             syncedAt={dashboard?.generatedAt}
             onNavigate={setView}
             onRefresh={refreshAll}
+            onAsk={askAssistant}
+          />
+        )}
+
+        {view.name === "incidents" && (
+          <Incidents
+            key={view.incidentId ?? "all"}
+            model={model}
+            selected={view.incidentId}
+            serverUrl={config?.team?.serverUrl}
+            onConfigChange={onConfigChange}
+            onNavigate={setView}
             onAsk={askAssistant}
           />
         )}

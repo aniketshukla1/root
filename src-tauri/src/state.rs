@@ -537,6 +537,8 @@ pub struct AppState {
     pub claims: RwLock<crate::claims::ClaimStore>,
     /// Since when each alert rule's condition has held, for its "for 5m".
     pub rule_pending: Mutex<crate::rules::Pending>,
+    /// Incidents that outlast their alerts, kept beside the config.
+    pub incident_log: RwLock<crate::incident_log::IncidentLog>,
     /// Last log timestamp seen per profile, so each poll only asks for new lines.
     pub watermarks: RwLock<HashMap<String, DateTime<Utc>>>,
     /// Rolling metric history feeding sparklines, charts, and trend questions.
@@ -602,6 +604,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(config: AppConfig, config_path: PathBuf) -> Self {
         let capacity = config.retention.log_capacity;
+        let incident_log = crate::incident_log::IncidentLog::load(&crate::incident_log::log_path(&config_path));
         AppState {
             config: RwLock::new(config),
             config_path,
@@ -612,6 +615,7 @@ impl AppState {
             changes: RwLock::new(crate::changes::ChangeStore::new()),
             claims: RwLock::new(crate::claims::ClaimStore::default()),
             rule_pending: Mutex::new(crate::rules::Pending::default()),
+            incident_log: RwLock::new(incident_log),
             watermarks: RwLock::new(HashMap::new()),
             history: RwLock::new(HistoryStore::default()),
             conversations: RwLock::new(HashMap::new()),

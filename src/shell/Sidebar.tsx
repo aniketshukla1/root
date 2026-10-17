@@ -16,6 +16,7 @@ import {
   DashboardsIcon,
   ExploreIcon,
   MapIcon,
+  IncidentsIcon,
   OverviewIcon,
   SearchIcon,
   ServicesIcon,
@@ -86,6 +87,7 @@ export function Sidebar({
             ? "crit"
             : "warn",
     },
+    { key: "incidents", label: "Incidents", icon: IncidentsIcon, view: { name: "incidents" } },
     { key: "metrics", label: "Metrics", icon: MetricsIcon, view: { name: "metrics" } },
     { key: "dashboards", label: "Dashboards", icon: DashboardsIcon, view: { name: "dashboards" } },
     { key: "explore", label: "Explore", icon: ExploreIcon, view: { name: "explore" } },

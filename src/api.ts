@@ -132,6 +132,11 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   explore_suggest: ({ language, label }) => fixtures.exploreSuggest(language as string, label as string | null),
   get_service_map: () => fixtures.serviceMap(),
   get_slo_status: ({ profileId }) => fixtures.sloStatus(profileId as string | null),
+  get_incident_log: () => fixtures.incidentLog(),
+  update_incident: ({ incidentId, change }) => fixtures.updateIncident(incidentId as string, change as never),
+  draft_postmortem: ({ incidentId }) => fixtures.draftPostmortem(incidentId as string),
+  get_status_page: () => fixtures.statusPage(),
+  save_status_page: ({ settings }) => fixtures.saveStatusPage(settings as never),
   save_slo: ({ slo }) => fixtures.saveSlo(slo as never),
   delete_slo: ({ sloId }) => fixtures.deleteSlo(sloId as string),
   save_alert_rule: ({ rule }) => fixtures.saveAlertRule(rule as never),
@@ -212,6 +217,10 @@ import type {
   Silence,
   Slo,
   SloStatus,
+  IncidentChange,
+  IncidentRecord,
+  StatusPageSettings,
+  StatusPageView,
   HealthRun,
   HealthSnapshot,
   HistogramBucket,
@@ -289,6 +298,21 @@ export const api = {
   /** One Explore query over an absolute window, in epoch milliseconds. */
   explore: (profileId: string, language: ExploreLanguage, query: string, start: number, end: number) =>
     invoke<ExploreResult>("explore", { profileId, language, query, start, end }),
+
+  /** Incident records, newest first. */
+  getIncidentLog: (limit?: number) => invoke<IncidentRecord[]>("get_incident_log", { limit: limit ?? null }),
+
+  /** An owner, a status, a note or a public update; the server stamps who. */
+  updateIncident: (incidentId: string, change: IncidentChange) =>
+    invoke<IncidentRecord>("update_incident", { incidentId, change }),
+
+  /** A blameless postmortem draft from the record, by the configured model. */
+  draftPostmortem: (incidentId: string) => invoke<IncidentRecord>("draft_postmortem", { incidentId }),
+
+  /** The public status page as it reads now, enabled or not. */
+  getStatusPage: () => invoke<StatusPageView>("get_status_page"),
+
+  saveStatusPage: (settings: StatusPageSettings) => invoke<AppConfig>("save_status_page", { settings }),
 
   /** Each objective measured: how good, how much budget is left, how fast it burns. */
   getSloStatus: (profileId?: string) => invoke<SloStatus[]>("get_slo_status", { profileId: profileId ?? null }),

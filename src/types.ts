@@ -211,6 +211,57 @@ export interface RulePreview {
   summary: string;
 }
 
+export type IncidentStatus = "investigating" | "identified" | "monitoring" | "resolved";
+
+export type IncidentEntryKind =
+  | "opened" | "joined" | "escalated" | "status" | "owner" | "note" | "update" | "resolved" | "reopened" | "postmortem";
+
+export interface IncidentEntry {
+  at: string;
+  kind: IncidentEntryKind;
+  text: string;
+  author?: string;
+}
+
+/** An incident that outlasts its alerts: opened, joined, resolved and reopened with them, and annotated by people. */
+export interface IncidentRecord {
+  id: string;
+  title: string;
+  severity: AlertSeverity;
+  status: IncidentStatus;
+  openedAt: string;
+  resolvedAt?: string;
+  owner?: string;
+  profileIds: string[];
+  leadProfileId: string;
+  timeline: IncidentEntry[];
+  /** Markdown. */
+  postmortem?: string;
+}
+
+export type IncidentChange =
+  | { kind: "status"; status: Exclude<IncidentStatus, "resolved"> }
+  | { kind: "owner"; owner: string | null }
+  | { kind: "note"; text: string }
+  /** Written for the status page. */
+  | { kind: "update"; text: string };
+
+export interface StatusPageSettings {
+  enabled: boolean;
+  title: string;
+  /** The connections it shows; none named is every one. */
+  profileIds: string[];
+}
+
+export interface StatusPageView {
+  settings: StatusPageSettings;
+  title: string;
+  overall: Health;
+  components: { name: string; health: Health }[];
+  incidents: { title: string; status: IncidentStatus; openedAt: string; resolvedAt?: string | null; updates: IncidentEntry[] }[];
+  generatedAt: string;
+}
+
 /** Good while the connection is not down, or while a metric is on the right side of a threshold. */
 export type SloIndicator =
   | { kind: "up" }
@@ -1259,6 +1310,7 @@ export interface AppConfig {
   alertRules?: AlertRule[];
   silences?: Silence[];
   slos?: Slo[];
+  statusPage?: StatusPageSettings;
 }
 
 /** What a dashboard panel draws. A connection id may be `$service`. */

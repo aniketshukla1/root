@@ -427,6 +427,39 @@ pub async fn save_dashboard(state: Shared<'_>, dashboard: crate::config::Dashboa
 }
 
 #[tauri::command]
+pub async fn get_incident_log(state: Shared<'_>, limit: Option<usize>) -> Result<Vec<crate::incident_log::IncidentRecord>> {
+    commands::get_incident_log(&state, limit).await
+}
+
+#[tauri::command]
+pub async fn update_incident(
+    state: Shared<'_>,
+    incident_id: String,
+    change: crate::incident_log::Change,
+) -> Result<crate::incident_log::IncidentRecord> {
+    // On the desktop the one person here is the author, and needs no name.
+    commands::update_incident(&state, incident_id, change, None).await
+}
+
+#[tauri::command]
+pub async fn draft_postmortem(state: Shared<'_>, incident_id: String) -> Result<crate::incident_log::IncidentRecord> {
+    commands::draft_postmortem(&state, incident_id).await
+}
+
+#[tauri::command]
+pub async fn get_status_page(state: Shared<'_>) -> Result<crate::incident_log::StatusPageView> {
+    commands::get_status_page(&state).await
+}
+
+#[tauri::command]
+pub async fn save_status_page(
+    state: Shared<'_>,
+    settings: crate::incident_log::StatusPageSettings,
+) -> Result<crate::config::AppConfig> {
+    commands::save_status_page(&state, settings).await
+}
+
+#[tauri::command]
 pub async fn save_slo(state: Shared<'_>, slo: crate::slo::Slo) -> Result<crate::config::AppConfig> {
     commands::save_slo(&state, slo).await
 }

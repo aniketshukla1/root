@@ -97,6 +97,7 @@ pub fn router(ctx: Ctx) -> Router {
         .route("/auth/oidc/start", get(oidc_start))
         .route("/auth/oidc/callback", get(oidc_callback))
         .route("/events", get(events))
+        .route("/status", get(status_page))
         .with_state(ctx);
 
     match web_root {
@@ -225,6 +226,14 @@ async fn rpc(
         }
     };
 
+    // Who wrote it is the session's to say, not the request's.
+    let mut args = args;
+    if command == "update_incident" {
+        if let Some(fields) = args.as_object_mut() {
+            fields.insert("author".into(), Value::String(identity.display_name.clone()));
+        }
+    }
+
     match crate::rpc::dispatch(&ctx.state, &command, args).await {
         Ok(value) => (StatusCode::OK, Json(value)).into_response(),
         Err(e) => {
@@ -238,6 +247,29 @@ async fn rpc(
             };
             (status, Json(json!({ "error": e.to_string() }))).into_response()
         }
+    }
+}
+
+/// The public status page, when someone has turned it on: no session, by
+/// design, so it carries only what was chosen for it — and a policy that lets
+/// the browser run nothing and fetch nothing, since it has no reason to.
+async fn status_page(State(ctx): State<Ctx>) -> Response {
+    if !ctx.state.config.read().await.status_page.enabled {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match crate::commands::get_status_page(&ctx.state).await {
+        Ok(view) => (
+            StatusCode::OK,
+            [
+                (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                (axum::http::header::CACHE_CONTROL, "no-store"),
+                (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+                (axum::http::header::CONTENT_SECURITY_POLICY, "default-src 'none'; style-src 'unsafe-inline'"),
+            ],
+            crate::incident_log::status_html(&view),
+        )
+            .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
@@ -617,6 +649,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_status_page_is_not_there_until_someone_turns_it_on() {
+        use tower::ServiceExt;
+        let ctx = ctx("secret");
+        let state = Arc::clone(&ctx.state);
+        let get = || axum::http::Request::builder().uri("/status").body(axum::body::Body::empty()).unwrap();
+
+        let off = router(ctx.clone()).oneshot(get()).await.unwrap();
+        assert_eq!(off.status(), StatusCode::NOT_FOUND, "off means absent, not an empty page");
+
+        state.config.write().await.status_page =
+            crate::incident_log::StatusPageSettings { enabled: true, title: "Acme".into(), profile_ids: Vec::new() };
+        let on = router(ctx).oneshot(get()).await.unwrap();
+        assert_eq!(on.status(), StatusCode::OK, "public: no token");
+        assert_eq!(on.headers()["content-security-policy"], "default-src 'none'; style-src 'unsafe-inline'");
+        let bytes = axum::body::to_bytes(on.into_body(), 1 << 20).await.unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains("<title>Acme</title>"));
+    }
+
+    #[tokio::test]
     async fn a_call_without_a_token_is_refused() {
         let (status, body) = call(
             router(ctx("secret")),
@@ -738,7 +789,7 @@ mod tests {
         let (status, body) = call(router(ctx("secret")), req).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["service"], "root");
-        assert_eq!(body["commands"], 95);
+        assert_eq!(body["commands"], 100);
         // No database, so there are no accounts to claim and the client must
         // not offer to create one.
         assert_eq!(body["accounts"], false);

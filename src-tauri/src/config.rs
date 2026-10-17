@@ -342,6 +342,8 @@ pub struct AppConfig {
     pub silences: Vec<crate::rules::Silence>,
     /// Objectives per connection, and the error budgets they leave.
     pub slos: Vec<crate::slo::Slo>,
+    /// The public page of what is up, what is not, and what was said about it.
+    pub status_page: crate::incident_log::StatusPageSettings,
 }
 
 /// Most panels one dashboard may hold — a guard on what a request can store,

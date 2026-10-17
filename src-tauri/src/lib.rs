@@ -27,6 +27,7 @@ pub mod configsource;
 pub mod redact;
 pub mod history;
 pub mod identify;
+pub mod incident_log;
 pub mod incidents;
 pub mod journal;
 pub mod influx;
@@ -199,6 +200,7 @@ pub fn run() {
                 // Before the pollers, so the first alert of the session is
                 // already being watched for. Idle until a channel exists.
                 notify::spawn(Arc::clone(&state));
+                incident_log::spawn(Arc::clone(&state));
 
                 supervisor::reload_all(state).await;
             });
@@ -286,6 +288,11 @@ pub fn run() {
             tauri_cmds::explore,
             tauri_cmds::explore_suggest,
             tauri_cmds::get_service_map,
+            tauri_cmds::get_incident_log,
+            tauri_cmds::update_incident,
+            tauri_cmds::draft_postmortem,
+            tauri_cmds::get_status_page,
+            tauri_cmds::save_status_page,
             tauri_cmds::save_slo,
             tauri_cmds::delete_slo,
             tauri_cmds::get_slo_status,

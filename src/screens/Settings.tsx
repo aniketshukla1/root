@@ -27,6 +27,9 @@ import type {
 import { Screen, ScreenHeader } from "../shell/ScreenHeader";
 import { NotificationSettings } from "./NotificationSettings";
 import { TeamSettings } from "./TeamSettings";
+import { AuditLog } from "./AuditLog";
+import { serverUrl } from "../remote";
+import { isTauri } from "../fixtures";
 import {
   Button,
   cx,
@@ -44,7 +47,10 @@ import {
 import { CloseIcon, PlusIcon, TrashIcon } from "../ui/icons";
 import { DEMO_HUE, DemoLauncher, demoRunning } from "../ui/demo";
 
-type Tab = "connections" | "notifications" | "team" | "assistant" | "ingest" | "mcp" | "display";
+type Tab = "connections" | "notifications" | "team" | "audit" | "assistant" | "ingest" | "mcp" | "display";
+
+/** A shared server keeps an audit log; the desktop app, one person on one machine, keeps none. */
+const keepsAuditLog = () => !!serverUrl() || !isTauri();
 
 export function Settings({
   config,
@@ -79,6 +85,7 @@ export function Settings({
             { value: "connections", label: "Connections", count: config?.profiles.length },
             { value: "notifications", label: "Notifications" },
             { value: "team", label: "Workspace" },
+            ...(keepsAuditLog() ? [{ value: "audit" as const, label: "Audit log" }] : []),
             { value: "assistant", label: "Assistant" },
             { value: "ingest", label: "Deploy ingest" },
             { value: "mcp", label: "MCP server" },
@@ -96,6 +103,7 @@ export function Settings({
           )}
           {tab === "notifications" && <NotificationSettings />}
           {tab === "team" && <TeamSettings />}
+          {tab === "audit" && <AuditLog />}
           {tab === "assistant" && (
             <AssistantSettings config={config} onConfigChange={onConfigChange} />
           )}

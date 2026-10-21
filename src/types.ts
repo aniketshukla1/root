@@ -253,6 +253,26 @@ export interface StatusPageSettings {
   profileIds: string[];
 }
 
+/** One change, or refused attempt, on a shared server: names only, never arguments. */
+export interface AuditEntry {
+  at: string;
+  actor: string;
+  email: string;
+  role: "admin" | "operator" | "viewer";
+  command: string;
+  target?: string;
+  outcome: "done" | "refused" | "failed";
+  /** Why it failed or was refused, or the role an account was given. */
+  detail?: string;
+}
+
+/** A newer signed release on the update feed. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  notes?: string | null;
+}
+
 export interface StatusPageView {
   settings: StatusPageSettings;
   title: string;
@@ -1302,7 +1322,7 @@ export interface AppConfig {
   ingest: { enabled: boolean; port: number };
   mcp: { enabled: boolean; port: number };
   prediction: { enabled: boolean; intervalMinutes: number };
-  team: { serverUrl?: string; account?: Account };
+  team: { serverUrl?: string | null; account?: Account | null };
   /** The live demo, while one is running. */
   demo?: DemoSettings;
   /** Dashboards people built, shared by everyone on a server. */
@@ -1311,6 +1331,10 @@ export interface AppConfig {
   silences?: Silence[];
   slos?: Slo[];
   statusPage?: StatusPageSettings;
+  /** Read through `get_notifications`; carried here because the config is saved whole. */
+  notifications?: { channels: NotifyChannel[] };
+  oidc?: { issuer: string; clientId: string; redirectUri: string };
+  storage?: { databaseUrl: string };
 }
 
 /** What a dashboard panel draws. A connection id may be `$service`. */
@@ -1341,7 +1365,8 @@ export interface Dashboard {
   panels: DashboardPanel[];
   /** Default values for `environment`, `team` and `service`. */
   variables: Record<string, string>;
-  updatedAt?: string;
+  /** The server sends null until first saved. */
+  updatedAt?: string | null;
 }
 
 export interface DemoSettings {

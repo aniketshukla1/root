@@ -35,8 +35,21 @@ jobs:
       - run: npm ci
       - name: Typecheck and build
         # `npm run build` runs tsc first, so a type error fails here rather
-        # than shipping a bundle nobody typechecked.
+        # than shipping a bundle nobody typechecked. That includes
+        # src/contracts.generated.ts: real backend values held against the
+        # UI's types, so the two cannot drift apart unnoticed.
         run: npm run build
+
+      - name: Frontend checks
+        # The pure logic every screen leans on — chart maths, Grafana import,
+        # autocomplete, histogram quantiles, the service map's layout, the
+        # normal range and forecast — each with its own assertions.
+        run: npm test
+
+      - name: Performance budget
+        # What the app costs to load, gzipped, against perf-budget.json.
+        # Raising the number is allowed; drifting past it is not.
+        run: npm run check:budget
 
   backend:
     # Both, because the desktop app ships on both and a collector that
@@ -99,6 +112,13 @@ jobs:
         # absent, which is how macOS passes without a database. The Linux job
         # has one, so those suites actually run there.
         run: cargo test --all-targets
+
+      - name: Contracts are current
+        # The tests rewrite src/contracts.generated.ts from the backend's own
+        # serialisation. If that changed the file, a backend shape changed
+        # without the UI's types being checked against it: regenerate with
+        # `cargo test --lib contracts` and commit.
+        run: git diff --exit-code -- src/contracts.generated.ts
 
       - name: Build the server binary
         working-directory: src-tauri

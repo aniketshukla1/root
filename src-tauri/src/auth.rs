@@ -150,8 +150,15 @@ pub const MUTATING: &[&str] = &[
     "delete_silence",
 ];
 
+/// Commands only an administrator may run, whatever else a role allows: the
+/// audit log names everyone, and is how an operator's changes are checked.
+pub const ADMIN_ONLY: &[&str] = &["get_audit_log"];
+
 /// Whether a role may run a command.
 pub fn may(role: Role, command: &str) -> bool {
+    if ADMIN_ONLY.contains(&command) {
+        return role == Role::Admin;
+    }
     match role {
         Role::Admin | Role::Operator => true,
         Role::Viewer => !MUTATING.contains(&command),
@@ -595,6 +602,13 @@ async fn migrate(pool: &PgPool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_administrator_reads_the_audit_log() {
+        assert!(may(Role::Admin, "get_audit_log"));
+        assert!(!may(Role::Operator, "get_audit_log"));
+        assert!(!may(Role::Viewer, "get_audit_log"));
+    }
 
     #[test]
     fn a_viewer_may_read_and_may_not_touch_the_estate() {

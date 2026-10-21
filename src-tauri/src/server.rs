@@ -198,16 +198,16 @@ async fn rpc(
 
     // Authentication is not authorization. A viewer holds a perfectly valid
     // session and still may not restart a container.
+    let log = crate::audit::path(&ctx.state.config_path);
     if !crate::auth::may(identity.role, &command) {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({
-                "error": format!(
-                    "`{command}` changes something, and this account can only read"
-                )
-            })),
-        )
-            .into_response();
+        let why = if crate::auth::ADMIN_ONLY.contains(&command.as_str()) {
+            format!("`{command}` is for administrators")
+        } else {
+            format!("`{command}` changes something, and this account can only read")
+        };
+        let target = serde_json::from_slice::<Value>(&body).ok().as_ref().and_then(crate::audit::target_of);
+        crate::audit::record(&log, &crate::audit::AuditEntry::new(&identity, &command, target, crate::audit::Outcome::Refused, Some(why.clone())));
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": why }))).into_response();
     }
 
     let args = if body.is_empty() {
@@ -234,7 +234,20 @@ async fn rpc(
         }
     }
 
-    match crate::rpc::dispatch(&ctx.state, &command, args).await {
+    // A change goes in the audit log as it is answered: by name and target,
+    // never its arguments.
+    let changes = crate::auth::MUTATING.contains(&command.as_str());
+    let target = changes.then(|| crate::audit::target_of(&args)).flatten();
+    let result = crate::rpc::dispatch(&ctx.state, &command, args).await;
+    if changes {
+        let (outcome, detail) = match &result {
+            Ok(_) => (crate::audit::Outcome::Done, None),
+            Err(e) => (crate::audit::Outcome::Failed, Some(e.to_string())),
+        };
+        crate::audit::record(&log, &crate::audit::AuditEntry::new(&identity, &command, target, outcome, detail));
+    }
+
+    match result {
         Ok(value) => (StatusCode::OK, Json(value)).into_response(),
         Err(e) => {
             // The command's own message, because it is written for an operator
@@ -418,12 +431,16 @@ async fn create_user(
             .into_response();
     };
 
+    let caller = identify(&ctx, &headers).await;
+    let log = crate::audit::path(&ctx.state.config_path);
     let bootstrapping = directory.count().await.unwrap_or(1) == 0;
     if !bootstrapping {
-        let admin = identify(&ctx, &headers)
-            .await
-            .is_some_and(|i| i.role == crate::auth::Role::Admin);
+        let admin = caller.as_ref().is_some_and(|i| i.role == crate::auth::Role::Admin);
         if !admin {
+            if let Some(who) = &caller {
+                let entry = crate::audit::AuditEntry::new(who, "create_user", None, crate::audit::Outcome::Refused, Some("not an administrator".into()));
+                crate::audit::record(&log, &entry);
+            }
             return (
                 StatusCode::FORBIDDEN,
                 Json(json!({ "error": "only an administrator can create an account" })),
@@ -447,7 +464,20 @@ async fn create_user(
     };
 
     match directory.create(&body.email, &body.password, &name, body.role).await {
-        Ok(account) => (StatusCode::CREATED, Json(json!(account))).into_response(),
+        Ok(account) => {
+            let created = json!(account);
+            // The first account has nobody before it to name, so it names itself.
+            let who = caller.unwrap_or_else(|| crate::auth::Identity {
+                user_id: None,
+                email: body.email.clone(),
+                display_name: name.clone(),
+                role: crate::auth::Role::Admin,
+            });
+            let role = created["role"].as_str().unwrap_or("?");
+            let entry = crate::audit::AuditEntry::new(&who, "create_user", Some(body.email.clone()), crate::audit::Outcome::Done, Some(format!("as {role}")));
+            crate::audit::record(&log, &entry);
+            (StatusCode::CREATED, Json(created)).into_response()
+        }
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": e.to_string() })),
@@ -613,11 +643,11 @@ mod tests {
 
     fn ctx(token: &str) -> Ctx {
         let (_, tx) = crate::events::Events::broadcast(16);
+        // A directory each: the audit log is written beside the config.
+        let dir = std::env::temp_dir().join(format!("root-server-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("test dir");
         Ctx {
-            state: Arc::new(AppState::new(
-                AppConfig::default(),
-                std::path::PathBuf::from("/tmp/root-test-config.json"),
-            )),
+            state: Arc::new(AppState::new(AppConfig::default(), dir.join("config.json"))),
             events: tx,
             token: token.to_string(),
             directory: None,
@@ -665,6 +695,23 @@ mod tests {
         assert_eq!(on.headers()["content-security-policy"], "default-src 'none'; style-src 'unsafe-inline'");
         let bytes = axum::body::to_bytes(on.into_body(), 1 << 20).await.unwrap();
         assert!(String::from_utf8_lossy(&bytes).contains("<title>Acme</title>"));
+    }
+
+    #[tokio::test]
+    async fn a_change_goes_in_the_audit_log_and_a_read_does_not() {
+        let ctx = ctx("secret");
+        let (status, _) = call(router(ctx.clone()), post_rpc("delete_slo", Some("secret"), json!({ "sloId": "s9" }))).await;
+        assert_eq!(status, StatusCode::OK);
+        call(router(ctx.clone()), post_rpc("get_dashboard", Some("secret"), json!({}))).await;
+
+        let (status, entries) = call(router(ctx), post_rpc("get_audit_log", Some("secret"), json!({}))).await;
+        assert_eq!(status, StatusCode::OK);
+        let entries = entries.as_array().expect("entries");
+        assert_eq!(entries.len(), 1, "a read is not entered: {entries:?}");
+        assert_eq!(entries[0]["command"], "delete_slo");
+        assert_eq!(entries[0]["target"], "s9");
+        assert_eq!(entries[0]["actor"], "Shared token");
+        assert_eq!(entries[0]["outcome"], "done");
     }
 
     #[tokio::test]
@@ -789,7 +836,7 @@ mod tests {
         let (status, body) = call(router(ctx("secret")), req).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["service"], "root");
-        assert_eq!(body["commands"], 100);
+        assert_eq!(body["commands"], 103);
         // No database, so there are no accounts to claim and the client must
         // not offer to create one.
         assert_eq!(body["accounts"], false);

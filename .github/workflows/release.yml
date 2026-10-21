@@ -131,7 +131,9 @@ jobs:
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          # Signed update bundles and their .sig files, which latest.json points
+          # at. Release-only: without the private key a local build would fail.
+          args: --config src-tauri/tauri.release.conf.json ${{ matrix.args }}
 
       - name: Confirm the macOS build is actually signed
         if: matrix.os == 'macos-latest'

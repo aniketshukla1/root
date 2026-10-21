@@ -53,8 +53,10 @@ export function serverUrl(): string | null {
   }
 
   // Served by the server itself: same origin, nothing to configure. Excludes
-  // the Vite dev server, which serves the bundle but is not a root server.
-  if (import.meta.env.PROD && window.location.protocol.startsWith("http")) {
+  // the Vite dev server, which serves the bundle but is not a root server,
+  // and the desktop app on Windows, which Tauri serves from
+  // http://tauri.localhost and which has its own engine.
+  if (import.meta.env.PROD && window.location.protocol.startsWith("http") && !("__TAURI_INTERNALS__" in window)) {
     return window.location.origin;
   }
   return null;

@@ -599,3 +599,41 @@ pub async fn get_conversation(state: Shared<'_>, conversation_id: String) -> Res
 pub async fn clear_conversation(state: Shared<'_>, conversation_id: String) -> Result<()> {
     commands::clear_conversation(&state, conversation_id).await
 }
+
+#[tauri::command]
+pub async fn get_audit_log(state: Shared<'_>, limit: Option<usize>) -> Result<Vec<crate::audit::AuditEntry>> {
+    commands::get_audit_log(&state, limit).await
+}
+
+/// A newer signed release on the update feed.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub version: String,
+    pub current_version: String,
+    pub notes: Option<String>,
+}
+
+fn updater_error(e: tauri_plugin_updater::Error) -> crate::error::AppError {
+    crate::error::AppError::Collector(format!("update check failed: {e}"))
+}
+
+// The two updater commands act on the app, not the estate, so they have no
+// `commands` counterpart and are refused over the network (`rpc::NOT_REMOTE`).
+#[tauri::command]
+pub async fn check_for_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app.updater().map_err(updater_error)?.check().await.map_err(updater_error)?;
+    Ok(update.map(|u| UpdateInfo { version: u.version, current_version: u.current_version, notes: u.body }))
+}
+
+/// Download, verify against the release key, install, restart.
+#[tauri::command]
+pub async fn install_update(app: tauri::AppHandle) -> Result<()> {
+    use tauri_plugin_updater::UpdaterExt;
+    let Some(update) = app.updater().map_err(updater_error)?.check().await.map_err(updater_error)? else {
+        return Ok(());
+    };
+    update.download_and_install(|_, _| {}, || {}).await.map_err(updater_error)?;
+    app.restart()
+}

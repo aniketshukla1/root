@@ -452,7 +452,9 @@ pub enum CellValue {
         value: f64,
         #[serde(skip_serializing_if = "Option::is_none")]
         max: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        // camelCase on the wire like every other field the UI reads; the alias
+        // still reads snapshots stored before.
+        #[serde(skip_serializing_if = "Option::is_none", rename = "warnAbove", alias = "warn_above")]
         warn_above: Option<f64>,
     },
 }

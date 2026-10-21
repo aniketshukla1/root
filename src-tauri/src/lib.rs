@@ -17,10 +17,13 @@ pub mod claims;
 pub mod collectors;
 pub mod commands;
 pub mod config;
+#[cfg(test)]
+mod contracts;
 pub mod error;
 pub mod events;
 pub mod forecast;
 pub mod advisor;
+pub mod audit;
 pub mod auth;
 pub mod backtest;
 pub mod configsource;
@@ -308,6 +311,9 @@ pub fn run() {
             tauri_cmds::pending_confirmations,
             tauri_cmds::get_conversation,
             tauri_cmds::clear_conversation,
+            tauri_cmds::get_audit_log,
+            tauri_cmds::check_for_update,
+            tauri_cmds::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

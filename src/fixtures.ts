@@ -55,6 +55,8 @@ import type {
   IncidentRecord,
   StatusPageSettings,
   StatusPageView,
+  AuditEntry,
+  UpdateInfo,
   Firing,
   CapacityRisk,
   ConfigDocument,
@@ -1429,6 +1431,47 @@ export function draftPostmortem(id: string): IncidentRecord {
 export function saveStatusPage(settings: StatusPageSettings): AppConfig {
   CONFIG.statusPage = settings;
   return currentConfig();
+}
+
+/** A shared server's audit log, as its administrator reads it. */
+export function auditLog(limit: number): AuditEntry[] {
+  const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const priya = { actor: "Priya Raman", email: "priya@acme.dev", role: "operator" } as const;
+  const dana = { actor: "Dana Ito", email: "dana@acme.dev", role: "admin" } as const;
+  const entries: AuditEntry[] = [
+    { at: ago(3), ...priya, command: "update_incident", target: "inc-orders-api", outcome: "done" },
+    {
+      at: ago(9),
+      actor: "Sam Okafor",
+      email: "sam@acme.dev",
+      role: "viewer",
+      command: "run_row_action",
+      target: "orders-api",
+      outcome: "refused",
+      detail: "`run_row_action` changes something, and this account can only read",
+    },
+    { at: ago(14), ...priya, command: "save_silence", target: "silence-payments-db", outcome: "done" },
+    { at: ago(41), ...priya, command: "refresh_connection", target: "session-cache", outcome: "done" },
+    {
+      at: ago(66),
+      actor: "Shared token",
+      email: "shared-token",
+      role: "admin",
+      command: "save_profile",
+      target: "search-cluster",
+      outcome: "failed",
+      detail: "configuration error: https://«redacted credentials»@search.acme.dev:9200 is not a valid endpoint",
+    },
+    { at: ago(130), ...dana, command: "create_user", target: "sam@acme.dev", outcome: "done", detail: "as viewer" },
+    { at: ago(184), ...dana, command: "save_alert_rule", target: "checkout-errors", outcome: "done" },
+  ];
+  return entries.slice(0, limit);
+}
+
+/** `?update=available` shows the update banner in a browser preview. */
+export function availableUpdate(): UpdateInfo | null {
+  const asked = typeof location !== "undefined" && new URLSearchParams(location.search).get("update") === "available";
+  return asked ? { version: "0.2.0", currentVersion: "0.1.0", notes: "Alert rules, SLOs, incidents and an OTLP receiver." } : null;
 }
 
 export function statusPage(): StatusPageView {

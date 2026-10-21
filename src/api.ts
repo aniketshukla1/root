@@ -136,6 +136,9 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   update_incident: ({ incidentId, change }) => fixtures.updateIncident(incidentId as string, change as never),
   draft_postmortem: ({ incidentId }) => fixtures.draftPostmortem(incidentId as string),
   get_status_page: () => fixtures.statusPage(),
+  get_audit_log: ({ limit }) => fixtures.auditLog((limit as number | null) ?? 200),
+  check_for_update: () => fixtures.availableUpdate(),
+  install_update: () => undefined,
   save_status_page: ({ settings }) => fixtures.saveStatusPage(settings as never),
   save_slo: ({ slo }) => fixtures.saveSlo(slo as never),
   delete_slo: ({ sloId }) => fixtures.deleteSlo(sloId as string),
@@ -221,6 +224,8 @@ import type {
   IncidentRecord,
   StatusPageSettings,
   StatusPageView,
+  AuditEntry,
+  UpdateInfo,
   HealthRun,
   HealthSnapshot,
   HistogramBucket,
@@ -311,6 +316,15 @@ export const api = {
 
   /** The public status page as it reads now, enabled or not. */
   getStatusPage: () => invoke<StatusPageView>("get_status_page"),
+
+  /** Who changed what on this server, newest first. Administrators only. */
+  getAuditLog: (limit?: number) => invoke<AuditEntry[]>("get_audit_log", { limit: limit ?? null }),
+
+  /** A newer signed release, if the feed has one. Desktop only. */
+  checkForUpdate: () => invoke<UpdateInfo | null>("check_for_update"),
+
+  /** Download, verify against the release key, install, restart. Desktop only. */
+  installUpdate: () => invoke<void>("install_update"),
 
   saveStatusPage: (settings: StatusPageSettings) => invoke<AppConfig>("save_status_page", { settings }),
 

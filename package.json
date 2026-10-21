@@ -14,7 +14,9 @@
     "check:explore": "node --experimental-strip-types --no-warnings scripts/check-explore.ts",
     "check:histogram": "node --experimental-strip-types --no-warnings scripts/check-histogram.ts",
     "check:servicemap": "node --experimental-strip-types --no-warnings scripts/check-servicemap.ts",
-    "check:meaning": "node --experimental-strip-types --no-warnings scripts/check-meaning.ts"
+    "check:meaning": "node --experimental-strip-types --no-warnings scripts/check-meaning.ts",
+    "check:budget": "node --experimental-strip-types --no-warnings scripts/check-budget.ts",
+    "test": "npm run -s check:charts && npm run -s check:golden && npm run -s check:dashboards && npm run -s check:explore && npm run -s check:histogram && npm run -s check:servicemap && npm run -s check:meaning"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

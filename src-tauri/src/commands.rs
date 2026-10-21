@@ -2446,6 +2446,14 @@ pub async fn save_status_page(
     Ok(state.config.read().await.clone())
 }
 
+/// The newest entries in this server's audit log, newest first. Only an
+/// administrator reaches this on a server; the desktop app records none.
+pub async fn get_audit_log(state: &Arc<AppState>, limit: Option<usize>) -> Result<Vec<crate::audit::AuditEntry>> {
+    let path = crate::audit::path(&state.config_path);
+    let limit = limit.unwrap_or(200).min(2000);
+    Ok(tokio::task::spawn_blocking(move || crate::audit::recent(&path, limit)).await.unwrap_or_default())
+}
+
 /// Insert or replace an objective by id.
 pub async fn save_slo(state: &Arc<AppState>, slo: crate::slo::Slo) -> Result<crate::config::AppConfig> {
     crate::slo::validate(&slo)?;

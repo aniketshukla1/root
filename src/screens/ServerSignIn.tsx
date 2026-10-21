@@ -1,12 +1,14 @@
 // The door, when root is a server and this is a browser.
 //
-// Two states, and which one shows is the server's answer rather than a guess:
+// Three states, and which one shows is the server's answer rather than a guess:
 //
 //   - **Claim.** A fresh server has no accounts, and the first account made on
 //     it is an administrator. It is offered here because the alternative — a
 //     password printed into the boot log — is a credential sitting in whatever
 //     collects logs.
 //   - **Sign in.** Every time after that.
+//   - **Token.** A server without a database keeps no accounts at all; the
+//     token it was started with is the only way in, so that is what it asks for.
 //
 // The desktop app never sees this. It talks to an engine in its own process,
 // where there is nobody to authenticate to, and a monitoring tool that
@@ -19,7 +21,7 @@ import * as remote from "../remote";
 import { RootMark } from "../ui/primitives";
 import { Button, Input } from "../ui/primitives";
 
-type Mode = "checking" | "claim" | "signIn";
+type Mode = "checking" | "claim" | "signIn" | "token";
 
 export function ServerSignIn({
   server,
@@ -32,6 +34,7 @@ export function ServerSignIn({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [token, setToken] = useState("");
   const [error, setError] = useState<string>();
   const [sso, setSso] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -45,7 +48,7 @@ export function ServerSignIn({
       .then((r) => r.json())
       .then((health) => {
         if (cancelled) return;
-        setMode(health.accounts && !health.claimed ? "claim" : "signIn");
+        setMode(health.accounts === false ? "token" : health.accounts && !health.claimed ? "claim" : "signIn");
         setSso(Boolean(health.sso));
       })
       .catch(() => !cancelled && setMode("signIn"));
@@ -65,6 +68,16 @@ export function ServerSignIn({
     setBusy(true);
     setError(undefined);
     try {
+      if (mode === "token") {
+        // Checked where the app checks it, before it is kept: a wrong token
+        // should fail here, not as an empty estate behind a reload.
+        const me = await fetch(`${server}/auth/me`, { headers: { authorization: `Bearer ${token.trim()}` } });
+        if (!me.ok) throw new Error("That is not this server's token.");
+        remote.setToken(token.trim());
+        onSignedIn();
+        return;
+      }
+
       if (mode === "claim") {
         const created = await fetch(`${server}/auth/users`, {
           method: "POST",
@@ -96,6 +109,7 @@ export function ServerSignIn({
   if (mode === "checking") return null;
 
   const claiming = mode === "claim";
+  const tokenOnly = mode === "token";
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-page px-6">
@@ -107,12 +121,14 @@ export function ServerSignIn({
 
         <div>
           <h1 className="text-2xl leading-tight font-medium tracking-[-.02em] text-ink">
-            {claiming ? "Claim this server" : "Sign in"}
+            {claiming ? "Claim this server" : tokenOnly ? "Open this server" : "Sign in"}
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-ink-2">
             {claiming
               ? "Nobody has an account here yet. The first one is an administrator, and every account after it has to be created by one."
-              : "This root server keeps accounts. Your session lasts a week of inactivity."}
+              : tokenOnly
+                ? "This server keeps no accounts: it has no database. It opens with the token it was started with, ROOT_TOKEN in its environment."
+                : "This root server keeps accounts. Your session lasts a week of inactivity."}
           </p>
           <p className="num mt-2 text-2xs text-ink-4">{server}</p>
         </div>
@@ -124,30 +140,44 @@ export function ServerSignIn({
             void submit();
           }}
         >
-          {claiming && (
+          {tokenOnly ? (
             <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
-              autoComplete="name"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Server token"
+              type="password"
+              autoComplete="current-password"
+              aria-label="Server token"
+              required
             />
+          ) : (
+            <>
+              {claiming && (
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your name"
+                  autoComplete="name"
+                />
+              )}
+              <Input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                type="email"
+                autoComplete="username"
+                required
+              />
+              <Input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={claiming ? "At least 12 characters" : "Password"}
+                type="password"
+                autoComplete={claiming ? "new-password" : "current-password"}
+                required
+              />
+            </>
           )}
-          <Input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            type="email"
-            autoComplete="username"
-            required
-          />
-          <Input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={claiming ? "At least 12 characters" : "Password"}
-            type="password"
-            autoComplete={claiming ? "new-password" : "current-password"}
-            required
-          />
 
           {error && (
             <p className="num text-2xs leading-relaxed text-crit" role="alert">
@@ -156,7 +186,7 @@ export function ServerSignIn({
           )}
 
           <Button variant="primary" type="submit" disabled={busy}>
-            {busy ? "…" : claiming ? "Create the first account" : "Sign in"}
+            {busy ? "…" : claiming ? "Create the first account" : tokenOnly ? "Open" : "Sign in"}
           </Button>
         </form>
 

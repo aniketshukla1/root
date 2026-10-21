@@ -59,6 +59,11 @@ pub struct ChatMessage {
     /// True when the tool failed, so the model knows to change approach.
     #[serde(default)]
     pub is_error: bool,
+    /// The provider's own record of an assistant turn, sent back verbatim for
+    /// the rest of the tool loop that produced it: Anthropic's thinking blocks
+    /// must return unchanged and in order. Never stored or shown.
+    #[serde(skip)]
+    pub replay: Option<serde_json::Value>,
 }
 
 impl ChatMessage {
@@ -70,6 +75,7 @@ impl ChatMessage {
             tool_call_id: None,
             tool_name: None,
             is_error: false,
+            replay: None,
         }
     }
 
@@ -81,6 +87,7 @@ impl ChatMessage {
             tool_call_id: None,
             tool_name: None,
             is_error: false,
+            replay: None,
         }
     }
 
@@ -92,6 +99,7 @@ impl ChatMessage {
             tool_call_id: Some(call.id.clone()),
             tool_name: Some(call.name.clone()),
             is_error,
+            replay: None,
         }
     }
 }
@@ -127,6 +135,8 @@ pub struct CompletionResponse {
     pub text: String,
     pub tool_calls: Vec<ToolCall>,
     pub usage: Usage,
+    /// See [`ChatMessage::replay`].
+    pub replay: Option<serde_json::Value>,
 }
 
 #[async_trait]

@@ -329,10 +329,10 @@ pub async fn run_turn(
             );
         }
 
-        messages.push(ChatMessage::assistant(
-            response.text.clone(),
-            response.tool_calls.clone(),
-        ));
+        messages.push(ChatMessage {
+            replay: response.replay.clone(),
+            ..ChatMessage::assistant(response.text.clone(), response.tool_calls.clone())
+        });
 
         // No tools requested: this is the answer.
         if response.tool_calls.is_empty() {
@@ -362,7 +362,12 @@ pub async fn run_turn(
         );
     }
 
-    // Persist the completed exchange.
+    // Persist the completed exchange. A replayed turn is bound to this
+    // question's system prompt, which the next question rebuilds, so from here
+    // on it goes back as its text and tool calls.
+    for message in &mut messages {
+        message.replay = None;
+    }
     state
         .conversations
         .write()

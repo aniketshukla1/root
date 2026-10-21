@@ -103,7 +103,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
     tools: ["list_connections", "get_health", "search_logs"],
   }),
   secret_store_available: () => true,
-  list_models: () => ["claude-opus-5", "claude-sonnet-5"],
+  list_models: () => ["claude-opus-5-5", "claude-sonnet-5-5"],
   detect_ollama: () => ["llama3.1", "qwen2.5-coder"],
   save_llm_settings: ({ settings }) => fixtures.saveLlmSettings(settings as never),
   // A HealthSnapshot, not a string: the form reads snapshot.summary and

@@ -236,7 +236,7 @@ export const appConfig: AppConfig = {
     "baseUrl": null,
     "hasApiKey": false,
     "maxTokens": 4096,
-    "model": "claude-sonnet-4-5",
+    "model": "claude-opus-5-5",
     "provider": "anthropic",
     "temperature": 0.20000000298023224
   },
@@ -357,7 +357,7 @@ export const metricSeries: MetricSeries = {
 export const exploreResult: ExploreResult = {
   "lines": [
     {
-      "id": "e7274a11-f59a-4330-a472-fab9b502c0d3",
+      "id": "line-1",
       "kind": "otlp",
       "level": "error",
       "message": "payment declined",

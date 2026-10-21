@@ -194,6 +194,7 @@ impl LlmProvider for OllamaProvider {
                 input_tokens: parsed.prompt_eval_count,
                 output_tokens: parsed.eval_count,
             },
+            replay: None,
         })
     }
 

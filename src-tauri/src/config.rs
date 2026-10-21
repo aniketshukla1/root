@@ -202,7 +202,7 @@ impl LlmProviderKind {
 
     pub fn default_model(self) -> &'static str {
         match self {
-            LlmProviderKind::Anthropic => "claude-sonnet-4-5",
+            LlmProviderKind::Anthropic => "claude-opus-5-5",
             LlmProviderKind::OpenAiCompatible => "gpt-4o",
             LlmProviderKind::Ollama => "llama3.1",
         }

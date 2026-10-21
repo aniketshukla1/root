@@ -176,7 +176,8 @@ fn samples() -> Vec<(&'static str, &'static str, Value)> {
     let explore = ExploreResult {
         series: vec![series()],
         matched: 1,
-        lines: vec![LogEvent::new("telemetry", "telemetry", ServiceKind::Otlp, "orders", LogLevel::Error, "payment declined".into(), at(2))],
+        // A fixed id: `LogEvent::new` mints a random one, and this file must not change between runs.
+        lines: vec![LogEvent { id: "line-1".into(), ..LogEvent::new("telemetry", "telemetry", ServiceKind::Otlp, "orders", LogLevel::Error, "payment declined".into(), at(2)) }],
         traces: vec![TraceSummary { trace_id: "ab".repeat(16), root_service: "checkout".into(), root_name: "POST /checkout".into(), started_at: at(1), duration_ms: 250.0, error_count: Some(1) }],
     };
     let map = ServiceMap {
@@ -234,8 +235,7 @@ fn samples() -> Vec<(&'static str, &'static str, Value)> {
     ]
 }
 
-#[test]
-fn contracts_are_written_where_tsc_will_check_them() {
+fn render() -> String {
     let samples = samples();
     let mut types: Vec<&str> = samples.iter().map(|(_, ty, _)| *ty).collect();
     types.sort();
@@ -250,6 +250,15 @@ fn contracts_are_written_where_tsc_will_check_them() {
     for (name, ty, value) in samples {
         out.push_str(&format!("\nexport const {name}: {ty} = {};\n", serde_json::to_string_pretty(&value).unwrap()));
     }
+    out
+}
+
+#[test]
+fn contracts_are_written_where_tsc_will_check_them() {
+    let out = render();
+    // CI fails when the committed file differs from a fresh run, so a random
+    // id or a clock read in any sample would fail every build.
+    assert_eq!(out, render(), "the samples must be deterministic");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/contracts.generated.ts");
     if std::fs::read_to_string(&path).ok().as_deref() != Some(out.as_str()) {
         std::fs::write(&path, out).expect("contracts written");

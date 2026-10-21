@@ -220,6 +220,7 @@ impl LlmProvider for OpenAiProvider {
                     output_tokens: u.completion_tokens,
                 })
                 .unwrap_or_default(),
+            replay: None,
         })
     }
 

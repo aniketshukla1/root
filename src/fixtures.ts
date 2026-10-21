@@ -658,7 +658,7 @@ export const CONFIG: AppConfig = {
       },
     },
   })) as unknown as AppConfig["profiles"],
-  llm: { provider: "anthropic", model: "claude-opus-5", maxTokens: 4096, temperature: 0.2,
+  llm: { provider: "anthropic", model: "claude-opus-5-5", maxTokens: 4096, temperature: 0.2,
     agentMode: "read_only", hasApiKey: true },
   retention: { logCapacity: 5000 },
   ingest: { enabled: false, port: 7717 },
@@ -804,7 +804,7 @@ export function componentReading(profileId: string, sectionId: string, rowId: st
 
   return {
     text,
-    model: "claude-opus-5 (fixture)",
+    model: "claude-opus-5-5 (fixture)",
     grounds: [
       `connection: ${snapshot?.profileName ?? profileId}`,
       `component: ${name} · ${section?.label ?? sectionId}`,
@@ -1162,7 +1162,7 @@ export function saveProfile(profile: ConnectionProfile): AppConfig {
 
 export function saveLlmSettings(settings: AppConfig["llm"]): AppConfig {
   // An empty model is the provider's default, as the backend fills it.
-  const fallback = { anthropic: "claude-sonnet-4-5", open_ai_compatible: "gpt-4o", ollama: "llama3.1" };
+  const fallback = { anthropic: "claude-opus-5-5", open_ai_compatible: "gpt-4o", ollama: "llama3.1" };
   CONFIG.llm = {
     ...settings,
     model: settings.model.trim() || fallback[settings.provider],

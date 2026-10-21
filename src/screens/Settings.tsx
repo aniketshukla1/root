@@ -992,7 +992,7 @@ function AssistantSettings({
                 className="flex-1"
                 list="model-options"
                 value={draft.model}
-                placeholder="claude-opus-5"
+                placeholder="claude-opus-5-5"
                 onChange={(e) => setDraft({ ...draft, model: e.target.value })}
               />
               <Button onClick={loadModels} disabled={loadingModels}>

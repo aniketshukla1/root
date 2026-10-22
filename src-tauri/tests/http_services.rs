@@ -40,6 +40,7 @@ fn profile(kind: ServiceKind, endpoint: &str, username: Option<&str>) -> Connect
         options: ProfileOptions::default(),
         depends_on: Vec::new(),
             config_sources: Vec::new(),
+            log_sources: Vec::new(),
             history_source: None,
             snapshot_sink: None,
             simulated: false,

@@ -648,6 +648,10 @@ export const CONFIG: AppConfig = {
     id, name, kind, endpoint: `${kind}://${id}.internal`,
     hasSecret: true, enabled: true, pollIntervalSecs: 15, options: {},
     dependsOn: DEPENDS_ON[id] ?? [],
+    // The defaults the backend always sends; the editor reads them.
+    configSources: [],
+    runtime: { kind: "undeclared" },
+    logSources: id === "edge-proxy" ? [{ id: "edge-logs", path: "/var/log/nginx", include: "*.log" }] : [],
     metadata: {
       operations: {
         team,

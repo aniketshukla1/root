@@ -679,6 +679,20 @@ export interface ConfigSource {
   include?: string;
 }
 
+/** Where a declared path is read. */
+export type FileLocation = { kind: "local" };
+
+/** A place a connection writes its logs: a file or folder, or a systemd unit's journal. */
+export interface LogSource {
+  id: string;
+  label?: string;
+  /** A file or a folder; for a journal, the systemd unit. */
+  path: string;
+  include?: string;
+  journal?: boolean;
+  location?: FileLocation;
+}
+
 export type ConfigFormat = "ini" | "yaml" | "json" | "toml" | "xml" | "properties" | "text";
 
 export type RedactionReason =
@@ -1244,6 +1258,8 @@ export interface ConnectionProfile {
    * how to ask.
    */
   configSources: ConfigSource[];
+  /** Followed like `tail -f`; the lines join the log stream. */
+  logSources?: LogSource[];
   historySource?: HistorySource;
   snapshotSink?: SnapshotSink;
   runtime: Runtime;

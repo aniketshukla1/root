@@ -225,6 +225,7 @@ pub fn profiles() -> Vec<ConnectionProfile> {
                 depends_on: m.depends_on.iter().map(|k| profile_id(k)).collect(),
                 metadata,
                 config_sources: Vec::new(),
+                log_sources: Vec::new(),
                 history_source: None,
                 runtime: Default::default(),
                 snapshot_sink: None,

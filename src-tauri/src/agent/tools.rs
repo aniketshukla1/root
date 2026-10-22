@@ -78,8 +78,9 @@ pub fn catalog(mode: AgentMode) -> Vec<ToolDef> {
         ),
         tool(
             "search_logs",
-            "Search the collected log buffer across all infrastructure. Use this to find \
-             what happened around an incident.",
+            "Search the collected log buffer across all infrastructure: each service's own \
+             output, plus the log files and systemd journals connections declare. Use this \
+             to find what happened around an incident.",
             json!({
                 "type": "object",
                 "properties": {

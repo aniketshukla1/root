@@ -121,6 +121,11 @@ pub struct ConnectionProfile {
     /// no entry here — the collector already knows how to ask.
     #[serde(default)]
     pub config_sources: Vec<crate::configsource::ConfigSource>,
+    /// Where this connection writes logs root would not otherwise see: a file
+    /// on disk, a systemd unit's journal. Declared like `config_sources`, and
+    /// followed rather than read whole. See [`crate::logfiles`].
+    #[serde(default)]
+    pub log_sources: Vec<crate::logfiles::LogSource>,
     /// Where this connection's long-range history lives, when somewhere other
     /// than root's own ring buffer.
     ///

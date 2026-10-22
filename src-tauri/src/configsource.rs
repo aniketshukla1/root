@@ -51,9 +51,6 @@ use crate::redact::{self, Redaction};
 /// database file is refused rather than pulled into memory.
 pub const MAX_FILE_BYTES: u64 = 512 * 1024;
 
-/// Most files one source may yield, so a glob over a big tree is bounded.
-pub const MAX_FILES_PER_SOURCE: usize = 200;
-
 /// Bytes examined when deciding whether a file is text.
 const SNIFF_BYTES: usize = 8192;
 
@@ -240,7 +237,7 @@ pub async fn read_source(profile_id: &str, source: &ConfigSource) -> Vec<ConfigD
         )];
     }
 
-    let paths = match expand(&root, source.include.as_deref()) {
+    let paths = match crate::files::expand(&root, source.include.as_deref()) {
         Ok(paths) => paths,
         Err(e) => {
             return vec![unreadable(
@@ -266,58 +263,6 @@ pub async fn read_source(profile_id: &str, source: &ConfigSource) -> Vec<ConfigD
         out.push(read_file(profile_id, &path).await);
     }
     out
-}
-
-/// Every file a source names, bounded and rooted.
-fn expand(root: &Path, include: Option<&str>) -> Result<Vec<PathBuf>> {
-    if root.is_file() {
-        return Ok(vec![root.to_path_buf()]);
-    }
-    if !root.is_dir() {
-        return Err(AppError::Collector(
-            "no such file or directory".to_string(),
-        ));
-    }
-
-    let pattern = include.unwrap_or("*");
-    if pattern.split(['/', '\\']).any(|c| c == "..") {
-        return Err(AppError::Collector(
-            "the include pattern may not contain `..` — a source reaches into its own \
-             directory, not out of it"
-                .to_string(),
-        ));
-    }
-
-    let joined = root.join(pattern);
-    let glob = joined.to_string_lossy();
-    let matches = glob::glob(&glob)
-        .map_err(|e| AppError::Collector(format!("bad include pattern: {e}")))?;
-
-    // Resolve every hit against the real root, so a symlink inside the
-    // directory cannot quietly widen the source to somewhere else on the
-    // machine. A source is a statement about one directory.
-    let real_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-
-    let mut out = Vec::new();
-    for entry in matches.flatten() {
-        if out.len() >= MAX_FILES_PER_SOURCE {
-            break;
-        }
-        if !entry.is_file() {
-            continue;
-        }
-        let real = match entry.canonicalize() {
-            Ok(real) => real,
-            Err(_) => continue,
-        };
-        if !real.starts_with(&real_root) {
-            continue;
-        }
-        out.push(entry);
-    }
-
-    out.sort();
-    Ok(out)
 }
 
 /// Read one file, applying every refusal and then redaction.

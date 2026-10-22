@@ -2107,6 +2107,17 @@ pub async fn save_profile(
     if profile.name.trim().is_empty() {
         return Err(AppError::Config("the connection needs a name".to_string()));
     }
+    // A bad path is a form error here rather than a note on every poll.
+    let reason = |e: AppError| match e {
+        AppError::Collector(m) | AppError::Config(m) => m,
+        other => other.to_string(),
+    };
+    for source in &profile.config_sources {
+        crate::configsource::validate(source).map_err(|e| AppError::Config(format!("{}: {}", source.path, reason(e))))?;
+    }
+    for source in &profile.log_sources {
+        crate::logfiles::validate(source).map_err(|e| AppError::Config(format!("{}: {}", source.path, reason(e))))?;
+    }
     if profile.id.trim().is_empty() {
         profile.id = uuid::Uuid::new_v4().to_string();
     }

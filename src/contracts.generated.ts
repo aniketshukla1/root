@@ -265,6 +265,7 @@ export const appConfig: AppConfig = {
       "hasSecret": false,
       "id": "orders",
       "kind": "docker",
+      "logSources": [],
       "metadata": {},
       "name": "orders-api",
       "options": {},

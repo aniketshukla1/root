@@ -295,6 +295,20 @@ async fn launch(state: Arc<AppState>, profile: ConnectionProfile) {
                 }
             }
 
+            // --- Declared log files and journals
+            if !profile.log_sources.is_empty() {
+                let events = crate::logfiles::poll(&state, &profile).await;
+                if !events.is_empty() {
+                    state.logs.write().await.push_many(events.clone());
+                    if let Some(store) = state.store.read().await.as_ref().filter(|_| durable) {
+                        if let Err(e) = store.write_logs(&events).await {
+                            tracing::warn!(profile = %profile.name, "log write failed: {e}");
+                        }
+                    }
+                    emitter.emit(EVENT_LOGS, &events);
+                }
+            }
+
             tokio::time::sleep(interval).await;
         }
     });

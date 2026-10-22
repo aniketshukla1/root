@@ -523,6 +523,7 @@ mod tests {
             options: Default::default(),
             depends_on: depends_on.iter().map(|s| (*s).into()).collect(),
             config_sources: Vec::new(),
+            log_sources: Vec::new(),
             history_source: None,
             snapshot_sink: None,
             simulated: false,

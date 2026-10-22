@@ -7,7 +7,6 @@ import { applyDensity, readDensity, type Density } from "../density";
 import { applyTheme, readTheme, watchSystemTheme, type Theme } from "../theme";
 import { readSplashSound, writeSplashSound } from "../shell/splash/sound";
 import type {
-  ConfigSource,
   Runtime,
   HistorySource,
   AgentMode,
@@ -368,6 +367,7 @@ export function blankProfile(descriptor: ServiceDescriptor): ConnectionProfile {
     pollIntervalSecs: descriptor.defaultPollSecs,
     dependsOn: [],
     configSources: [],
+    logSources: [],
     runtime: { kind: "undeclared" },
     options,
     metadata: {},
@@ -669,9 +669,26 @@ export function ProfileForm({
             label="Configuration files"
             help="Absolute paths to this connection's config. Declared, not discovered — root does not go looking for files that might be config, because a tool that goes looking eventually opens something it should not have. Credentials are stripped before anything leaves this machine, and files that are entirely secret (.env, private keys) are named but never opened."
           >
-            <ConfigSources
-              sources={draft.configSources}
+            <PathSources
+              sources={draft.configSources ?? []}
               onChange={(configSources) => setDraft((d) => ({ ...d, configSources }))}
+              placeholder="/etc/nginx"
+              includePlaceholder="*.conf — leave blank for a single file"
+              empty="None declared. Many connections still report their running configuration directly — Redis, Postgres, Docker and Kubernetes all do — and that needs no setup here."
+            />
+          </Field>
+
+          <Field
+            label="Log files"
+            help="Logs this connection writes somewhere root would not otherwise look: a file on disk, or a systemd unit's journal. root follows them like tail -f, picks up after a rotation, strips credentials from every line, and adds them to the same log stream the assistant searches. Credential files are named but never opened."
+          >
+            <PathSources
+              sources={draft.logSources ?? []}
+              onChange={(logSources) => setDraft((d) => ({ ...d, logSources }))}
+              placeholder="/var/log/nginx"
+              includePlaceholder="*.log — leave blank for a single file"
+              empty="None declared. Container and pod output, Loki and OpenTelemetry arrive without setup; add a path only for logs a service writes to disk."
+              journal
             />
           </Field>
 
@@ -1868,25 +1885,51 @@ function Modal({
  * to see what it finds, and "what it finds" is the failure mode this whole
  * feature is built to avoid. Typing a path is a deliberate act.
  */
-function ConfigSources({
+/**
+ * Declared paths: a connection's configuration files, or its log files. With
+ * `journal`, a row can instead name a systemd unit whose journal is followed.
+ */
+function PathSources<T extends { id: string; path: string; include?: string; journal?: boolean }>({
   sources,
   onChange,
+  placeholder,
+  includePlaceholder,
+  empty,
+  journal = false,
 }: {
-  sources: ConfigSource[];
-  onChange: (sources: ConfigSource[]) => void;
+  sources: T[];
+  onChange: (sources: T[]) => void;
+  placeholder: string;
+  includePlaceholder: string;
+  empty: string;
+  journal?: boolean;
 }) {
-  const update = (id: string, patch: Partial<ConfigSource>) =>
+  const update = (id: string, patch: Partial<T>) =>
     onChange(sources.map((s) => (s.id === id ? { ...s, ...patch } : s)));
 
   return (
     <div className="flex flex-col gap-2">
       {sources.map((source) => (
         <div key={source.id} className="flex flex-col gap-1.5 rounded-md border border-line p-2">
+          {journal && (
+            <Segmented
+              label="Kind of source"
+              value={source.journal ? "journal" : "file"}
+              options={[
+                { value: "file", label: "Files" },
+                { value: "journal", label: "systemd journal" },
+              ]}
+              onChange={(kind) =>
+                update(source.id, { journal: kind === "journal", include: undefined } as Partial<T>)
+              }
+            />
+          )}
           <div className="flex gap-1.5">
             <Input
               value={source.path}
-              placeholder="/etc/nginx"
-              onChange={(e) => update(source.id, { path: e.target.value })}
+              placeholder={source.journal ? "nginx.service" : placeholder}
+              aria-label={source.journal ? "systemd unit" : "Path"}
+              onChange={(e) => update(source.id, { path: e.target.value } as Partial<T>)}
               className="flex-1"
             />
             <Button
@@ -1896,18 +1939,21 @@ function ConfigSources({
               Remove
             </Button>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="num w-[52px] shrink-0 text-2xs text-ink-4">include</span>
-            <Input
-              value={source.include ?? ""}
-              placeholder="*.conf — leave blank for a single file"
-              onChange={(e) =>
-                update(source.id, { include: e.target.value || undefined })
-              }
-              className="flex-1"
-            />
-          </div>
-          {!source.path.startsWith("/") && source.path.length > 0 && (
+          {!source.journal && (
+            <div className="flex items-center gap-1.5">
+              <span className="num w-[52px] shrink-0 text-2xs text-ink-4">include</span>
+              <Input
+                value={source.include ?? ""}
+                placeholder={includePlaceholder}
+                aria-label="Include pattern"
+                onChange={(e) =>
+                  update(source.id, { include: e.target.value || undefined } as Partial<T>)
+                }
+                className="flex-1"
+              />
+            </div>
+          )}
+          {!source.journal && !source.path.startsWith("/") && source.path.length > 0 && (
             <p className="num text-2xs text-warn">
               The path must be absolute — a relative one means whatever directory the app
               happens to be running in.
@@ -1922,7 +1968,7 @@ function ConfigSources({
           onClick={() =>
             onChange([
               ...sources,
-              { id: `src-${Date.now().toString(36)}`, path: "", include: undefined },
+              { id: `src-${Date.now().toString(36)}`, path: "", include: undefined } as T,
             ])
           }
         >
@@ -1931,10 +1977,7 @@ function ConfigSources({
       </div>
 
       {sources.length === 0 && (
-        <p className="num text-2xs leading-relaxed text-ink-4">
-          None declared. Many connections still report their running configuration directly —
-          Redis, Postgres, Docker and Kubernetes all do — and that needs no setup here.
-        </p>
+        <p className="num text-2xs leading-relaxed text-ink-4">{empty}</p>
       )}
     </div>
   );

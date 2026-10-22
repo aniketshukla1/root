@@ -583,6 +583,8 @@ pub struct AppState {
     pub pending_meta: RwLock<HashMap<String, PendingConfirmation>>,
     /// Poller tasks, so reconfiguring a connection can cancel the old one.
     pub pollers: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
+    /// How far each declared log file and journal has been followed.
+    pub log_tails: Mutex<crate::logfiles::Tails>,
     /// The deploy-ingest listener, so toggling it off actually closes the port.
     pub ingest: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The MCP listener, held for the same reason.
@@ -626,6 +628,7 @@ impl AppState {
             pending: Mutex::new(HashMap::new()),
             pending_meta: RwLock::new(HashMap::new()),
             pollers: Mutex::new(HashMap::new()),
+            log_tails: Mutex::new(crate::logfiles::Tails::default()),
             ingest: Mutex::new(None),
             mcp: Mutex::new(None),
             notifier: Mutex::new(crate::notify::Notifier::default()),

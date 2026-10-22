@@ -1460,7 +1460,7 @@ pub async fn get_config_documents(
 
     let mut documents = Vec::new();
     for source in &profile.config_sources {
-        documents.extend(crate::configsource::read_source(&profile.id, source).await);
+        documents.extend(crate::configsource::read_source(state, &profile.id, source).await);
     }
 
     // A target that cannot be asked, or is currently down, must not fail the
@@ -1503,7 +1503,7 @@ pub async fn get_findings(
 
         let mut documents = Vec::new();
         for source in &profile.config_sources {
-            documents.extend(crate::configsource::read_source(&profile.id, source).await);
+            documents.extend(crate::configsource::read_source(state, &profile.id, source).await);
         }
         if let Ok(collector) = state.collector(&profile.id).await {
             if let Ok(live) = collector.config().await {
@@ -1925,7 +1925,7 @@ async fn collect_config(
 
     let mut documents = Vec::new();
     for source in &sources {
-        documents.extend(crate::configsource::read_source(profile_id, source).await);
+        documents.extend(crate::configsource::read_source(state, profile_id, source).await);
     }
     if let Ok(collector) = state.collector(profile_id).await {
         if let Ok(live) = collector.config().await {

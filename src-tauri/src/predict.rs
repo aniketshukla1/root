@@ -333,7 +333,7 @@ async fn rule_findings(state: &Arc<AppState>) -> Vec<Finding> {
 
         let mut documents = Vec::new();
         for source in &profile.config_sources {
-            documents.extend(crate::configsource::read_source(&profile.id, source).await);
+            documents.extend(crate::configsource::read_source(state, &profile.id, source).await);
         }
         if let Ok(collector) = state.collector(&profile.id).await {
             if let Ok(live) = collector.config().await {

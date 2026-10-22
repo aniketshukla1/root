@@ -80,6 +80,7 @@ regex = "1"
 # rather than crawling a tree and filtering, so a glob rooted at a shallow
 # directory cannot wander into the rest of the filesystem.
 glob = "0.3"
+tar = "0.4"
 kube = { version = "4.2.0", default-features = false, features = ["client", "config", "rustls-tls"] }
 # The version feature picks which API structs are generated. Pinned rather than
 # "latest" so a crate bump cannot silently change the wire types underneath us;

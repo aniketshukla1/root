@@ -677,10 +677,17 @@ export interface ConfigSource {
   path: string;
   /** A glob applied under `path` when it is a directory. */
   include?: string;
+  /** Where the path is read; this machine when absent. */
+  location?: FileLocation;
 }
 
-/** Where a declared path is read. */
-export type FileLocation = { kind: "local" };
+/**
+ * Where a declared path is read: this machine, or inside a container on a
+ * Docker or Podman connection (through the engine's archive API, no exec).
+ */
+export type FileLocation =
+  | { kind: "local" }
+  | { kind: "container"; hostProfileId: string; container: string };
 
 /** A place a connection writes its logs: a file or folder, or a systemd unit's journal. */
 export interface LogSource {

@@ -72,17 +72,7 @@ pub struct DockerCollector {
 impl DockerCollector {
     pub fn new(profile: &ConnectionProfile) -> Result<Self> {
         let kind = profile.kind;
-        let endpoint = profile.endpoint.trim();
-        let docker = if endpoint.is_empty() || endpoint.eq_ignore_ascii_case("local") {
-            connect_local(kind)
-        } else {
-            Docker::connect_with_host(endpoint).map_err(|e| {
-                AppError::Collector(format!(
-                    "could not open the {} connection: {e}",
-                    kind.label()
-                ))
-            })
-        }?;
+        let docker = connect(profile)?;
 
         Ok(DockerCollector {
             docker,
@@ -748,6 +738,18 @@ fn local_socket_candidates(kind: ServiceKind) -> Vec<PathBuf> {
     }
 
     candidates
+}
+
+/// The engine a Docker or Podman connection names.
+pub fn connect(profile: &ConnectionProfile) -> Result<Docker> {
+    let endpoint = profile.endpoint.trim();
+    if endpoint.is_empty() || endpoint.eq_ignore_ascii_case("local") {
+        connect_local(profile.kind)
+    } else {
+        Docker::connect_with_host(endpoint).map_err(|e| {
+            AppError::Collector(format!("could not open the {} connection: {e}", profile.kind.label()))
+        })
+    }
 }
 
 fn connect_local(kind: ServiceKind) -> Result<Docker> {

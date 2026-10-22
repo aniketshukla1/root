@@ -787,7 +787,7 @@ async fn config_documents(
 
     let mut documents = Vec::new();
     for source in &sources {
-        documents.extend(crate::configsource::read_source(profile_id, source).await);
+        documents.extend(crate::configsource::read_source(state, profile_id, source).await);
     }
     if let Ok(collector) = state.collector(profile_id).await {
         if let Ok(live) = collector.config().await {

@@ -36,7 +36,7 @@
 //! Everything that does come back has been through [`crate::redact`] before
 //! any caller sees it. There is no accessor that returns the original bytes.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -68,6 +68,9 @@ pub struct ConfigSource {
     /// `conf.d/**/*.conf`. Absent means every readable file directly inside.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include: Option<String>,
+    /// Where the path is read: this machine unless it says otherwise.
+    #[serde(default)]
+    pub location: crate::files::Location,
 }
 
 /// How a document is structured, so a reader can be shown it properly and a
@@ -219,96 +222,85 @@ fn document_id(profile_id: &str, key: &str) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-/// Resolve one declared source to the documents it names.
+/// Resolve one declared source to the documents it names, wherever it lives.
 ///
 /// Never errors on a path that is merely wrong: a source pointing at something
 /// deleted last week produces one unreadable document rather than failing the
 /// whole read, because the operator needs to see which of their sources has
 /// gone stale.
-pub async fn read_source(profile_id: &str, source: &ConfigSource) -> Vec<ConfigDocument> {
-    let root = PathBuf::from(&source.path);
-    if !root.is_absolute() {
-        return vec![unreadable(
-            profile_id,
-            &source.path,
-            source.label.clone(),
+pub async fn read_source(state: &crate::state::AppState, profile_id: &str, source: &ConfigSource) -> Vec<ConfigDocument> {
+    let stale = |why: &str| vec![unreadable(profile_id, &source.path, source.label.clone(), why)];
+    if !source.location.is_absolute(&source.path) {
+        return stale(
             "path must be absolute — a relative path means whatever directory the app \
              happens to be running in",
-        )];
+        );
     }
-
-    let paths = match crate::files::expand(&root, source.include.as_deref()) {
-        Ok(paths) => paths,
-        Err(e) => {
-            return vec![unreadable(
-                profile_id,
-                &source.path,
-                source.label.clone(),
-                &e.to_string(),
-            )]
-        }
+    let reader = match crate::files::reader(state, &source.location).await {
+        Ok(reader) => reader,
+        Err(e) => return stale(&e.to_string()),
     };
-
+    let paths = match reader.list(&source.path, source.include.as_deref()).await {
+        Ok(paths) => paths,
+        Err(e) => return stale(&e.to_string()),
+    };
     if paths.is_empty() {
-        return vec![unreadable(
-            profile_id,
-            &source.path,
-            source.label.clone(),
-            "nothing matched",
-        )];
+        return stale("nothing matched");
     }
 
     let mut out = Vec::with_capacity(paths.len());
     for path in paths {
-        out.push(read_file(profile_id, &path).await);
+        out.push(read_with(reader.as_ref(), profile_id, &path).await);
     }
     out
 }
 
-/// Read one file, applying every refusal and then redaction.
+/// Read one file on this machine, applying every refusal and then redaction.
 pub async fn read_file(profile_id: &str, path: &Path) -> ConfigDocument {
-    let display = path.to_string_lossy().to_string();
-    let label = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| display.clone());
+    read_with(&crate::files::Local, profile_id, &path.to_string_lossy()).await
+}
 
-    let metadata = match tokio::fs::metadata(path).await {
-        Ok(m) => m,
+/// Read one file through a reader, applying every refusal and then redaction.
+async fn read_with(reader: &dyn crate::files::Reader, profile_id: &str, path: &str) -> ConfigDocument {
+    // Where a file came from is part of what it is: the same path in two
+    // containers is two documents.
+    let display = match reader.place() {
+        Some(place) => format!("{place}:{path}"),
+        None => path.to_string(),
+    };
+    let label = path
+        .rsplit(['/', '\\'])
+        .find(|part| !part.is_empty())
+        .unwrap_or(path)
+        .to_string();
+
+    let stat = match reader.stat(path).await {
+        Ok(stat) => stat,
         Err(e) => return unreadable(profile_id, &display, Some(label), &e.to_string()),
     };
-    let bytes = metadata.len();
-    let modified = metadata
-        .modified()
-        .ok()
-        .map(DateTime::<Utc>::from);
-
-    let base = |withheld: Option<Withheld>, body: Option<String>, redactions: Vec<Redaction>| {
-        ConfigDocument {
-            id: document_id(profile_id, &display),
-            profile_id: profile_id.to_string(),
-            label: label.clone(),
-            origin: Origin::File {
-                path: display.clone(),
-            },
-            format: ConfigFormat::of(&display),
-            bytes,
-            modified,
-            body,
-            withheld,
-            redactions,
-            read_at: Utc::now(),
-        }
+    let bytes = stat.size;
+    let base = |withheld: Option<Withheld>, body: Option<String>, redactions: Vec<Redaction>| ConfigDocument {
+        id: document_id(profile_id, &display),
+        profile_id: profile_id.to_string(),
+        label: label.clone(),
+        origin: Origin::File { path: display.clone() },
+        format: ConfigFormat::of(path),
+        bytes,
+        modified: stat.modified,
+        body,
+        withheld,
+        redactions,
+        read_at: Utc::now(),
     };
 
-    if redact::secretish_filename(&display) {
+    if redact::secretish_filename(path) {
         return base(Some(Withheld::Secret), None, Vec::new());
     }
     if bytes > MAX_FILE_BYTES {
         return base(Some(Withheld::TooLarge { bytes }), None, Vec::new());
     }
 
-    let raw = match tokio::fs::read(path).await {
+    let raw = match reader.read(path, 0, MAX_FILE_BYTES).await {
         Ok(raw) => raw,
         Err(e) => return unreadable(profile_id, &display, Some(label), &e.to_string()),
     };
@@ -353,7 +345,8 @@ pub fn validate(source: &ConfigSource) -> Result<()> {
     if source.path.trim().is_empty() {
         return Err(AppError::Collector("a path is required".to_string()));
     }
-    if !path.is_absolute() {
+    source.location.validate()?;
+    if !source.location.is_absolute(&source.path) {
         return Err(AppError::Collector(
             "the path must be absolute".to_string(),
         ));
@@ -378,6 +371,11 @@ pub fn validate(source: &ConfigSource) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn state() -> crate::state::AppState {
+        crate::state::AppState::new(crate::config::AppConfig::default(), tempdir().join("config.json"))
+    }
 
     fn tempdir() -> PathBuf {
         let dir = std::env::temp_dir().join(format!("root-cfg-{}", uuid::Uuid::new_v4()));
@@ -453,8 +451,9 @@ mod tests {
             label: None,
             path: dir.to_string_lossy().to_string(),
             include: Some("conf.d/*.conf".into()),
+            location: crate::files::Location::Local,
         };
-        let docs = read_source("p1", &source).await;
+        let docs = read_source(&state(), "p1", &source).await;
         let labels: Vec<_> = docs.iter().map(|d| d.label.as_str()).collect();
         assert_eq!(labels, vec!["a.conf", "b.conf"]);
     }
@@ -475,8 +474,9 @@ mod tests {
             label: None,
             path: dir.to_string_lossy().to_string(),
             include: Some("*.conf".into()),
+            location: crate::files::Location::Local,
         };
-        let docs = read_source("p1", &source).await;
+        let docs = read_source(&state(), "p1", &source).await;
         let labels: Vec<_> = docs.iter().map(|d| d.label.as_str()).collect();
         assert_eq!(labels, vec!["real.conf"], "the symlink escaped the root");
     }
@@ -489,8 +489,9 @@ mod tests {
             label: None,
             path: dir.to_string_lossy().to_string(),
             include: Some("*.conf".into()),
+            location: crate::files::Location::Local,
         };
-        let docs = read_source("p1", &source).await;
+        let docs = read_source(&state(), "p1", &source).await;
         assert_eq!(docs.len(), 1);
         assert!(matches!(
             docs[0].withheld,
@@ -505,8 +506,9 @@ mod tests {
             label: None,
             path: "etc/nginx".into(),
             include: None,
+            location: crate::files::Location::Local,
         };
-        let docs = read_source("p1", &source).await;
+        let docs = read_source(&state(), "p1", &source).await;
         assert!(matches!(
             docs[0].withheld,
             Some(Withheld::Unreadable { .. })
@@ -521,6 +523,7 @@ mod tests {
             label: None,
             path: "/etc/nginx".into(),
             include: Some("../../*.conf".into()),
+            location: crate::files::Location::Local,
         };
         assert!(validate(&source).is_err());
     }

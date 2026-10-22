@@ -12,6 +12,7 @@ import type {
   AgentMode,
   AppConfig,
   ConnectionProfile,
+  FileLocation,
   Criticality,
   Environment,
   FieldSpec,
@@ -675,6 +676,7 @@ export function ProfileForm({
               placeholder="/etc/nginx"
               includePlaceholder="*.conf — leave blank for a single file"
               empty="None declared. Many connections still report their running configuration directly — Redis, Postgres, Docker and Kubernetes all do — and that needs no setup here."
+              hosts={siblings}
             />
           </Field>
 
@@ -688,6 +690,7 @@ export function ProfileForm({
               placeholder="/var/log/nginx"
               includePlaceholder="*.log — leave blank for a single file"
               empty="None declared. Container and pod output, Loki and OpenTelemetry arrive without setup; add a path only for logs a service writes to disk."
+              hosts={siblings}
               journal
             />
           </Field>
@@ -1889,12 +1892,15 @@ function Modal({
  * Declared paths: a connection's configuration files, or its log files. With
  * `journal`, a row can instead name a systemd unit whose journal is followed.
  */
-function PathSources<T extends { id: string; path: string; include?: string; journal?: boolean }>({
+function PathSources<
+  T extends { id: string; path: string; include?: string; journal?: boolean; location?: FileLocation },
+>({
   sources,
   onChange,
   placeholder,
   includePlaceholder,
   empty,
+  hosts,
   journal = false,
 }: {
   sources: T[];
@@ -1902,10 +1908,18 @@ function PathSources<T extends { id: string; path: string; include?: string; jou
   placeholder: string;
   includePlaceholder: string;
   empty: string;
+  /** Connections a path can be read through: a container's engine. */
+  hosts: ConnectionProfile[];
   journal?: boolean;
 }) {
   const update = (id: string, patch: Partial<T>) =>
     onChange(sources.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  const engines = hosts.filter((h) => h.kind === "docker" || h.kind === "podman");
+  const placeFor = (value: string, current?: FileLocation): FileLocation => {
+    if (value === "local") return { kind: "local" };
+    const [, hostProfileId] = value.split(":");
+    return { kind: "container", hostProfileId, container: current?.kind === "container" ? current.container : "" };
+  };
 
   return (
     <div className="flex flex-col gap-2">
@@ -1920,7 +1934,12 @@ function PathSources<T extends { id: string; path: string; include?: string; jou
                 { value: "journal", label: "systemd journal" },
               ]}
               onChange={(kind) =>
-                update(source.id, { journal: kind === "journal", include: undefined } as Partial<T>)
+                update(source.id, {
+                  journal: kind === "journal",
+                  include: undefined,
+                  // A container has no journal of its own.
+                  ...(kind === "journal" ? { location: { kind: "local" } } : {}),
+                } as Partial<T>)
               }
             />
           )}
@@ -1939,6 +1958,44 @@ function PathSources<T extends { id: string; path: string; include?: string; jou
               Remove
             </Button>
           </div>
+          {engines.length > 0 && !source.journal && (
+            <div className="flex items-center gap-1.5">
+              <span className="num w-[52px] shrink-0 text-2xs text-ink-4">where</span>
+              <Select
+                aria-label="Where this path is read"
+                className="min-w-0 flex-1"
+                value={
+                  source.location?.kind === "container" ? `container:${source.location.hostProfileId}` : "local"
+                }
+                onChange={(e) =>
+                  update(source.id, { location: placeFor(e.target.value, source.location) } as Partial<T>)
+                }
+              >
+                <option value="local">This machine</option>
+                {engines.map((host) => (
+                  <option key={host.id} value={`container:${host.id}`}>
+                    Container on {host.name || host.id}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          {!source.journal && source.location?.kind === "container" && (
+            <div className="flex items-center gap-1.5">
+              <span className="num w-[52px] shrink-0 text-2xs text-ink-4">container</span>
+              <Input
+                aria-label="Container"
+                placeholder="name or id, as docker ps shows it"
+                className="flex-1"
+                value={source.location.container}
+                onChange={(e) =>
+                  update(source.id, {
+                    location: { ...source.location, container: e.target.value } as FileLocation,
+                  } as Partial<T>)
+                }
+              />
+            </div>
+          )}
           {!source.journal && (
             <div className="flex items-center gap-1.5">
               <span className="num w-[52px] shrink-0 text-2xs text-ink-4">include</span>

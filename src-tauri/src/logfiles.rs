@@ -64,7 +64,13 @@ pub struct LogSource {
 /// Reject a source before it is stored, so a bad one is a form error rather
 /// than a note on every poll.
 pub fn validate(source: &LogSource) -> Result<()> {
+    source.location.validate()?;
     if source.journal {
+        if matches!(source.location, Location::Container { .. }) {
+            return Err(AppError::Config(
+                "a container has no systemd journal; its output already reaches root as the container's logs".into(),
+            ));
+        }
         let unit = source.path.trim();
         let allowed = |c: char| c.is_ascii_alphanumeric() || "@._:-\\".contains(c);
         if unit.is_empty() || unit.starts_with('-') || unit.len() > 256 || !unit.chars().all(allowed) {
@@ -77,6 +83,7 @@ pub fn validate(source: &LogSource) -> Result<()> {
         label: None,
         path: source.path.clone(),
         include: source.include.clone(),
+        location: source.location.clone(),
     })
 }
 
@@ -224,6 +231,9 @@ fn journal_entry(line: &str) -> Option<(LogLevel, String, DateTime<Utc>, String)
 /// New journal entries for a unit, and where to resume.
 async fn journal(location: &Location, unit: &str, cursor: Option<&str>) -> Result<(Vec<(LogLevel, String, DateTime<Utc>)>, Option<String>)> {
     let output = match location {
+        Location::Container { .. } => {
+            return Err(AppError::Collector("a container has no systemd journal".into()))
+        }
         Location::Local => {
             let run = tokio::process::Command::new("journalctl")
                 .args(journal_args(unit, cursor))

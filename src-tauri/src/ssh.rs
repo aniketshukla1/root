@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use russh::keys::{HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{client, ChannelMsg};
 
@@ -267,15 +267,8 @@ impl Reader for SshFiles {
         let command = format!("LC_ALL=C stat -c '%s %i %Y' -- {path} 2>/dev/null || LC_ALL=C stat -f '%z %i %m' -- {path}");
         let output = self.session.run(&command, 256).await?;
         let text = String::from_utf8_lossy(&output);
-        let mut parts = text.split_whitespace();
-        let (Some(size), Some(inode), Some(mtime)) = (parts.next(), parts.next(), parts.next()) else {
-            return Err(AppError::Collector(format!("{path} on {}: unexpected stat output `{}`", self.place, text.trim())));
-        };
-        Ok(FileStat {
-            size: size.parse().unwrap_or(0),
-            identity: inode.to_string(),
-            modified: mtime.parse::<i64>().ok().and_then(|t| Utc.timestamp_opt(t, 0).single()),
-        })
+        crate::files::parse_stat(&text)
+            .ok_or_else(|| AppError::Collector(format!("{path} on {}: unexpected stat output `{}`", self.place, text.trim())))
     }
 
     async fn read(&self, path: &str, offset: u64, max: u64) -> Result<Vec<u8>> {

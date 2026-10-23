@@ -66,7 +66,7 @@ pub struct LogSource {
 pub fn validate(source: &LogSource) -> Result<()> {
     source.location.validate()?;
     if source.journal {
-        if matches!(source.location, Location::Container { .. }) {
+        if matches!(source.location, Location::Container { .. } | Location::Pod { .. }) {
             return Err(AppError::Config(
                 "a container has no systemd journal; its output already reaches root as the container's logs".into(),
             ));
@@ -236,7 +236,7 @@ async fn journal(
     cursor: Option<&str>,
 ) -> Result<(Vec<(LogLevel, String, DateTime<Utc>)>, Option<String>)> {
     let output = match location {
-        Location::Container { .. } => {
+        Location::Container { .. } | Location::Pod { .. } => {
             return Err(AppError::Collector("a container has no systemd journal".into()))
         }
         Location::Ssh { server_profile_id } => {

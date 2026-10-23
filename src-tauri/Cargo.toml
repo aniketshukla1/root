@@ -83,7 +83,8 @@ glob = "0.3"
 tar = "0.4"
 # SSH for reading a server's files. ring, as rustls uses, rather than aws-lc-rs and its C toolchain.
 russh = { version = "0.64", default-features = false, features = ["ring", "rsa", "flate2"] }
-kube = { version = "4.2.0", default-features = false, features = ["client", "config", "rustls-tls"] }
+# ws: pod exec, for reading files inside a pod.
+kube = { version = "4.2.0", default-features = false, features = ["client", "config", "rustls-tls", "ws"] }
 # The version feature picks which API structs are generated. Pinned rather than
 # "latest" so a crate bump cannot silently change the wire types underneath us;
 # core/v1 and apps/v1 are stable enough that v1_33 talks to older and newer

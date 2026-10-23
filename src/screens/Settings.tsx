@@ -1929,15 +1929,22 @@ function PathSources<
     onChange(sources.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   const engines = hosts.filter((h) => h.kind === "docker" || h.kind === "podman");
   const servers = hosts.filter((h) => h.kind === "ssh");
+  const clusters = hosts.filter((h) => h.kind === "kubernetes");
   const placeValue = (location?: FileLocation) =>
     location?.kind === "container"
       ? `container:${location.hostProfileId}`
       : location?.kind === "ssh"
         ? `ssh:${location.serverProfileId}`
-        : "local";
+        : location?.kind === "pod"
+          ? `pod:${location.clusterProfileId}`
+          : "local";
   const placeFor = (value: string, current?: FileLocation): FileLocation => {
     const [kind, id] = value.split(":");
     if (kind === "ssh") return { kind: "ssh", serverProfileId: id };
+    if (kind === "pod")
+      return current?.kind === "pod"
+        ? { ...current, clusterProfileId: id }
+        : { kind: "pod", clusterProfileId: id, namespace: "default", pod: "" };
     if (kind === "container")
       return { kind: "container", hostProfileId: id, container: current?.kind === "container" ? current.container : "" };
     return { kind: "local" };
@@ -1960,7 +1967,9 @@ function PathSources<
                   journal: kind === "journal",
                   include: undefined,
                   // A container has no journal of its own.
-                  ...(kind === "journal" && source.location?.kind === "container" ? { location: { kind: "local" } } : {}),
+                  ...(kind === "journal" && (source.location?.kind === "container" || source.location?.kind === "pod")
+                    ? { location: { kind: "local" } }
+                    : {}),
                 } as Partial<T>)
               }
             />
@@ -1980,7 +1989,7 @@ function PathSources<
               Remove
             </Button>
           </div>
-          {(servers.length > 0 || (engines.length > 0 && !source.journal)) && (
+          {(servers.length > 0 || ((engines.length > 0 || clusters.length > 0) && !source.journal)) && (
             <div className="flex items-center gap-1.5">
               <span className="num w-[52px] shrink-0 text-2xs text-ink-4">where</span>
               <Select
@@ -2003,8 +2012,42 @@ function PathSources<
                     {server.name || server.id} over SSH
                   </option>
                 ))}
+                {!source.journal &&
+                  clusters.map((cluster) => (
+                    <option key={cluster.id} value={`pod:${cluster.id}`}>
+                      Pod on {cluster.name || cluster.id}
+                    </option>
+                  ))}
               </Select>
             </div>
+          )}
+          {!source.journal && source.location?.kind === "pod" && (
+            <>
+              {(["namespace", "pod", "container"] as const).map((field) => {
+                const location = source.location as Extract<FileLocation, { kind: "pod" }>;
+                return (
+                  <div key={field} className="flex items-center gap-1.5">
+                    <span className="num w-[52px] shrink-0 text-2xs text-ink-4">{field}</span>
+                    <Input
+                      aria-label={field === "pod" ? "Pod" : field === "namespace" ? "Namespace" : "Container in the pod"}
+                      placeholder={
+                        field === "pod" ? "pod name, as kubectl get pods shows it" : field === "namespace" ? "default" : "only if the pod has several"
+                      }
+                      className="flex-1"
+                      value={location[field] ?? ""}
+                      onChange={(e) =>
+                        update(source.id, {
+                          location: { ...location, [field]: e.target.value || (field === "container" ? undefined : "") },
+                        } as Partial<T>)
+                      }
+                    />
+                  </div>
+                );
+              })}
+              <p className="num text-2xs leading-relaxed text-ink-4">
+                Read with find, stat and tail through pod exec, which needs the pods/exec permission.
+              </p>
+            </>
           )}
           {!source.journal && source.location?.kind === "container" && (
             <div className="flex items-center gap-1.5">

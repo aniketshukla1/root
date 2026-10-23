@@ -684,12 +684,14 @@ export interface ConfigSource {
 /**
  * Where a declared path is read: this machine; inside a container on a Docker
  * or Podman connection (the engine's archive API, no exec); or on a server
- * over an SSH server connection (fixed read-only commands).
+ * over an SSH server connection (fixed read-only commands); or inside a pod
+ * on a Kubernetes connection (find/stat/tail through pod exec).
  */
 export type FileLocation =
   | { kind: "local" }
   | { kind: "container"; hostProfileId: string; container: string }
-  | { kind: "ssh"; serverProfileId: string };
+  | { kind: "ssh"; serverProfileId: string }
+  | { kind: "pod"; clusterProfileId: string; namespace: string; pod: string; container?: string };
 
 /** A place a connection writes its logs: a file or folder, or a systemd unit's journal. */
 export interface LogSource {

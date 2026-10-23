@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
@@ -40,6 +40,17 @@ pub enum Location {
     /// On a server, over an SSH server connection: fixed read-only commands
     /// with every path quoted. See [`crate::ssh`].
     Ssh { server_profile_id: String },
+    /// Inside a pod on a Kubernetes connection: `find`, `stat` and `tail`
+    /// through the API's exec, as argv and never through a shell. Needs the
+    /// `pods/exec` permission.
+    Pod {
+        cluster_profile_id: String,
+        namespace: String,
+        pod: String,
+        /// The container, when the pod has more than one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        container: Option<String>,
+    },
 }
 
 impl Location {
@@ -47,7 +58,7 @@ impl Location {
     pub fn is_absolute(&self, path: &str) -> bool {
         match self {
             Location::Local => Path::new(path).is_absolute(),
-            Location::Container { .. } | Location::Ssh { .. } => path.starts_with('/'),
+            Location::Container { .. } | Location::Ssh { .. } | Location::Pod { .. } => path.starts_with('/'),
         }
     }
 
@@ -71,6 +82,27 @@ impl Location {
                 Err(AppError::Config("choose the SSH server connection to read through".into()))
             }
             Location::Ssh { .. } => Ok(()),
+            Location::Pod { cluster_profile_id, namespace, pod, container } => {
+                // Kubernetes names: lowercase letters, digits and dashes; a pod's may hold dots.
+                let named = |name: &str, max: usize, dots: bool| {
+                    !name.is_empty()
+                        && name.len() <= max
+                        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || (dots && c == '.'))
+                };
+                if cluster_profile_id.trim().is_empty() {
+                    return Err(AppError::Config("choose the Kubernetes connection the pod runs on".into()));
+                }
+                if !named(namespace, 63, false) {
+                    return Err(AppError::Config(format!("`{namespace}` is not a namespace")));
+                }
+                if !named(pod, 253, true) {
+                    return Err(AppError::Config(format!("`{pod}` is not a pod name")));
+                }
+                match container.as_deref().filter(|c| !c.is_empty()) {
+                    Some(c) if !named(c, 63, false) => Err(AppError::Config(format!("`{c}` is not a container name"))),
+                    _ => Ok(()),
+                }
+            }
         }
     }
 }
@@ -129,6 +161,113 @@ pub async fn reader(state: &crate::state::AppState, location: &Location) -> Resu
             let (session, place) = crate::ssh::session_for(state, server_profile_id).await?;
             Ok(Box::new(crate::ssh::SshFiles { session, place }))
         }
+        Location::Pod { cluster_profile_id, namespace, pod, container } => {
+            let cluster = state
+                .config
+                .read()
+                .await
+                .profiles
+                .iter()
+                .find(|p| &p.id == cluster_profile_id)
+                .cloned()
+                .ok_or_else(|| AppError::Config("the pod's Kubernetes connection no longer exists".into()))?;
+            if cluster.kind != ServiceKind::Kubernetes {
+                return Err(AppError::Config(format!("{} is not a Kubernetes connection", cluster.name)));
+            }
+            let client = crate::collectors::kubernetes::client(&cluster).await?;
+            Ok(Box::new(PodFiles {
+                pods: kube::Api::namespaced(client, namespace),
+                pod: pod.clone(),
+                container: container.clone().filter(|c| !c.is_empty()),
+                place: format!("pod {namespace}/{pod} on {}", cluster.name),
+            }))
+        }
+    }
+}
+
+/// `size inode mtime`, as `stat -c '%s %i %Y'` (or BSD `stat -f '%z %i %m'`) prints it.
+pub(crate) fn parse_stat(text: &str) -> Option<FileStat> {
+    let mut parts = text.split_whitespace();
+    let size = parts.next()?.parse().ok()?;
+    let identity = parts.next()?.to_string();
+    let modified = parts.next().and_then(|t| t.parse::<i64>().ok()).and_then(|t| Utc.timestamp_opt(t, 0).single());
+    Some(FileStat { size, identity, modified })
+}
+
+/// Files inside one pod's container, read with fixed commands through exec.
+pub struct PodFiles {
+    pods: kube::Api<k8s_openapi::api::core::v1::Pod>,
+    pod: String,
+    container: Option<String>,
+    place: String,
+}
+
+impl PodFiles {
+    /// Run one command, as argv, and return at most `cap` bytes of its output.
+    async fn run(&self, argv: Vec<String>, cap: usize) -> Result<Vec<u8>> {
+        let fail = |e: String| AppError::Collector(format!("{} in {}: {e}", argv[0], self.place));
+        let mut params = kube::api::AttachParams::default();
+        if let Some(container) = &self.container {
+            params = params.container(container.clone());
+        }
+        let work = async {
+            let mut process = self.pods.exec(&self.pod, argv.clone(), &params).await.map_err(|e| fail(e.to_string()))?;
+            let mut stdout = process.stdout().ok_or_else(|| fail("no output stream".into()))?;
+            let mut out = Vec::new();
+            (&mut stdout).take(cap as u64).read_to_end(&mut out).await.map_err(|e| fail(e.to_string()))?;
+            if out.len() >= cap {
+                // Enough: dropping the process closes the stream and ends the command.
+                return Ok(out);
+            }
+            let mut said = Vec::new();
+            if let Some(mut stderr) = process.stderr() {
+                let _ = (&mut stderr).take(2048).read_to_end(&mut said).await;
+            }
+            let status = match process.take_status() {
+                Some(status) => status.await,
+                None => None,
+            };
+            match status {
+                Some(s) if s.status.as_deref() == Some("Failure") => {
+                    let said = String::from_utf8_lossy(&said).trim().to_string();
+                    Err(fail(if said.is_empty() { s.message.unwrap_or_else(|| "failed".into()) } else { said }))
+                }
+                _ => Ok(out),
+            }
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(30), work)
+            .await
+            .map_err(|_| fail("no answer within 30 s".into()))?
+    }
+}
+
+#[async_trait]
+impl Reader for PodFiles {
+    async fn list(&self, path: &str, include: Option<&str>) -> Result<Vec<String>> {
+        let path = path.trim_end_matches('/');
+        // `-type f` leaves links out, so a pattern cannot reach past its folder.
+        let argv = ["find", path, "-maxdepth", "4", "-type", "f"].map(String::from).to_vec();
+        let output = self.run(argv, 1024 * 1024).await?;
+        let found: Vec<String> = String::from_utf8_lossy(&output).lines().map(str::to_string).collect();
+        if found.len() == 1 && found[0] == path {
+            return Ok(found);
+        }
+        select_paths(path, include, found)
+    }
+
+    async fn stat(&self, path: &str) -> Result<FileStat> {
+        let output = self.run(["stat", "-c", "%s %i %Y", "--", path].map(String::from).to_vec(), 256).await?;
+        let text = String::from_utf8_lossy(&output);
+        parse_stat(&text).ok_or_else(|| AppError::Collector(format!("{path} in {}: unexpected stat output `{}`", self.place, text.trim())))
+    }
+
+    async fn read(&self, path: &str, offset: u64, max: u64) -> Result<Vec<u8>> {
+        let argv = vec!["tail".to_string(), "-c".to_string(), format!("+{}", offset + 1), "--".to_string(), path.to_string()];
+        self.run(argv, max as usize).await
+    }
+
+    fn place(&self) -> Option<String> {
+        Some(self.place.clone())
     }
 }
 
@@ -455,6 +594,30 @@ mod tests {
         assert_eq!(direct, vec!["/etc/nginx/nginx.conf"], "no pattern: what is directly inside");
         let deep: Vec<String> = select("/etc/nginx", Some("**/*.conf"), files()).unwrap().into_iter().map(|(p, _)| p).collect();
         assert_eq!(deep, vec!["/etc/nginx/conf.d/default.conf", "/etc/nginx/nginx.conf"]);
+    }
+
+    #[test]
+    fn a_pod_location_holds_kubernetes_names_only() {
+        let pod = |namespace: &str, pod: &str, container: Option<&str>| Location::Pod {
+            cluster_profile_id: "k8s".into(),
+            namespace: namespace.into(),
+            pod: pod.into(),
+            container: container.map(str::to_string),
+        };
+        assert!(pod("shop", "web-7c9f.abc", Some("nginx")).validate().is_ok());
+        assert!(pod("shop", "web-7c9f", None).validate().is_ok());
+        assert!(pod("Shop", "web", None).validate().is_err(), "names are lowercase");
+        assert!(pod("shop", "web; cat /etc/shadow", None).validate().is_err());
+        assert!(pod("shop", "web", Some("side car")).validate().is_err());
+        assert!(pod("shop", "web", None).is_absolute("/etc/nginx/nginx.conf"));
+    }
+
+    #[test]
+    fn stat_output_reads_as_size_inode_and_time() {
+        let stat = parse_stat("23 812734 1789000000\n").unwrap();
+        assert_eq!((stat.size, stat.identity.as_str()), (23, "812734"));
+        assert_eq!(stat.modified.unwrap().timestamp(), 1_789_000_000);
+        assert!(parse_stat("stat: cannot stat 'x'").is_none());
     }
 
     #[test]

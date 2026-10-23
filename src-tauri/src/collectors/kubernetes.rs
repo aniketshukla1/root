@@ -45,6 +45,12 @@ pub struct KubernetesCollector {
     profile_name: String,
 }
 
+/// The API client a Kubernetes connection names.
+pub async fn client(profile: &ConnectionProfile) -> Result<Client> {
+    let config = KubernetesCollector::load_config(profile, profile.endpoint.trim()).await?;
+    Client::try_from(config).map_err(|e| AppError::Config(format!("could not build a Kubernetes client: {e}")))
+}
+
 impl KubernetesCollector {
     pub async fn new(profile: &ConnectionProfile) -> Result<Self> {
         let context = profile.endpoint.trim().to_string();

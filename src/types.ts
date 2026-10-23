@@ -23,7 +23,7 @@ export type MetricUnit =
 
 // ------------------------------------------------------------------ registry
 
-export type FieldKind = "text" | "password" | "number" | "boolean" | "select" | "url";
+export type FieldKind = "text" | "password" | "number" | "boolean" | "select" | "url" | "secret_text";
 
 export interface SelectOption {
   value: string;
@@ -682,12 +682,14 @@ export interface ConfigSource {
 }
 
 /**
- * Where a declared path is read: this machine, or inside a container on a
- * Docker or Podman connection (through the engine's archive API, no exec).
+ * Where a declared path is read: this machine; inside a container on a Docker
+ * or Podman connection (the engine's archive API, no exec); or on a server
+ * over an SSH server connection (fixed read-only commands).
  */
 export type FileLocation =
   | { kind: "local" }
-  | { kind: "container"; hostProfileId: string; container: string };
+  | { kind: "container"; hostProfileId: string; container: string }
+  | { kind: "ssh"; serverProfileId: string };
 
 /** A place a connection writes its logs: a file or folder, or a systemd unit's journal. */
 export interface LogSource {

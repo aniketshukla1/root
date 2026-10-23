@@ -45,6 +45,8 @@ pub enum ServiceKind {
     Gigapipe,
     /// Not asked but told: an OTLP/HTTP receiver.
     Otlp,
+    /// A server whose files root reads over SSH, by the operator's choice.
+    Ssh,
 }
 
 impl ServiceKind {
@@ -81,6 +83,7 @@ impl ServiceKind {
         ServiceKind::Aws,
         ServiceKind::Gigapipe,
         ServiceKind::Otlp,
+        ServiceKind::Ssh,
     ];
 
     pub fn label(self) -> &'static str {
@@ -88,6 +91,7 @@ impl ServiceKind {
             ServiceKind::Aws => "AWS",
             ServiceKind::Gigapipe => "Gigapipe",
             ServiceKind::Otlp => "OpenTelemetry",
+            ServiceKind::Ssh => "SSH server",
             ServiceKind::Docker => "Docker",
             ServiceKind::Podman => "Podman",
             ServiceKind::LinuxHost => "Linux host",

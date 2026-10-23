@@ -598,13 +598,26 @@ export function ProfileForm({
                   : descriptor.credential.help
               }
             >
-              <Input
-                type="password"
-                className="w-full"
-                value={secret}
-                placeholder={draft.hasSecret ? "••••••••  (unchanged)" : descriptor.credential.placeholder}
-                onChange={(e) => setSecret(e.target.value)}
-              />
+              {descriptor.credential.kind === "secret_text" ? (
+                // A private key is several lines; a password box would join them.
+                <textarea
+                  className="num min-h-[96px] w-full rounded-md border border-line bg-page px-2.5 py-2 text-2xs text-ink focus:border-line-strong focus:outline-none"
+                  aria-label={descriptor.credential.label}
+                  value={secret}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder={draft.hasSecret ? "Stored in the keychain (unchanged)" : descriptor.credential.placeholder}
+                  onChange={(e) => setSecret(e.target.value)}
+                />
+              ) : (
+                <Input
+                  type="password"
+                  className="w-full"
+                  value={secret}
+                  placeholder={draft.hasSecret ? "••••••••  (unchanged)" : descriptor.credential.placeholder}
+                  onChange={(e) => setSecret(e.target.value)}
+                />
+              )}
             </Field>
           )}
 
@@ -1915,10 +1928,19 @@ function PathSources<
   const update = (id: string, patch: Partial<T>) =>
     onChange(sources.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   const engines = hosts.filter((h) => h.kind === "docker" || h.kind === "podman");
+  const servers = hosts.filter((h) => h.kind === "ssh");
+  const placeValue = (location?: FileLocation) =>
+    location?.kind === "container"
+      ? `container:${location.hostProfileId}`
+      : location?.kind === "ssh"
+        ? `ssh:${location.serverProfileId}`
+        : "local";
   const placeFor = (value: string, current?: FileLocation): FileLocation => {
-    if (value === "local") return { kind: "local" };
-    const [, hostProfileId] = value.split(":");
-    return { kind: "container", hostProfileId, container: current?.kind === "container" ? current.container : "" };
+    const [kind, id] = value.split(":");
+    if (kind === "ssh") return { kind: "ssh", serverProfileId: id };
+    if (kind === "container")
+      return { kind: "container", hostProfileId: id, container: current?.kind === "container" ? current.container : "" };
+    return { kind: "local" };
   };
 
   return (
@@ -1938,7 +1960,7 @@ function PathSources<
                   journal: kind === "journal",
                   include: undefined,
                   // A container has no journal of its own.
-                  ...(kind === "journal" ? { location: { kind: "local" } } : {}),
+                  ...(kind === "journal" && source.location?.kind === "container" ? { location: { kind: "local" } } : {}),
                 } as Partial<T>)
               }
             />
@@ -1958,23 +1980,27 @@ function PathSources<
               Remove
             </Button>
           </div>
-          {engines.length > 0 && !source.journal && (
+          {(servers.length > 0 || (engines.length > 0 && !source.journal)) && (
             <div className="flex items-center gap-1.5">
               <span className="num w-[52px] shrink-0 text-2xs text-ink-4">where</span>
               <Select
                 aria-label="Where this path is read"
                 className="min-w-0 flex-1"
-                value={
-                  source.location?.kind === "container" ? `container:${source.location.hostProfileId}` : "local"
-                }
+                value={placeValue(source.location)}
                 onChange={(e) =>
                   update(source.id, { location: placeFor(e.target.value, source.location) } as Partial<T>)
                 }
               >
                 <option value="local">This machine</option>
-                {engines.map((host) => (
-                  <option key={host.id} value={`container:${host.id}`}>
-                    Container on {host.name || host.id}
+                {!source.journal &&
+                  engines.map((host) => (
+                    <option key={host.id} value={`container:${host.id}`}>
+                      Container on {host.name || host.id}
+                    </option>
+                  ))}
+                {servers.map((server) => (
+                  <option key={server.id} value={`ssh:${server.id}`}>
+                    {server.name || server.id} over SSH
                   </option>
                 ))}
               </Select>

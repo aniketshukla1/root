@@ -229,10 +229,20 @@ fn journal_entry(line: &str) -> Option<(LogLevel, String, DateTime<Utc>, String)
 }
 
 /// New journal entries for a unit, and where to resume.
-async fn journal(location: &Location, unit: &str, cursor: Option<&str>) -> Result<(Vec<(LogLevel, String, DateTime<Utc>)>, Option<String>)> {
+async fn journal(
+    state: &crate::state::AppState,
+    location: &Location,
+    unit: &str,
+    cursor: Option<&str>,
+) -> Result<(Vec<(LogLevel, String, DateTime<Utc>)>, Option<String>)> {
     let output = match location {
         Location::Container { .. } => {
             return Err(AppError::Collector("a container has no systemd journal".into()))
+        }
+        Location::Ssh { server_profile_id } => {
+            let (session, _) = crate::ssh::session_for(state, server_profile_id).await?;
+            let args: Vec<String> = journal_args(unit, cursor).iter().map(|a| crate::ssh::quote(a)).collect();
+            session.run(&format!("journalctl {}", args.join(" ")), 16 * 1024 * 1024).await?
         }
         Location::Local => {
             let run = tokio::process::Command::new("journalctl")
@@ -299,7 +309,7 @@ pub async fn poll(state: &crate::state::AppState, profile: &ConnectionProfile) -
         let outcome: Result<()> = async {
             if source.journal {
                 let mut tail = state.log_tails.lock().await.entries.remove(&source_key).unwrap_or_default();
-                let result = journal(&source.location, source.path.trim(), tail.cursor.as_deref()).await;
+                let result = journal(state, &source.location, source.path.trim(), tail.cursor.as_deref()).await;
                 if let Ok((entries, cursor)) = &result {
                     lines.extend(entries.iter().cloned());
                     tail.cursor = cursor.clone();

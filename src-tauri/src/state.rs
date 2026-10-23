@@ -606,6 +606,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(config: AppConfig, config_path: PathBuf) -> Self {
         let capacity = config.retention.log_capacity;
+        crate::ssh::keep_known_hosts_beside(&config_path);
         let incident_log = crate::incident_log::IncidentLog::load(&crate::incident_log::log_path(&config_path));
         AppState {
             config: RwLock::new(config),

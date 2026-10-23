@@ -210,7 +210,7 @@ const KIND_LABELS: Record<string, string> = {
   otlp: "OpenTelemetry",
 };
 
-export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
+export const DESCRIPTORS: ServiceDescriptor[] = [...METRIC_KINDS.map((kind, i): ServiceDescriptor => ({
   kind,
   label:
     KIND_LABELS[kind] ??
@@ -235,7 +235,23 @@ export const DESCRIPTORS: ServiceDescriptor[] = METRIC_KINDS.map((kind, i) => ({
   fields: [],
   defaultPollSecs: kind === "this_machine" ? 5 : 15,
   capabilities: { logs: true, actions: [], diagnostics: [] },
-}));
+})),
+  // As the registry describes it: the one kind whose credential is a private key.
+  {
+    kind: "ssh",
+    label: "SSH server",
+    monogram: "SH",
+    accent: METRIC_KINDS.length,
+    category: "Hosts",
+    blurb: "Read a server's config and log files over SSH, by your choice: root holds one key for it and runs only fixed read-only commands.",
+    endpoint: { key: "endpoint", label: "Host", kind: "text", required: true, advanced: false, placeholder: "web-1.internal, or web-1.internal:2222" },
+    username: { key: "__username", label: "Username", kind: "text", required: true, advanced: false, placeholder: "root-reader" },
+    credential: { key: "__secret", label: "Private key", kind: "secret_text", required: true, advanced: false, placeholder: "-----BEGIN OPENSSH PRIVATE KEY-----" },
+    fields: [],
+    defaultPollSecs: 60,
+    capabilities: { logs: false, actions: [], diagnostics: [] },
+  },
+];
 
 type Spec = [id: string, name: string, kind: string, health: HealthSnapshot["health"],
   summary: string, team: string, parts: number];

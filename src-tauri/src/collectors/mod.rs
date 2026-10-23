@@ -292,6 +292,7 @@ pub async fn build_collector(
         ServiceKind::LinuxHost => Arc::new(linux_host::LinuxHostCollector::new(profile, secret)?),
         ServiceKind::ThisMachine => Arc::new(this_machine::ThisMachineCollector::new(profile)?),
         ServiceKind::Otlp => Arc::new(otlp::OtlpCollector::new(profile, secret)?),
+        ServiceKind::Ssh => Arc::new(crate::ssh::SshCollector::new(profile, secret)?),
         ServiceKind::Nfs => Arc::new(nfs::NfsCollector::new(profile, secret)?),
         ServiceKind::Jenkins => Arc::new(jenkins::JenkinsCollector::new(profile, secret)?),
         ServiceKind::Elasticsearch => {

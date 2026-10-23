@@ -37,6 +37,9 @@ pub enum Location {
     /// engine's archive API: a stat and a tar of the path. No exec, no shell,
     /// nothing run inside the container.
     Container { host_profile_id: String, container: String },
+    /// On a server, over an SSH server connection: fixed read-only commands
+    /// with every path quoted. See [`crate::ssh`].
+    Ssh { server_profile_id: String },
 }
 
 impl Location {
@@ -44,7 +47,7 @@ impl Location {
     pub fn is_absolute(&self, path: &str) -> bool {
         match self {
             Location::Local => Path::new(path).is_absolute(),
-            Location::Container { .. } => path.starts_with('/'),
+            Location::Container { .. } | Location::Ssh { .. } => path.starts_with('/'),
         }
     }
 
@@ -64,6 +67,10 @@ impl Location {
                 }
                 Ok(())
             }
+            Location::Ssh { server_profile_id } if server_profile_id.trim().is_empty() => {
+                Err(AppError::Config("choose the SSH server connection to read through".into()))
+            }
+            Location::Ssh { .. } => Ok(()),
         }
     }
 }
@@ -117,6 +124,10 @@ pub async fn reader(state: &crate::state::AppState, location: &Location) -> Resu
                 place: format!("container {} on {}", container.trim(), host.name),
                 fetched: std::sync::Mutex::new(HashMap::new()),
             }))
+        }
+        Location::Ssh { server_profile_id } => {
+            let (session, place) = crate::ssh::session_for(state, server_profile_id).await?;
+            Ok(Box::new(crate::ssh::SshFiles { session, place }))
         }
     }
 }
@@ -270,18 +281,29 @@ fn unpack(root: &str, archive: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     Ok(out)
 }
 
-/// The files under `root` that `include` matches, as a listing does locally:
-/// every file directly inside when there is no pattern.
-fn select(root: &str, include: Option<&str>, files: Vec<(String, Vec<u8>)>) -> Result<Vec<(String, Vec<u8>)>> {
+/// Whether a path under `root` is one `include` names, matching as a local
+/// listing does: every file directly inside when there is no pattern.
+fn matcher(root: &str, include: Option<&str>) -> Result<impl Fn(&str) -> bool> {
     let pattern = glob::Pattern::new(include.unwrap_or("*"))
         .map_err(|e| AppError::Collector(format!("bad include pattern: {e}")))?;
     let options = glob::MatchOptions { require_literal_separator: true, ..Default::default() };
     let prefix = format!("{root}/");
-    let mut out: Vec<(String, Vec<u8>)> = files
-        .into_iter()
-        .filter(|(path, _)| path.strip_prefix(&prefix).is_some_and(|rel| pattern.matches_with(rel, options)))
-        .collect();
+    Ok(move |path: &str| path.strip_prefix(&prefix).is_some_and(|rel| pattern.matches_with(rel, options)))
+}
+
+fn select(root: &str, include: Option<&str>, files: Vec<(String, Vec<u8>)>) -> Result<Vec<(String, Vec<u8>)>> {
+    let wanted = matcher(root, include)?;
+    let mut out: Vec<(String, Vec<u8>)> = files.into_iter().filter(|(path, _)| wanted(path)).collect();
     out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.truncate(MAX_FILES);
+    Ok(out)
+}
+
+/// [`select`] for a listing of paths alone.
+pub(crate) fn select_paths(root: &str, include: Option<&str>, paths: Vec<String>) -> Result<Vec<String>> {
+    let wanted = matcher(root, include)?;
+    let mut out: Vec<String> = paths.into_iter().filter(|path| wanted(path)).collect();
+    out.sort();
     out.truncate(MAX_FILES);
     Ok(out)
 }

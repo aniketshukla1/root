@@ -31,6 +31,9 @@ pub enum FieldKind {
     Select,
     /// Text, but hinted as a URL.
     Url,
+    /// Like a password, routed to the keychain, but several lines long: a
+    /// private key.
+    SecretText,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -312,6 +315,43 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
             },
         },
         ServiceDescriptor {
+            kind: ServiceKind::Ssh,
+            label: "SSH server".to_string(),
+            monogram: "SH".to_string(),
+            accent: 30,
+            category: "Hosts".to_string(),
+            blurb: "Read a server's config and log files over SSH, by your choice: root holds one key \
+                    for it and runs only fixed read-only commands (stat, tail, find, journalctl)."
+                .to_string(),
+            endpoint: FieldSpec::new("endpoint", "Host", FieldKind::Text)
+                .placeholder("web-1.internal, or web-1.internal:2222")
+                .required()
+                .help(
+                    "Its host key is pinned the first time root connects; a different key later is \
+                     refused. Then declare files under \"Configuration files\" or \"Log files\" on \
+                     any connection, read on this server.",
+                ),
+            username: Some(user("root-reader").required().help(
+                "Give root a user that can read what it needs and nothing more.",
+            )),
+            credential: Some(
+                FieldSpec::new("__secret", "Private key", FieldKind::SecretText)
+                    .placeholder("-----BEGIN OPENSSH PRIVATE KEY-----")
+                    .required()
+                    .help(
+                        "An OpenSSH or PEM key without a passphrase, made for root \
+                         (ssh-keygen -t ed25519 -N '' -f root_key). Kept in the OS keychain.",
+                    ),
+            ),
+            fields: shared_fields(false),
+            default_poll_secs: 60,
+            capabilities: Capabilities {
+                logs: false,
+                actions: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+        },
+        ServiceDescriptor {
             kind: ServiceKind::LinuxHost,
             label: "Linux host".to_string(),
             monogram: "LX".to_string(),
@@ -325,8 +365,8 @@ pub fn catalog() -> Vec<ServiceDescriptor> {
                 .required()
                 .help(
                     "Port 9100 is assumed if you leave it off. This host needs node_exporter \
-                     listening — root reaches servers through an agent rather than by holding \
-                     SSH keys for the estate.",
+                     listening: root reads a server's metrics through an agent. To read its \
+                     config and log files as well, add it as an SSH server too.",
                 ),
             username: Some(user("optional")),
             credential: Some(token("Password", "If the exporter is behind basic auth.")),

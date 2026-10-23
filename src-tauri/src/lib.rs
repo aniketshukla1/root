@@ -53,6 +53,7 @@ pub mod rpc;
 pub mod rules;
 pub mod server;
 pub mod slo;
+pub mod ssh;
 pub mod runtime;
 pub mod scenarios;
 pub mod secrets;

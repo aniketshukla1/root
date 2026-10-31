@@ -55,6 +55,7 @@ import { Dashboards } from "./screens/Dashboards";
 import { Explore } from "./screens/Explore";
 import { AlertRules } from "./screens/AlertRules";
 import { ServiceMap } from "./screens/ServiceMap";
+import { EstateGraph } from "./screens/EstateGraph";
 import { Incidents } from "./screens/Incidents";
 import * as remote from "./remote";
 import { Onboarding } from "./screens/Onboarding";
@@ -866,6 +867,16 @@ export default function App() {
             serverUrl={config?.team?.serverUrl ?? undefined}
             onConfigChange={onConfigChange}
             onNavigate={setView}
+            onAsk={askAssistant}
+          />
+        )}
+
+        {view.name === "graph" && (
+          <EstateGraph
+            catalog={catalog}
+            syncedAt={dashboard?.generatedAt}
+            onNavigate={setView}
+            onRefresh={refreshAll}
             onAsk={askAssistant}
           />
         )}

@@ -6,6 +6,8 @@ export type View =
   | { name: "services" }
   /** Who calls whom, with health on it and an incident's path drawn over it. */
   | { name: "map" }
+  /** Everything root knows of and how each thing links to the rest. */
+  | { name: "graph" }
   | { name: "alerts" }
   /** Alert rules people write, their previews, and silences. */
   | { name: "rules" }

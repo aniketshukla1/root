@@ -16,6 +16,7 @@ import {
   DashboardsIcon,
   ExploreIcon,
   MapIcon,
+  GraphIcon,
   IncidentsIcon,
   OverviewIcon,
   SearchIcon,
@@ -71,6 +72,7 @@ export function Sidebar({
       count: model.counts.connections,
     },
     { key: "map", label: "Service map", icon: MapIcon, view: { name: "map" } },
+    { key: "graph", label: "Estate graph", icon: GraphIcon, view: { name: "graph" } },
     {
       key: "alerts",
       label: "Alerts",

@@ -330,6 +330,52 @@ export interface ServiceMap {
   traces: number;
   /** Services the traces name that no connection does. */
   unknown: string[];
+  /** Calls with an end no connection watches, that end named as traces name it. */
+  external: ObservedEdge[];
+}
+
+export type GraphNodeKind = "service" | "component" | "external" | "team" | "environment" | "file";
+export type GraphRelation =
+  | "depends_on"
+  | "calls"
+  | "runs_on"
+  | "part_of"
+  | "owned_by"
+  | "in_environment"
+  | "configured_by"
+  | "logs_to"
+  | "located_on"
+  | "history_in";
+/** How a link is known, strongest first. */
+export type LinkProvenance = "declared" | "reported" | "observed" | "inferred";
+
+export interface GraphNode {
+  /** `service:<id>`, `component:<host>/<section>/<row>`, `external:<name>`, `team:<name>`, `environment:<name>`, `file:<id>/<source>`. */
+  id: string;
+  kind: GraphNodeKind;
+  label: string;
+  serviceKind?: ServiceKind;
+  health?: Health;
+  /** Owner, criticality, image, path, where a file is read. */
+  facts?: Record<string, string>;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+  relation: GraphRelation;
+  provenance: LinkProvenance;
+  /** "also inferred: matched by image and port". */
+  detail?: string;
+  /** What traces saw on a call. */
+  traffic?: { calls: number; errors: number; meanMs: number };
+}
+
+/** Every system root knows of and how each connects, assembled on each read. */
+export interface EstateGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  generatedAt: string;
 }
 
 export type ExploreLanguage = "promql" | "logql" | "traces";

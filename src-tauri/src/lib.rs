@@ -43,6 +43,7 @@ pub mod mcp;
 pub mod model;
 pub mod notify;
 pub mod oidc;
+pub mod ontology;
 pub mod patterns;
 pub mod predict;
 pub mod profiles;
@@ -294,6 +295,7 @@ pub fn run() {
             tauri_cmds::explore,
             tauri_cmds::explore_suggest,
             tauri_cmds::get_service_map,
+            tauri_cmds::get_estate_graph,
             tauri_cmds::get_incident_log,
             tauri_cmds::update_incident,
             tauri_cmds::draft_postmortem,

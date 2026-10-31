@@ -2,7 +2,7 @@
 // Real values from the backend's own serialisation (src-tauri/src/contracts.rs),
 // held against src/types.ts by tsc: a field one side has and the other lacks fails
 // the build. Regenerate after changing either side.
-import type { AppConfig, AuditEntry, DashboardState, ExploreResult, IncidentRecord, MetricSeries, RulePreview, ServiceMap, Silence, SloStatus, StatusPageView, UpdateInfo } from "./types";
+import type { AppConfig, AuditEntry, DashboardState, EstateGraph, ExploreResult, IncidentRecord, MetricSeries, RulePreview, ServiceMap, Silence, SloStatus, StatusPageView, UpdateInfo } from "./types";
 
 export const dashboardState: DashboardState = {
   "alerts": [
@@ -429,9 +429,77 @@ export const serviceMap: ServiceMap = {
       "to": "orders"
     }
   ],
+  "external": [
+    {
+      "calls": 40,
+      "errors": 1,
+      "from": "orders",
+      "meanMs": 310.0,
+      "to": "stripe-api"
+    }
+  ],
   "traces": 20,
   "unknown": [
     "stripe-api"
+  ]
+};
+
+export const estateGraph: EstateGraph = {
+  "edges": [
+    {
+      "from": "component:orders/containers/worker",
+      "provenance": "reported",
+      "relation": "part_of",
+      "to": "service:orders"
+    },
+    {
+      "from": "external:checkout",
+      "provenance": "observed",
+      "relation": "calls",
+      "to": "service:orders",
+      "traffic": {
+        "calls": 120,
+        "errors": 3,
+        "meanMs": 42.5
+      }
+    },
+    {
+      "from": "service:orders",
+      "provenance": "observed",
+      "relation": "calls",
+      "to": "external:stripe-api",
+      "traffic": {
+        "calls": 40,
+        "errors": 1,
+        "meanMs": 310.0
+      }
+    }
+  ],
+  "generatedAt": "2026-09-10T00:33:40Z",
+  "nodes": [
+    {
+      "health": "down",
+      "id": "component:orders/containers/worker",
+      "kind": "component",
+      "label": "worker"
+    },
+    {
+      "id": "external:checkout",
+      "kind": "external",
+      "label": "checkout"
+    },
+    {
+      "id": "external:stripe-api",
+      "kind": "external",
+      "label": "stripe-api"
+    },
+    {
+      "health": "down",
+      "id": "service:orders",
+      "kind": "service",
+      "label": "orders-api",
+      "serviceKind": "docker"
+    }
   ]
 };
 

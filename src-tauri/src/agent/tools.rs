@@ -62,6 +62,36 @@ pub fn catalog(mode: AgentMode) -> Vec<ToolDef> {
             false,
         ),
         tool(
+            "estate_graph",
+            "How the estate connects, as one graph. Nodes are connections, the containers and \
+             pods their hosts report, outside services traces show being called, teams, \
+             environments, and declared config and log files. Each link has a `relation` \
+             (depends_on, calls, runs_on, part_of, owned_by, in_environment, configured_by, \
+             logs_to, located_on, history_in) and a `provenance`: declared by an operator, \
+             reported by a host, observed in traces, or inferred by root's matching. Without \
+             `focus` it returns the systems and the links between them; with `focus` it returns \
+             everything within `depth` links, containers, pods and files included. Use it for \
+             what a failure would reach, what something depends on or calls, where it runs and \
+             who owns it.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "focus": {
+                        "type": "string",
+                        "description": "A connection's name or id, or a node's id or label from an earlier answer."
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3,
+                        "description": "Links to follow from `focus`, in either direction. Default 1."
+                    }
+                },
+                "required": []
+            }),
+            false,
+        ),
+        tool(
             "get_health",
             "Full health snapshot for one connection, or for all of them when `connection` \
              is omitted. Returns service-level metrics plus `sections` — one table per kind \
@@ -824,6 +854,30 @@ pub async fn run_read_only(
                     })
                 })
                 .collect::<Vec<_>>())
+        }
+
+        "estate_graph" => {
+            let graph = crate::commands::get_estate_graph(state, None).await?;
+            match args.get("focus").and_then(|v| v.as_str()) {
+                None => json!(graph.systems()),
+                Some(focus) => {
+                    // An id first, then a label (a connection before anything
+                    // sharing its name), then a connection id.
+                    let node = graph
+                        .nodes
+                        .iter()
+                        .find(|n| n.id == focus)
+                        .or_else(|| graph.nodes.iter().filter(|n| n.label.eq_ignore_ascii_case(focus)).min_by_key(|n| n.kind))
+                        .or_else(|| graph.nodes.iter().find(|n| n.id == crate::ontology::service_id(focus)))
+                        .ok_or_else(|| {
+                            AppError::Collector(format!(
+                                "nothing in the estate graph is called `{focus}`; call estate_graph without a focus to see what is"
+                            ))
+                        })?;
+                    let depth = args.get("depth").and_then(|v| v.as_u64()).unwrap_or(1).clamp(1, 3) as usize;
+                    json!(graph.around(&node.id, depth))
+                }
+            }
         }
 
         "get_health" => {

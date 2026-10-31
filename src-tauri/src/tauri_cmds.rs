@@ -480,6 +480,11 @@ pub async fn get_service_map(state: Shared<'_>, minutes: Option<i64>) -> Result<
 }
 
 #[tauri::command]
+pub async fn get_estate_graph(state: Shared<'_>, minutes: Option<i64>) -> Result<crate::ontology::EstateGraph> {
+    commands::get_estate_graph(&state, minutes).await
+}
+
+#[tauri::command]
 pub async fn save_alert_rule(state: Shared<'_>, rule: crate::rules::AlertRule) -> Result<crate::config::AppConfig> {
     commands::save_alert_rule(&state, rule).await
 }

@@ -49,6 +49,12 @@ import type {
   Silence,
   RulePreview,
   ServiceMap,
+  EstateGraph,
+  GraphEdge,
+  GraphNode,
+  GraphNodeKind,
+  GraphRelation,
+  LinkProvenance,
   Slo,
   SloStatus,
   IncidentChange,
@@ -1569,7 +1575,7 @@ export function serviceMap(): ServiceMap {
   const failing = SCENARIO === "incident" || SCENARIO === "triage" || SCENARIO === "storm";
   return {
     traces: 60,
-    unknown: ["stripe-api"],
+    unknown: ["mobile-app", "stripe-api"],
     edges: [
       { from: "edge-proxy", to: "checkout-web", calls: 1240, errors: 3, meanMs: 180 },
       { from: "checkout-web", to: "orders-api", calls: 830, errors: failing ? 61 : 0, meanMs: 95 },
@@ -1579,6 +1585,64 @@ export function serviceMap(): ServiceMap {
       { from: "search-cluster", to: "events-bus", calls: 150, errors: 0, meanMs: 9 },
       { from: "status-page", to: "edge-proxy", calls: 60, errors: 0, meanMs: 30 },
     ],
+    external: [
+      { from: "mobile-app", to: "edge-proxy", calls: 2100, errors: 4, meanMs: 210 },
+      { from: "orders-api", to: "stripe-api", calls: 410, errors: failing ? 12 : 1, meanMs: 240 },
+    ],
+  };
+}
+
+/**
+ * The fixture estate as one graph, built the way `ontology::build` builds it
+ * from the same profiles, snapshots and calls, so the graph cannot tell a
+ * different story from the screens it links to. The fixtures declare nothing
+ * twice, so the backend's merging of one link known two ways is left out.
+ */
+export function estateGraph(): EstateGraph {
+  const nodes = new Map<string, GraphNode>();
+  const edges = new Map<string, GraphEdge>();
+  const node = (id: string, kind: GraphNodeKind, label: string): GraphNode => {
+    const found = nodes.get(id) ?? { id, kind, label };
+    nodes.set(id, found);
+    return found;
+  };
+  const link = (from: string, to: string, relation: GraphRelation, provenance: LinkProvenance, traffic?: GraphEdge["traffic"]) => {
+    if (from !== to) edges.set(`${from} ${to} ${relation}`, { from, to, relation, provenance, ...(traffic ? { traffic } : {}) });
+  };
+  const profiles = currentConfig().profiles;
+  const known = new Set(profiles.map((p) => p.id));
+  const end = (name: string) => (known.has(name) ? `service:${name}` : node(`external:${name}`, "external", name).id);
+
+  for (const p of profiles) {
+    const self = node(`service:${p.id}`, "service", p.name);
+    const snapshot = SNAPSHOTS.find((s) => s.profileId === p.id);
+    self.serviceKind = p.kind;
+    self.health = snapshot?.health ?? "unknown";
+    const { team, environment, owner, contact, criticality } = p.metadata.operations ?? {};
+    self.facts = Object.fromEntries(Object.entries({ owner, contact, criticality }).filter(([, v]) => v)) as Record<string, string>;
+    if (team) link(self.id, node(`team:${team}`, "team", team).id, "owned_by", "declared");
+    if (environment) link(self.id, node(`environment:${environment}`, "environment", environment).id, "in_environment", "declared");
+    for (const dep of p.dependsOn) if (known.has(dep)) link(self.id, `service:${dep}`, "depends_on", "declared");
+    for (const source of p.logSources ?? []) {
+      const file = node(`file:${p.id}/${source.id}`, "file", source.label ?? source.path);
+      file.facts = { path: source.path, on: "this machine" };
+      link(self.id, file.id, "logs_to", "declared");
+    }
+    for (const section of snapshot?.sections.filter((s) => s.id === "containers" || s.id === "pods") ?? []) {
+      for (const row of section.rows) {
+        const component = node(`component:${p.id}/${section.id}/${row.id}`, "component", row.name);
+        component.health = row.health;
+        if (row.cells.image?.type === "text") component.facts = { image: row.cells.image.value };
+        link(component.id, self.id, "part_of", "reported");
+      }
+    }
+  }
+  const map = serviceMap();
+  for (const { from, to, ...traffic } of [...map.edges, ...map.external]) link(end(from), end(to), "calls", "observed", traffic);
+  return {
+    nodes: [...nodes.values()].sort((a, b) => a.id.localeCompare(b.id)),
+    edges: [...edges.values()],
+    generatedAt: new Date(NOW).toISOString(),
   };
 }
 

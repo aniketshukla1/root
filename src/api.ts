@@ -131,6 +131,7 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
     fixtures.exploreResult(language as string, query as string, start as number, end as number),
   explore_suggest: ({ language, label }) => fixtures.exploreSuggest(language as string, label as string | null),
   get_service_map: () => fixtures.serviceMap(),
+  get_estate_graph: () => fixtures.estateGraph(),
   get_slo_status: ({ profileId }) => fixtures.sloStatus(profileId as string | null),
   get_incident_log: () => fixtures.incidentLog(),
   update_incident: ({ incidentId, change }) => fixtures.updateIncident(incidentId as string, change as never),
@@ -217,6 +218,7 @@ import type {
   ExploreResult,
   RulePreview,
   ServiceMap,
+  EstateGraph,
   Silence,
   Slo,
   SloStatus,
@@ -337,6 +339,9 @@ export const api = {
 
   /** Who calls whom over the last `minutes`, from sampled traces. */
   getServiceMap: (minutes?: number) => invoke<ServiceMap>("get_service_map", { minutes: minutes ?? null }),
+
+  /** Every system and how each connects, with how each link is known. */
+  getEstateGraph: (minutes?: number) => invoke<EstateGraph>("get_estate_graph", { minutes: minutes ?? null }),
 
   /** Insert or replace an alert rule by id; returns the whole config. */
   saveAlertRule: (rule: AlertRule) => invoke<AppConfig>("save_alert_rule", { rule }),

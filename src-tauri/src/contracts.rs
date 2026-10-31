@@ -184,6 +184,11 @@ fn samples() -> Vec<(&'static str, &'static str, Value)> {
         edges: vec![ObservedEdge { from: "checkout".into(), to: "orders".into(), calls: 120, errors: 3, mean_ms: 42.5 }],
         traces: 20,
         unknown: vec!["stripe-api".into()],
+        external: vec![ObservedEdge { from: "orders".into(), to: "stripe-api".into(), calls: 40, errors: 1, mean_ms: 310.0 }],
+    };
+    let graph = crate::ontology::EstateGraph {
+        generated_at: at(7),
+        ..crate::ontology::build(&config.profiles, &HashMap::from([("orders".to_string(), snapshot())]), &map.edges, &map.external)
     };
     let budget = SloStatus {
         slo: Slo { indicator: Indicator::Up, ..config.slos[0].clone() },
@@ -225,6 +230,7 @@ fn samples() -> Vec<(&'static str, &'static str, Value)> {
         ("metricSeries", "MetricSeries", v(series())),
         ("exploreResult", "ExploreResult", v(explore)),
         ("serviceMap", "ServiceMap", v(map)),
+        ("estateGraph", "EstateGraph", v(graph)),
         ("sloStatus", "SloStatus", v(budget)),
         ("rulePreview", "RulePreview", v(preview)),
         ("silence", "Silence", v(silence)),

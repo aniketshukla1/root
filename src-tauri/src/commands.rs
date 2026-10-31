@@ -2619,6 +2619,9 @@ pub struct ServiceMap {
     /// Services the traces name that no connection does, so the map can say
     /// what it cannot place.
     pub unknown: Vec<String>,
+    /// Calls with an end no connection watches, that end named as traces name
+    /// it: what the estate calls past its edge, and what calls into it.
+    pub external: Vec<ObservedEdge>,
 }
 
 /// Traces assembled per tracing connection for the map: enough to see who
@@ -2647,7 +2650,9 @@ pub async fn get_service_map(state: &Arc<AppState>, minutes: Option<i64>) -> Res
             .map(|(id, _)| id.clone())
     };
 
-    let mut seen: std::collections::HashMap<(String, String), (u64, u64, f64)> = std::collections::HashMap::new();
+    // (from, to) → calls, errors, total milliseconds.
+    type Tally = std::collections::HashMap<(String, String), (u64, u64, f64)>;
+    let (mut seen, mut crossing) = (Tally::new(), Tally::new());
     let mut unknown = std::collections::BTreeSet::new();
     let mut read = 0;
     for (id, _) in &profiles {
@@ -2676,32 +2681,44 @@ pub async fn get_service_map(state: &Arc<AppState>, minutes: Option<i64>) -> Res
             };
             read += 1;
             for call in crate::traces::calls(&trace) {
-                match (place(&call.from), place(&call.to)) {
-                    (Some(a), Some(b)) if a != b => {
-                        let edge = seen.entry((a, b)).or_default();
-                        edge.0 += 1;
-                        edge.1 += u64::from(call.error);
-                        edge.2 += call.ms;
-                    }
-                    (a, b) => {
-                        if a.is_none() {
-                            unknown.insert(call.from);
-                        }
-                        if b.is_none() {
-                            unknown.insert(call.to);
-                        }
-                    }
+                let (a, b) = (place(&call.from), place(&call.to));
+                if a.is_none() {
+                    unknown.insert(call.from.clone());
+                }
+                if b.is_none() {
+                    unknown.insert(call.to.clone());
+                }
+                let (tally, from, to) = match (a, b) {
+                    (Some(a), Some(b)) => (&mut seen, a, b),
+                    (a, b) => (&mut crossing, a.unwrap_or(call.from), b.unwrap_or(call.to)),
+                };
+                if from != to {
+                    let edge = tally.entry((from, to)).or_default();
+                    edge.0 += 1;
+                    edge.1 += u64::from(call.error);
+                    edge.2 += call.ms;
                 }
             }
         }
     }
 
-    let mut edges: Vec<ObservedEdge> = seen
-        .into_iter()
-        .map(|((from, to), (calls, errors, total))| ObservedEdge { from, to, calls, errors, mean_ms: total / calls as f64 })
-        .collect();
-    edges.sort_by(|a, b| b.calls.cmp(&a.calls).then_with(|| a.from.cmp(&b.from)));
-    Ok(ServiceMap { edges, traces: read, unknown: unknown.into_iter().collect() })
+    let ranked = |tally: Tally| {
+        let mut edges: Vec<ObservedEdge> = tally
+            .into_iter()
+            .map(|((from, to), (calls, errors, total))| ObservedEdge { from, to, calls, errors, mean_ms: total / calls as f64 })
+            .collect();
+        edges.sort_by(|a, b| b.calls.cmp(&a.calls).then_with(|| a.from.cmp(&b.from)));
+        edges
+    };
+    Ok(ServiceMap { edges: ranked(seen), traces: read, unknown: unknown.into_iter().collect(), external: ranked(crossing) })
+}
+
+/// Everything root knows of and how it connects; see [`crate::ontology`].
+pub async fn get_estate_graph(state: &Arc<AppState>, minutes: Option<i64>) -> Result<crate::ontology::EstateGraph> {
+    let map = get_service_map(state, minutes).await?;
+    let profiles = state.config.read().await.profiles.clone();
+    let snapshots = state.snapshots.read().await;
+    Ok(crate::ontology::build(&profiles, &snapshots, &map.edges, &map.external))
 }
 
 /// What Explore asked one connection, and the answer: series for PromQL or

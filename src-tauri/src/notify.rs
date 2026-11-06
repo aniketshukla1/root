@@ -901,10 +901,16 @@ async fn post(
     (Err(last_error), last_status, 3)
 }
 
+/// What a desktop banner goes through. A build without the desktop shell never has one.
+#[cfg(feature = "desktop")]
+type DesktopApp = tauri::AppHandle;
+#[cfg(not(feature = "desktop"))]
+type DesktopApp = ();
+
 /// Send one event to one channel. Returns the log record and, per alert, whether it got there.
 async fn deliver(
     client: &reqwest::Client,
-    desktop: Option<&tauri::AppHandle>,
+    desktop: Option<&DesktopApp>,
     channel: &NotifyChannel,
     target: &str,
     event: DeliveryEvent,
@@ -1005,7 +1011,7 @@ fn banner(
 /// A banner, through the system's notification centre. Only the desktop app
 /// has one; anywhere else this says so in the delivery log instead.
 fn deliver_desktop(
-    app: Option<&tauri::AppHandle>,
+    app: Option<&DesktopApp>,
     channel: &NotifyChannel,
     event: DeliveryEvent,
     alerts: &[Alert],
@@ -1013,8 +1019,10 @@ fn deliver_desktop(
 ) -> (Delivery, Vec<bool>) {
     let now = Utc::now();
     let started = Instant::now();
+    #[cfg_attr(not(feature = "desktop"), allow(unused_variables))]
     let (title, body) = banner(event, alerts, meta, now);
-    let result = match app {
+    let result: std::result::Result<(), String> = match app {
+        #[cfg(feature = "desktop")]
         Some(app) => {
             use tauri_plugin_notification::NotificationExt;
             app.notification()
@@ -1024,7 +1032,7 @@ fn deliver_desktop(
                 .show()
                 .map_err(|e| e.to_string())
         }
-        None => Err("desktop banners only show in the root desktop app".to_string()),
+        _ => Err("desktop banners only show in the root desktop app".to_string()),
     };
     let ok = result.is_ok();
     let delivery = Delivery {
@@ -1050,8 +1058,9 @@ fn deliver_desktop(
 }
 
 /// The desktop app's handle, when this process is the desktop app.
-async fn desktop(state: &Arc<AppState>) -> Option<tauri::AppHandle> {
+async fn desktop(state: &Arc<AppState>) -> Option<DesktopApp> {
     match &*state.events.read().await {
+        #[cfg(feature = "desktop")]
         crate::events::Events::Tauri(handle) => Some(handle.clone()),
         _ => None,
     }

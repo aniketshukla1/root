@@ -86,7 +86,7 @@ npm run dev
 # then open http://localhost:1420/?estate=incident
 ```
 
-**The desktop app.** Nothing to configure and nobody to sign in to. It reads a config file you own, holds credentials in the OS keychain and binds loopback only. It needs Node 22, a Rust toolchain and the [Tauri 2 prerequisites](https://tauri.app/start/prerequisites/).
+**The desktop app.** Nothing to configure and nobody to sign in to. It reads a config file you own, holds credentials in the OS keychain and binds loopback only. It needs Node 22, a Rust toolchain and the [Tauri 2 prerequisites](https://tauri.app/start/prerequisites/), plus CMake for the bundled Kafka client and, on Linux, curl's headers (`libcurl4-openssl-dev`).
 
 ```bash
 npm install

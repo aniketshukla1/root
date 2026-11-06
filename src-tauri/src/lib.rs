@@ -17,7 +17,8 @@ pub mod claims;
 pub mod collectors;
 pub mod commands;
 pub mod config;
-#[cfg(test)]
+// One of its samples is the updater's reply, which only the desktop shell has.
+#[cfg(all(test, feature = "desktop"))]
 mod contracts;
 pub mod error;
 pub mod events;
@@ -65,14 +66,8 @@ pub mod team;
 pub mod topology;
 pub mod traces;
 pub mod supervisor;
+#[cfg(feature = "desktop")]
 pub mod tauri_cmds;
-
-use std::sync::Arc;
-
-use tauri::Manager;
-
-use crate::config::{config_path, migrate_legacy_config, AppConfig};
-use crate::state::AppState;
 
 /// Pick a rustls crypto provider before anything opens a TLS connection.
 ///
@@ -89,8 +84,16 @@ pub fn install_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    use std::sync::Arc;
+
+    use tauri::Manager;
+
+    use crate::config::{config_path, migrate_legacy_config, AppConfig};
+    use crate::state::AppState;
+
     install_crypto_provider();
     tracing_subscriber::fmt()
         .with_env_filter(

@@ -1,6 +1,9 @@
 {
   "name": "root-observability",
   "private": true,
+  "description": "Monitoring tells you something is wrong. root tells you why.",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/aniketshukla1/root.git" },
   "version": "0.1.0",
   "type": "module",
   "scripts": {

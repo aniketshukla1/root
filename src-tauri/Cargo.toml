@@ -2,7 +2,9 @@
 name = "inframonitoring"
 version = "0.1.0"
 description = "root — infrastructure intelligence"
-authors = ["you"]
+authors = ["Aniket Shukla"]
+license = "MIT"
+repository = "https://github.com/aniketshukla1/root"
 edition = "2021"
 # Three binaries live here — the desktop app, root-server and root-mcp — so
 # `cargo run`, which is what `tauri dev` calls, has to be told which is the app.

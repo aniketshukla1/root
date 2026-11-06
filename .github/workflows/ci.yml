@@ -1,9 +1,8 @@
 # Everything that has to be true before a change lands.
 #
-# The suite is the point of this file. 563 unit tests and fifteen integration
-# suites exist and have only ever run when somebody typed `cargo test`, which
-# means they have been guarding nothing between the moment they were written
-# and the moment somebody remembered them.
+# The suite is the point of this file. Tests that only run when somebody types
+# `cargo test` guard nothing between the moment they were written and the moment
+# somebody remembers them.
 
 name: CI
 

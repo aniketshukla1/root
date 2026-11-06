@@ -1,0 +1,221 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>root mark in 3D</title>
+<style>html, body { margin: 0; background: #000; } canvas { display: block; }</style>
+<canvas id="c"></canvas>
+<script id="fs" type="x-shader">#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform float uT;      // loop position, [0, 1)
+uniform float uLight;  // 0: bright metal for a dark page. 1: graphite for a light one.
+out vec4 frag;
+
+const float PI = 3.14159265;
+const vec2 C = vec2(11.69, 11.64);   // middle of the mark's box, in the logo's own 24-unit view box
+const float H = 1.05;                // half the depth of the extrusion
+const float R = 0.30;                // bevel radius
+const float E = 11.9;                // half the frame, in logo units, at the turning plane
+const float D = 52.0;                // camera distance
+const vec3 AZURE = vec3(0.012, 0.25, 1.0);
+const vec2 ROOT = vec2(5.6, 3.7);
+
+float smoother(float x) { x = clamp(x, 0.0, 1.0); return x * x * x * (x * (6.0 * x - 15.0) + 10.0); }
+float seg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+
+// The logo, exactly: the same numbers as logo-dark.svg, as a 2D distance.
+float mark2d(vec2 q) {
+  float d = seg(q, vec2(5.6, 5.7), vec2(5.6, 19.2)) - 0.95;
+  for (int i = 0; i < 3; i++) {
+    float y = i == 0 ? 9.7 : i == 1 ? 14.45 : 19.2;
+    d = min(d, seg(q, vec2(5.6, y), vec2(14.9, y)) - 0.95);
+    d = min(d, abs(length(q - vec2(17.4, y)) - 1.7) - 0.675);
+  }
+  return d;
+}
+vec2 toMark(vec3 p) { return vec2(p.x, -p.y) + C; }
+vec3 rootPos() { return vec3(ROOT.x - C.x, -(ROOT.y - C.y), 0.0); }
+
+float smin(float a, float b, float k) { float h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }
+
+// The stroke extruded with a rounded edge, and the root node as a true sphere.
+float body(vec3 p) {
+  vec2 w = vec2(mark2d(toMark(p)) + R, abs(p.z) - H + R);
+  return min(max(w.x, w.y), 0.0) + length(max(w, 0.0)) - R;
+}
+float map(vec3 p) { return smin(body(p), length(p - rootPos()) - 2.0, 0.5); }
+
+// One slow look at the front, one full turn. Every term has a whole number of cycles per loop.
+mat3 pose(float t) {
+  float yaw = -0.42 + 0.22 * sin(2.0 * PI * t) + 2.0 * PI * smoother((t - 0.40) / 0.60);
+  float pitch = 0.13 + 0.05 * sin(2.0 * PI * t + 1.0);
+  float cy = cos(yaw), sy = sin(yaw), cx = cos(pitch), sx = sin(pitch);
+  mat3 ry = mat3(cy, 0.0, -sy, 0.0, 1.0, 0.0, sy, 0.0, cy);
+  mat3 rx = mat3(1.0, 0.0, 0.0, 0.0, cx, sx, 0.0, -sx, cx);
+  return rx * ry;
+}
+
+// How far along the mark a point is, measured from the root node.
+float along(vec2 q, out float ring) {
+  float best = length(q - ROOT) - 2.0, out_ = 0.0, d;
+  ring = -1.0;
+  d = seg(q, vec2(5.6, 5.7), vec2(5.6, 19.2));
+  if (d < best) { best = d; out_ = q.y - 3.7; }
+  for (int i = 0; i < 3; i++) {
+    float y = i == 0 ? 9.7 : i == 1 ? 14.45 : 19.2;
+    d = seg(q, vec2(5.6, y), vec2(14.9, y));
+    if (d < best) { best = d; out_ = y - 3.7 + q.x - 5.6; ring = -1.0; }
+    vec2 c = q - vec2(17.4, y);
+    d = abs(length(c) - 1.7);
+    if (d < best) { best = d; out_ = y - 3.7 + 9.3 + 1.7 * (PI - abs(atan(c.y, c.x))); ring = y; }
+  }
+  return out_;
+}
+
+// A signal leaves the root node, runs the trunk and the branches, and lights the rings it reaches.
+const float V = 118.0;   // logo units per loop
+float signalAt(vec2 q, float t) {
+  float ring;
+  float d = along(q, ring);
+  float e = fract(t + 0.97);
+  float s = e * V;
+  float env = smoothstep(0.0, 0.03, e);
+  float x = s - d;
+  float run = x < 0.0 ? exp(-x * x * 0.2) : exp(-x * 0.24);
+  float latch = 0.0;
+  if (ring > 0.0) {
+    float a = s - (ring - 3.7 + 9.3);
+    latch = smoothstep(0.0, 2.5, a) * exp(-max(a, 0.0) * 0.042);
+  }
+  return env * max(run, latch * 0.85);
+}
+
+// The same signal for the air around the mark. Every lit piece glows on its own and the brightest
+// wins, because "nearest piece" jumps at the lines between pieces and those lines show on a white page.
+float runAt(float d, float s) { float x = s - d; return x < 0.0 ? exp(-x * x * 0.2) : exp(-x * 0.24); }
+float airAt(vec3 po, float t) {
+  vec2 q = toMark(po);
+  float z = max(abs(po.z) - H, 0.0);
+  float e = fract(t + 0.97), s = e * V, g = 0.0;
+  const float K = 1.7;
+  vec2 c = vec2(5.6, clamp(q.y, 5.7, 19.2));
+  g = max(g, runAt(c.y - 3.7, s) * exp(-length(vec2(max(length(q - c) - 0.95, 0.0), z)) * K));
+  for (int i = 0; i < 3; i++) {
+    float y = i == 0 ? 9.7 : i == 1 ? 14.45 : 19.2;
+    c = vec2(clamp(q.x, 5.6, 14.9), y);
+    g = max(g, runAt(y - 3.7 + c.x - 5.6, s) * exp(-length(vec2(max(length(q - c) - 0.95, 0.0), z)) * K));
+    vec2 r = q - vec2(17.4, y);
+    float a = s - (y - 3.7 + 9.3);
+    float latch = smoothstep(0.0, 2.5, a) * exp(-max(a, 0.0) * 0.042) * 0.85;
+    float lit = max(runAt(y - 3.7 + 9.3 + 1.7 * (PI - abs(atan(r.y, r.x))), s), latch);
+    g = max(g, lit * exp(-length(vec2(max(abs(length(r) - 1.7) - 0.675, 0.0), z)) * K));
+  }
+  return g * smoothstep(0.0, 0.03, e);
+}
+
+// A dark studio. What the metal shows is the shape of these lights.
+vec3 studio(vec3 r) {
+  vec3 c = mix(vec3(0.015, 0.017, 0.024), vec3(0.11, 0.12, 0.15), smoothstep(-0.2, 1.0, r.y));
+  c += vec3(0.62) * pow(max(dot(r, normalize(vec3(0.0, 0.32, 0.95))), 0.0), 3.0);        // the big soft key
+  c += vec3(2.4) * smoothstep(0.55, 0.92, r.y) * smoothstep(0.9, 0.3, abs(r.x));          // overhead box
+  c += vec3(3.0) * pow(max(dot(r, normalize(vec3(-0.9, 0.2, 0.42))), 0.0), 40.0);         // window, left
+  c += vec3(1.6) * pow(max(dot(r, normalize(vec3(0.92, -0.1, 0.38))), 0.0), 80.0);        // strip, right
+  c += AZURE * 1.5 * pow(max(dot(r, normalize(vec3(0.3, -0.85, 0.42))), 0.0), 6.0);       // azure from below
+  c += vec3(1.5) * pow(max(dot(r, normalize(vec3(-0.46, 0.3, 0.84))), 0.0), 70.0);        // the gleam that crosses the face
+  return c;
+}
+
+vec3 tone(vec3 x) { x *= 0.9; return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy * 2.0 - uRes) / uRes;
+  vec3 ro = vec3(0.0, 0.0, D);
+  vec3 rd = normalize(vec3(uv * E, -D));
+  mat3 M = pose(uT);        // object to world
+  mat3 Mi = transpose(M);   // world to object
+  float t = D - 17.0;
+  bool hit = false;
+  for (int i = 0; i < 120; i++) {
+    float d = map(Mi * (ro + rd * t));
+    if (d < 0.0015) { hit = true; break; }
+    t += d * 0.95;
+    if (t > D + 17.0) break;
+  }
+
+  vec3 rootW = M * rootPos();
+  float breathe = 0.82 + 0.18 * sin(2.0 * PI * 2.0 * uT);
+  float flash = exp(-pow((fract(uT + 0.97) - 0.03) / 0.035, 2.0));
+
+  if (!hit) {
+    // Light in the air around whatever is lit. Colour with an alpha, so it sits on any page.
+    float air = 0.0;
+    for (int i = 0; i < 90; i++) {
+      air += airAt(Mi * (ro + rd * (D - 18.0 + float(i) * 0.4)), uT) * 0.4;
+    }
+    float h = air * 0.5;
+    float dr = max(length(cross(rd, rootW - ro)) - 2.0, 0.0);
+    h += (0.38 * breathe + 0.5 * flash) * exp(-dr * 1.15);
+    h = max(h * mix(1.0, 0.8, uLight) - 0.025, 0.0);   // nothing faint enough to read as a smudge on a white page
+    float a = clamp(h, 0.0, 1.0) * smoothstep(1.0, 0.9, max(abs(uv.x), abs(uv.y)));
+    vec3 col = vec3(0.13, 0.53, 1.0);   // the accent, straight: this is already display colour
+    frag = vec4(col * a, a);
+    return;
+  }
+
+  vec3 p = ro + rd * t;
+  vec3 po = Mi * p;
+  vec2 e = vec2(0.0035, 0.0);
+  vec3 n = normalize(M * vec3(map(po + e.xyy) - map(po - e.xyy), map(po + e.yxy) - map(po - e.yxy), map(po + e.yyx) - map(po - e.yyx)));
+  vec3 v = -rd;
+  vec3 r = reflect(rd, normalize(n + M * vec3(po.xy * 0.02, 0.0)));   // faces slightly domed, so light travels across them
+
+  // Contact shadow where the bars meet, from the distance field itself.
+  float ao = 0.0, w = 1.0;
+  for (int i = 1; i <= 4; i++) { float s = float(i) * 0.45; ao += w * (s - map(Mi * (p + n * s))); w *= 0.55; }
+  ao = clamp(1.0 - 0.28 * ao, 0.25, 1.0);
+
+  vec3 f0 = mix(vec3(0.60, 0.62, 0.67), vec3(0.085, 0.09, 0.105), uLight);
+  float fres = pow(1.0 - max(dot(n, v), 0.0), 5.0);
+  vec3 F = f0 + (1.0 - f0) * fres;
+  vec3 col = studio(r) * F * ao;
+  col += f0 * (0.05 + 0.2 * max(dot(n, normalize(vec3(-0.3, 0.7, 0.6))), 0.0)) * ao;
+
+  // The signal, as light in the metal.
+  float sig = signalAt(toMark(po), uT);
+  col = mix(col, col * 0.45, sig) + AZURE * sig * 1.7;
+
+  // The root node is lit from inside.
+  float nodeness = smoothstep(2.3, 1.7, length(po - rootPos()));
+  vec3 lit = AZURE * 1.5 + vec3(0.5, 0.72, 1.0) * pow(max(dot(n, v), 0.0), 4.0) * 0.8;
+  col = mix(col, col * 0.3 + lit * (0.8 * breathe + 1.5 * flash), nodeness);
+
+  col = pow(tone(col), vec3(1.0 / 2.2));
+  frag = vec4(col, 1.0);
+}
+</script>
+<script>
+const size = +(new URLSearchParams(location.search).get('size') || 1080);
+const canvas = document.getElementById('c');
+canvas.width = canvas.height = size;
+const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true, antialias: false });
+const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, `#version 300 es
+void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, document.getElementById('fs').textContent.trim()));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+gl.viewport(0, 0, size, size);
+gl.uniform2f(gl.getUniformLocation(prog, 'uRes'), size, size);
+const uT = gl.getUniformLocation(prog, 'uT'), uLight = gl.getUniformLocation(prog, 'uLight');
+// A pure function of loop position and theme: the same t always gives the same picture.
+window.frame = (t, light) => {
+  gl.uniform1f(uT, t);
+  gl.uniform1f(uLight, light);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return canvas.toDataURL('image/png').split(',')[1];
+};
+window.renderer = (() => { const d = gl.getExtension('WEBGL_debug_renderer_info'); return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : '?'; })();
+</script>

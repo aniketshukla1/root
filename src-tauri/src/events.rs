@@ -46,6 +46,7 @@ pub struct Envelope {
 #[derive(Clone)]
 pub enum Events {
     /// In-process, to the Tauri webview.
+    #[cfg(feature = "desktop")]
     Tauri(tauri::AppHandle),
     /// Out to every connected client. The receiver count is allowed to be
     /// zero — a server with nobody watching still polls, and still writes its
@@ -62,6 +63,7 @@ pub enum Events {
 impl std::fmt::Debug for Events {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            #[cfg(feature = "desktop")]
             Events::Tauri(_) => "Events::Tauri",
             Events::Broadcast(_) => "Events::Broadcast",
             Events::Silent => "Events::Silent",
@@ -73,6 +75,7 @@ impl Events {
     /// Send one event. Failure is swallowed on purpose — see the module note.
     pub fn emit<T: Serialize>(&self, event: &str, payload: &T) {
         match self {
+            #[cfg(feature = "desktop")]
             Events::Tauri(app) => {
                 use tauri::Emitter;
                 let _ = app.emit(event, payload);

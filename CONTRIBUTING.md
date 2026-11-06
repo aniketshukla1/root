@@ -9,7 +9,7 @@ Node 22.
 ```bash
 npm install
 npm run dev          # the interface in a browser with demo data: http://localhost:1420/?estate=incident
-npm run tauri dev    # the desktop app (needs a Rust toolchain and the Tauri 2 prerequisites)
+npm run tauri dev    # the desktop app (needs a Rust toolchain, the Tauri 2 prerequisites, CMake and, on Linux, libcurl4-openssl-dev)
 ```
 
 `?estate=` also takes `quiet`, `storm` and `empty`.

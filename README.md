@@ -60,7 +60,7 @@
   <tr>
     <td align="center" valign="top" width="25%"><h3>31</h3>kinds of infrastructure, polled read-only</td>
     <td align="center" valign="top" width="25%"><h3>4</h3>places it reads config and logs: this machine, a container, SSH, a pod</td>
-    <td align="center" valign="top" width="25%"><h3>830+</h3>tests in CI on Linux and macOS, many against real services</td>
+    <td align="center" valign="top" width="25%"><h3>830+</h3>tests in CI on Linux and macOS, with a real TimescaleDB on Linux</td>
     <td align="center" valign="top" width="25%"><h3>0</h3>models required. Add Anthropic, any OpenAI-compatible endpoint or Ollama if you want the assistant</td>
   </tr>
   <tr>
@@ -181,7 +181,7 @@ The desktop app and the server run the same engine. Everything works with no mod
 
 ## Status
 
-Version 0.1, built from source: there are no signed installers yet. Every push to `main` runs Clippy with warnings as errors, the backend suites on Linux and macOS, on Linux against a real TimescaleDB ([list](docs/REFERENCE.md#tests)), the frontend checks and bundle budget, and a build of the server image. Reading files inside a container, inside a pod and from a journal over SSH have tests but have not yet been exercised against a live engine or cluster, so reports are welcome.
+Version 0.1, built from source: there are no signed installers yet. Every push to `main` runs Clippy with warnings as errors, the backend suites on Linux and macOS, on Linux against a real TimescaleDB ([list](docs/REFERENCE.md#tests)), the frontend checks and bundle budget, and a build of the server image. Suites for services CI does not run, such as Redis, Kafka and Kubernetes, skip there and run when one is up. Reading files inside a container, inside a pod and from a journal over SSH have tests but have not yet been exercised against a live engine or cluster, so reports are welcome.
 
 ## More
 

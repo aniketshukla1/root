@@ -50,6 +50,10 @@ import type {
   RulePreview,
   ServiceMap,
   EstateGraph,
+  RootCause,
+  ServiceTime,
+  Trace,
+  TraceNode,
   GraphEdge,
   GraphNode,
   GraphNodeKind,
@@ -129,7 +133,7 @@ function series(
   n: number,
   seed: number,
   base: number,
-  shape: "flat" | "rise" | "fall" | "spike" | "steady" | "clock",
+  shape: "flat" | "rise" | "creep" | "fall" | "spike" | "steady" | "clock",
 ): Point[] {
   // Real collectors also send a count that never moves (nodes, brokers) and a
   // clock (uptime). Without them here the preview never shows how the
@@ -154,8 +158,9 @@ function series(
   const noise = Math.sqrt(drift);
 
   for (let i = 0; i < n; i += 1) {
-    v += (r() - 0.5) * base * 0.13 * noise;
+    v += (r() - 0.5) * base * (shape === "creep" ? 0.004 : 0.13) * noise;
     if (shape === "rise") v += base * 0.012 * drift;
+    if (shape === "creep") v += base * 0.0006 * drift;
     if (shape === "fall") v -= base * 0.01 * drift;
     if (shape === "spike" && i > n * 0.72) v += base * 0.06 * drift;
     v = Math.max(base * 0.1, v);
@@ -189,7 +194,7 @@ const METRIC_KINDS = ["this_machine", "docker", "podman", "kubernetes", "linux_h
   "etcd", "consul", "zookeeper",
   "kafka", "rabbitmq", "nats",
   "nginx", "apache", "tomcat", "haproxy", "traefik", "jenkins",
-  "elasticsearch", "prometheus", "http_endpoint", "gigapipe", "otlp"];
+  "elasticsearch", "prometheus", "http_endpoint", "gigapipe", "otlp", "aws"];
 
 /**
  * The registry's own labels, for the kinds where capitalising the id gets it
@@ -197,6 +202,7 @@ const METRIC_KINDS = ["this_machine", "docker", "podman", "kubernetes", "linux_h
  * the onboarding screen is the first thing anyone sees.
  */
 const KIND_LABELS: Record<string, string> = {
+  aws: "AWS",
   mysql: "MySQL",
   postgres: "PostgreSQL",
   mongodb: "MongoDB",
@@ -235,6 +241,7 @@ export const DESCRIPTORS: ServiceDescriptor[] = [...METRIC_KINDS.map((kind, i): 
     : kind === "jenkins" ? "CI/CD"
     : kind === "elasticsearch" ? "Search & analytics"
     : kind === "prometheus" || kind === "gigapipe" || kind === "otlp" ? "Observability"
+    : kind === "aws" ? "Cloud"
     : "Web & endpoints",
   blurb: "",
   endpoint: { key: "endpoint", label: "Endpoint", kind: "text", required: kind !== "this_machine", advanced: false },
@@ -359,7 +366,7 @@ const METRICS: Record<string, [string, string, number, string, number?][]> = {
   "edge-proxy": [["rps", "Req/s", 4200, "per_second"], ["p99", "p99", 38, "millis"]],
   "checkout-web": [["pods", "Pods ready", 24, "count"], ["cpu", "CPU", 34, "percent", 75]],
   "events-bus": [["lag", "Lag", 1200, "count"], ["brokers", "Brokers", 3, "count"]],
-  "session-cache": [["hit", "Hit rate", 99.1, "percent"], ["memory", "Memory", 1503238554, "bytes"]],
+  "session-cache": [["hit", "Hit rate", 99.1, "percent"], ["memory", "Memory", 1932735283, "bytes", 2147483648]],
   "billing-mongo": [["conns", "Connections", 88, "count"], ["uptime", "Uptime", 1_234_567, "seconds"]],
   "metrics-store": [["targets", "Targets up", 42, "count"]],
   "status-page": [["latency", "Latency", 42, "millis", 800]],
@@ -589,10 +596,16 @@ export function seriesFor(profileId: string): MetricSeries[] {
   // scenarioMetrics, not METRICS: a connection the scenario made healthy must
   // not still be plotting a series that breaches its own threshold.
   return scenarioMetrics(profileId).map(([key, label, value, unit, warnAbove], i) => {
-    const shape = key === "memory" || key === "lag" || key === "heap" ? "rise"
+    const shape = key === "memory" && profileId === "session-cache" ? "creep"
+      : key === "memory" || key === "lag" || key === "heap" ? "rise"
       : key === "error_rate" ? "spike" : key === "running" ? "fall"
       : key === "nodes" || key === "brokers" ? "steady" : key === "uptime" ? "clock" : "flat";
     const points = series(SAMPLES, profileId.length * 31 + i * 7, value, shape);
+    if (unit === "percent") {
+      // A rate near its ceiling wanders in a narrow band under it.
+      const squeeze = value > 90 ? 0.12 : 1;
+      for (const point of points) point.v = Number(Math.min(100, value + (point.v - value) * squeeze).toFixed(2));
+    }
     const values = points.map((p) => p.v);
     return {
       key, label, unit: unit as never, warnAbove, points,
@@ -1299,6 +1312,59 @@ function fixtureLines(query: string, from: number, to: number): LogEvent[] {
     });
   }
   return lines.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+}
+
+/**
+ * One checkout across the estate, for the trace view: the 1.9 s went into a
+ * connection pool orders-api could not get a connection from, three levels down,
+ * which is the point of a waterfall.
+ */
+export function traceDetail(traceId: string): Trace {
+  const start = NOW - 104_000;
+  type Plan = [id: string, parent: string, service: string, name: string, at: number, ms: number, error?: string];
+  const plan: Plan[] = [
+    ["a", "", "edge-proxy", "POST /checkout", 0, 1912],
+    ["b", "a", "checkout-web", "POST /checkout", 6, 1898],
+    ["c", "b", "session-cache", "GET session", 14, 3],
+    ["d", "b", "orders-api", "POST /api/orders", 22, 1868],
+    ["e", "d", "orders-api", "acquire connection", 26, 1240, "connection pool exhausted after 1.2s, 0 of 20 free"],
+    ["f", "d", "payments-db", "INSERT orders", 1270, 410],
+    ["g", "d", "payments-db", "UPDATE inventory", 1684, 142],
+    ["h", "d", "events-bus", "publish order.created", 1830, 38],
+    ["i", "b", "checkout-web", "render receipt", 1894, 8],
+  ];
+  const build = (id: string, depth: number): TraceNode => {
+    const [spanId, parent, service, name, at, ms, error] = plan.find((p) => p[0] === id)!;
+    const children = plan.filter((p) => p[1] === id).map((p) => build(p[0], depth + 1));
+    return {
+      span: {
+        spanId, ...(parent ? { parentSpanId: parent } : {}), name, service,
+        startedAt: new Date(start + at).toISOString(), durationMs: ms,
+        status: error ? "error" : "ok", ...(error ? { statusMessage: error } : {}),
+      },
+      offsetMs: at,
+      selfMs: Math.max(0, ms - children.reduce((sum, c) => sum + c.span.durationMs, 0)),
+      depth,
+      children,
+    };
+  };
+  const roots = [build("a", 0)];
+  const times = new Map<string, ServiceTime>();
+  const tally = (node: TraceNode) => {
+    const entry = times.get(node.span.service) ?? { service: node.span.service, selfMs: 0, spanCount: 0, errorCount: 0 };
+    entry.selfMs += node.selfMs;
+    entry.spanCount += 1;
+    entry.errorCount += node.span.status === "error" ? 1 : 0;
+    times.set(node.span.service, entry);
+    node.children.forEach(tally);
+  };
+  roots.forEach(tally);
+  return {
+    traceId, rootService: "edge-proxy", rootName: "POST /checkout", startedAt: new Date(start).toISOString(),
+    durationMs: 1912, spanCount: plan.length, errorCount: 1, orphanCount: 0,
+    services: [...times.values()].sort((a, b) => b.selfMs - a.selfMs),
+    roots,
+  };
 }
 
 function fixtureTraces(from: number, to: number): TraceSummary[] {
@@ -2874,8 +2940,8 @@ export function explainLines(lines: LogEvent[]): Promise<ComponentReading> {
     `selected: ${lines.length} line${lines.length === 1 ? "" : "s"}`,
     ...lines.slice(0, 6).map((l) => `line ${hm(l.timestamp)} ${l.level.toUpperCase()} [${l.profileName} / ${l.source}] ${l.message}`),
     `connection ${name}: now down`,
-    "change 15:19 worker 2.14.2 → 2.14.3",
-    'recurrence: "connection reset by #.#.#.#" ×30 in the last hour, first at 15:20',
+    "change 14:00 worker 2.14.2 → 2.14.3",
+    'recurrence: "connection reset by #.#.#.#" ×30 in the last hour, first at 14:04',
     "elsewhere [payments-db] replication lag #s",
   ];
   return new Promise((resolve) =>
@@ -2887,23 +2953,58 @@ export function explainLines(lines: LogEvent[]): Promise<ComponentReading> {
 }
 
 /** "✦ Explain" on an alert row, answered from what the fixtures hold. */
+/** What "Root Cause Analysis" answers on the fixture estate. No model is called. */
+export function rootCause(incidentId: string): Promise<RootCause> {
+  const cause: RootCause = {
+    incidentId,
+    summary: "A memory regression in orders-worker 2.14.3: it reaches its 8G limit under normal load, and the kernel kills it.",
+    confidence: "high",
+    chain: [
+      "14:00 orders-worker 2.14.2 → 2.14.3 deployed on orders-api",
+      "14:04 memory reaches the 8G limit; three containers exit with code 137, OOMKilled",
+      "14:05 every restart reopens its connection pool against payments-db",
+      "14:06 replication lag on replica-2 passes 30 s",
+    ],
+    because: [
+      "Exit code 137 with reason OOMKilled on orders-worker-3, -7 and -8",
+      "Memory peaked at 7.98G against an 8G limit and does not fall between restarts",
+      "Request volume is down 12% over the same window, so this is not load",
+    ],
+    confirm: [
+      "Compare worker memory against 2.14.2: a leak shows no plateau between restarts",
+      "Roll one worker back and watch whether its restarts stop",
+    ],
+    disconfirm: "A 2.14.2 worker climbing at the same rate would clear the deploy.",
+    agrees: true,
+    model: "preview — no model called",
+    grounds: [
+      "change 14:00 worker 2.14.2 → 2.14.3",
+      "alert critical: 3 containers exited with code 137 on orders-api",
+      "alert warning: replication lag 42s exceeds 30s on payments-db",
+      "metric memory: 6.2 GB → 7.98 GB against an 8 GB limit",
+    ],
+    at: new Date().toISOString(),
+  };
+  return new Promise((resolve) => setTimeout(() => resolve(cause), 1500));
+}
+
 export function explainAlert(alertId: string): Promise<ComponentReading> {
   const alert = ALERTS.find((a) => a.id === alertId);
   const title = alert?.title.toLowerCase() ?? "";
   const text = title.includes("137") || title.includes("exited")
-    ? "The worker image deployed at 15:19 (2.14.2 → 2.14.3) is being OOM-killed at its 512Mi limit — containers began exiting four minutes after the deploy."
+    ? "The worker image deployed at 14:00 (2.14.2 → 2.14.3) is being OOM-killed at its 8G limit — containers began exiting four minutes after the deploy."
     : title.includes("lag") || title.includes("replication")
-      ? "Consequence, not cause: orders-api's restarts at 15:23 doubled write retries, and the lag rose with them."
+      ? "Consequence, not cause: orders-api's restarts at 14:04 doubled write retries, and the lag rose with them."
       : title.includes("unreachable") || title.includes("down")
         ? "The host stopped answering at the same minute its certificate rotated; nothing else on the estate moved, so check the new certificate first."
         : title.includes("shard") || title.includes("unassigned")
-          ? "Disk watermark: es-node-4 crossed 90% at 15:12 and its shards could not be placed; free disk on es-node-4 first."
+          ? "Disk watermark: es-node-4 crossed 90% at 13:52 and its shards could not be placed; free disk on es-node-4 first."
           : "No cause in the evidence — check the collector's last successful poll first.";
   const grounds = [
     `the alert: ${alert?.severity ?? "warning"} "${alert?.title ?? alertId}" on ${alert?.profileName ?? "?"}`,
     ...(alert?.detail ? [`detail: ${alert.detail}`] : []),
     `connection: ${alert?.profileName ?? "?"}`,
-    "change 15:19 worker 2.14.2 → 2.14.3",
+    "change 14:00 worker 2.14.2 → 2.14.3",
     "metric memory: 6.2 GB → 7.9 GB (low 6.1 GB, peak 7.9 GB); the 15 min before averaged 6.3 GB",
     "logs: 41 lines at warn or above in the window, 37 of them errors",
   ];

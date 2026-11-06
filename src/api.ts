@@ -52,6 +52,8 @@ const FIXTURES: Record<string, (args: Record<string, unknown>) => unknown> = {
   get_long_history: () => [],
   explain_lines: ({ lines }) => fixtures.explainLines(lines as LogEvent[]),
   explain_alert: ({ alertId }) => fixtures.explainAlert(alertId as string),
+  explain_incident: ({ incidentId }) => fixtures.rootCause(incidentId as string),
+  get_trace: ({ traceId }) => fixtures.traceDetail(traceId as string),
   explain_window: ({ profileId, from, to }) =>
     fixtures.explainWindow(profileId as string, from as string, to as string),
   get_alert_history: ({ profileId }) => fixtures.alertHistory(profileId as string),

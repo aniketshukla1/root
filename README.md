@@ -16,19 +16,60 @@
 
 <p align="center">
   <a href="https://aniketshukla1.github.io/root/"><b>Website</b></a> ·
+  <a href="#what-it-does"><b>What it does</b></a> ·
   <a href="#the-films"><b>Films</b></a> ·
   <a href="#run-it"><b>Run it</b></a> ·
+  <a href="#31-kinds-of-infrastructure"><b>31 kinds</b></a> ·
+  <a href="#how-it-fits-together"><b>How it fits together</b></a> ·
+  <a href="#status"><b>Status</b></a> ·
   <a href="docs/REFERENCE.md"><b>Reference</b></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/aniketshukla1/root/actions/workflows/ci.yml"><img src="https://github.com/aniketshukla1/root/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0a84ff" alt="MIT license"></a>
+  <a href="https://github.com/aniketshukla1/root/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/aniketshukla1/root/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white&labelColor=18181b" alt="CI status"></a>
+  <a href="https://aniketshukla1.github.io/root/"><img src="https://img.shields.io/github/actions/workflow/status/aniketshukla1/root/pages.yml?branch=main&label=website&logo=githubpages&logoColor=white&labelColor=18181b" alt="Website status"></a>
+  <a href="#status"><img src="https://img.shields.io/github/package-json/v/aniketshukla1/root/main?label=version&labelColor=18181b&color=0a84ff" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/aniketshukla1/root?labelColor=18181b&color=0a84ff" alt="License"></a>
+  <a href="https://github.com/aniketshukla1/root/commits/main"><img src="https://img.shields.io/github/last-commit/aniketshukla1/root/main?label=last%20commit&labelColor=18181b&color=0a84ff" alt="Last commit"></a>
+</p>
+
+<p align="center">
+  <a href="#31-kinds-of-infrastructure"><img src="https://img.shields.io/badge/monitors-31%20kinds%20of%20infrastructure-0a84ff?labelColor=18181b" alt="31 kinds of infrastructure"></a>
+  <a href="docs/REFERENCE.md#tests"><img src="https://img.shields.io/badge/tests-830%2B-0a84ff?labelColor=18181b" alt="More than 830 tests"></a>
+  <a href="#run-it"><img src="https://img.shields.io/badge/runs%20on-macOS%20%7C%20Linux-0a84ff?labelColor=18181b" alt="Runs on macOS and Linux"></a>
+  <a href="#run-it"><img src="https://img.shields.io/badge/deploy-desktop%20%7C%20server-0a84ff?labelColor=18181b" alt="Desktop app or server"></a>
+  <a href="docs/REFERENCE.md#the-assistant"><img src="https://img.shields.io/badge/assistant-Anthropic%20%7C%20OpenAI%20%7C%20Ollama%20%7C%20none-0a84ff?labelColor=18181b" alt="The assistant runs on Anthropic, OpenAI-compatible endpoints, Ollama or nothing at all"></a>
+  <a href="docs/REFERENCE.md#root-as-an-mcp-server"><img src="https://img.shields.io/badge/MCP-server-0a84ff?labelColor=18181b" alt="MCP server"></a>
+</p>
+
+<p align="center">
+  <a href="#how-it-fits-together"><img src="https://img.shields.io/badge/Rust-18181b?logo=rust&logoColor=white" alt="Rust"></a>
+  <a href="#how-it-fits-together"><img src="https://img.shields.io/badge/Tauri%202-18181b?logo=tauri&logoColor=white" alt="Tauri 2"></a>
+  <a href="#how-it-fits-together"><img src="https://img.shields.io/badge/React%2019-18181b?logo=react&logoColor=white" alt="React 19"></a>
+  <a href="#how-it-fits-together"><img src="https://img.shields.io/badge/TypeScript-18181b?logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="#how-it-fits-together"><img src="https://img.shields.io/badge/Tailwind%204-18181b?logo=tailwindcss&logoColor=white" alt="Tailwind 4"></a>
+  <a href="#how-it-fits-together"><img src="https://img.shields.io/badge/PostgreSQL-18181b?logo=postgresql&logoColor=white" alt="PostgreSQL"></a>
+  <a href="#how-it-fits-together"><img src="https://img.shields.io/badge/Docker-18181b?logo=docker&logoColor=white" alt="Docker"></a>
 </p>
 
 <p align="center">
   <a href="https://aniketshukla1.github.io/root/"><img src="website/media/root-hero.gif" alt="root: an incident on the Overview, its root cause analysis, then a config finding that says writes will start failing in about 3 hours" width="860"></a>
 </p>
+
+<table>
+  <tr>
+    <td align="center" valign="top" width="25%"><h3>31</h3>kinds of infrastructure, polled read-only</td>
+    <td align="center" valign="top" width="25%"><h3>4</h3>places it reads config and logs: this machine, a container, SSH, a pod</td>
+    <td align="center" valign="top" width="25%"><h3>830+</h3>tests in CI on Linux and macOS, many against real services</td>
+    <td align="center" valign="top" width="25%"><h3>0</h3>models required. Add Anthropic, any OpenAI-compatible endpoint or Ollama if you want the assistant</td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="25%"><h3>2</h3>ways to run one engine: the desktop app, or a server with a browser client</td>
+    <td align="center" valign="top" width="25%"><h3>2</h3>containers to deploy it: root-server and Postgres. No broker, no cache, no sidecar</td>
+    <td align="center" valign="top" width="25%"><h3>7</h3>days of history an alert rule replays against before you save it</td>
+    <td align="center" valign="top" width="25%"><h3>0</h3>actions the assistant takes without your approval</td>
+  </tr>
+</table>
 
 ---
 
@@ -140,7 +181,7 @@ The desktop app and the server run the same engine. Everything works with no mod
 
 ## Status
 
-Version 0.1, built from source: there are no signed installers yet. The unit and integration suites run in CI, many against real services ([list](docs/REFERENCE.md#tests)). Reading files inside a container, inside a pod and from a journal over SSH have tests but have not yet been exercised against a live engine or cluster, so reports are welcome.
+Version 0.1, built from source: there are no signed installers yet. Every push to `main` runs Clippy with warnings as errors, the backend suites on Linux and macOS, on Linux against a real TimescaleDB ([list](docs/REFERENCE.md#tests)), the frontend checks and bundle budget, and a build of the server image. Reading files inside a container, inside a pod and from a journal over SSH have tests but have not yet been exercised against a live engine or cluster, so reports are welcome.
 
 ## More
 

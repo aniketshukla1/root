@@ -28,7 +28,7 @@
 //! optional by design, and `timescale_is_optional_not_required` is the test
 //! that says so.
 
-use chrono::{Duration, Utc};
+use chrono::{Duration, DurationRound, Utc};
 use inframonitoring_lib::model::{
     Alert, AlertSeverity, ChangeEvent, ChangeKind, ChangeSource, Health, HealthSnapshot, LogEvent,
     LogLevel, LogStream, Metric, MetricUnit, ServiceKind,
@@ -403,7 +403,9 @@ async fn every_bucket_carries_the_extremes_and_not_only_the_average() {
         return;
     };
 
-    let hour = Utc::now() - Duration::hours(5);
+    // The start of an hour, so the three samples share a bucket whatever minute
+    // the suite runs at. Without this it failed in the last ten minutes of every hour.
+    let hour = (Utc::now() - Duration::hours(5)).duration_trunc(Duration::hours(1)).unwrap();
     for (i, value) in [1.0e9, 9.0e9, 2.0e9].into_iter().enumerate() {
         store
             .write_snapshot(&snapshot(value, hour + Duration::minutes(i as i64 * 5)))

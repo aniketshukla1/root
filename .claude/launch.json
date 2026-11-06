@@ -19,6 +19,18 @@
       ],
       "port": 7777,
       "url": "http://127.0.0.1:7777"
+    },
+    {
+      "name": "website",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8130",
+        "--directory",
+        "website"
+      ],
+      "port": 8130
     }
   ]
 }
